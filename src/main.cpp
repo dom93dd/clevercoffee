@@ -89,7 +89,11 @@ uint8_t displayOffline = 0;
 inline bool systemInitialized = false;
 
 // Display
+#ifdef ROUND_DISPLAY
+#include "display/roundDisplayDevice.h" // round SPI TFT (GC9A01), provides u8g2 for setPowerSave()
+#else
 U8G2* u8g2 = nullptr;
+#endif
 
 bool featureFullscreenBrewTimer = false;
 bool featureFullscreenManualFlushTimer = false;
@@ -290,12 +294,16 @@ int getSignalStrength() {
     return 0;
 }
 
+#ifdef ROUND_DISPLAY
+#include "display/roundDisplay.h"
+#else
 bool shouldDisplayBrewTimer();
 void u8g2_prepare();
 
 #include "display/displayTemplateManager.h"
 
 Timer printDisplayTimer(&DisplayTemplateManager::printScreen, 100);
+#endif
 
 #include "powerHandler.h"
 #include "scaleHandler.h"
@@ -928,6 +936,17 @@ void setup() {
     Wire.begin();
 
     if (config.get<bool>("hardware.oled.enabled")) {
+#ifdef ROUND_DISPLAY
+        initLangStrings(config);
+
+        if (roundDisplayInit()) {
+            displayLogo(String("Version ") + '\n' + String(sysVersion));
+        }
+        else {
+            LOG(ERROR, "Error initializing the display!");
+            config.set<bool>("hardware.oled.enabled", false);
+        }
+#else
         switch (config.get<int>("hardware.oled.type")) {
             case 0:
                 u8g2 = new U8G2_SH1106_128X64_NONAME_F_HW_I2C(U8G2_R0, U8X8_PIN_NONE, PIN_I2CSCL, PIN_I2CSDA);  // e.g. 1.3"
@@ -968,6 +987,7 @@ void setup() {
             LOG(ERROR, "Error initializing the display!");
             config.set<bool>("hardware.oled.enabled", false);
         }
+#endif
     }
 
     // Calculate derived values
@@ -1388,6 +1408,9 @@ void loopPid() {
 
     displayUpdateRunning = false;
 
+#ifdef ROUND_DISPLAY
+    roundDisplayLoop();
+#else
     if (u8g2 != nullptr) {
 
         // update display on loops that have not had other major tasks running, if blocked it will send in the next loop (average 0.5ms)
@@ -1415,6 +1438,7 @@ void loopPid() {
             lastDisplayUpdate = millis();
         }
     }
+#endif
 
     // Check if PID should run or not. If not, set to manual and force output to zero
     if (machineState == kPidDisabled || machineState == kWaterTankEmpty || machineState == kSensorError || machineState == kEmergencyStop || machineState == kStandby || machineState == kBackflush || brewPidDisabled) {

@@ -1,0 +1,12 @@
+{
+  "name": "RoundDisplay",
+  "version": "0.1.0",
+  "description": "UI for a round 240x240 GC9A01 display on CleverCoffee, drawn in bands with LovyanGFX. Platform independent, also used by the desktop simulator.",
+  "license": "GPL-2.0-only",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src"
+  }
+}

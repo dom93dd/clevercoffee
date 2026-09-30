@@ -1,0 +1,106 @@
+/**
+ * @file RoundDisplayModel.h
+ *
+ * @brief Snapshot of the machine state that the round display shows.
+ *
+ * The UI only reads this struct. The firmware fills it from its globals,
+ * the desktop simulator fills it from a simulated machine. No Arduino
+ * dependencies on purpose.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace rd {
+
+    enum class Mode : uint8_t {
+        Init,
+        Normal,
+        Brew,
+        ManualFlush,
+        Steam,
+        HotWater,
+        Backflush,
+        PidDisabled,
+        WaterTankEmpty,
+        Standby,
+        EmergencyStop,
+        SensorError,
+    };
+
+    enum class BrewPhase : uint8_t {
+        Idle,
+        Preinfusion,
+        PreinfusionPause,
+        Running,
+        Finished,
+    };
+
+    enum class BackflushPhase : uint8_t {
+        Idle,
+        Filling,
+        Flushing,
+        Ending,
+        Finished,
+    };
+
+    enum class Language : uint8_t {
+        German,
+        English,
+    };
+
+    struct Model {
+            Mode mode = Mode::Init;
+            Language language = Language::German;
+
+            // Temperatures in degC
+            float temperature = 0;
+            float setpoint = 0;
+            float heaterPercent = 0;      // PID output 0..100
+            float readyBand = 0.3f;       // |temperature - setpoint| within this counts as ready (display.blinking.delta)
+            float emergencyResetTemp = 0; // heater is released again below this temperature
+
+            // Timers in seconds. brewTimerVisible also covers the hold time after a shot.
+            bool brewTimerVisible = false;
+            BrewPhase brewPhase = BrewPhase::Idle;
+            float brewTime = 0;
+            float brewTargetTime = 0; // 0 = no brew by time
+            float lastBrewTime = 0;   // duration of the previous shot, 0 = none yet
+            float flushTime = 0;
+            float hotWaterTime = 0;
+
+            // Scale
+            bool scaleEnabled = false;
+            bool scaleFault = false;
+            bool bleScale = false;
+            bool bleScaleConnected = false;
+            float brewWeight = 0;
+            float brewTargetWeight = 0; // 0 = no brew by weight
+
+            // Backflush
+            BackflushPhase backflushPhase = BackflushPhase::Idle;
+            uint8_t backflushCycle = 0;
+            uint8_t backflushCycles = 0;
+
+            // Connectivity
+            bool offlineMode = false;
+            bool wifiConnected = false;
+            uint8_t wifiBars = 0; // 0..4
+            bool mqttEnabled = false;
+            bool mqttConnected = false;
+    };
+
+    /**
+     * @brief Full screen message for boot, WiFi setup and scale calibration,
+     *        e.g. {"IP-ADRESSE", "silvia.local", "192.168.178.42"}.
+     *        The title uses the capitals font; lower case letters are shown in the text font instead.
+     */
+    struct Message {
+            const char* title = nullptr;
+            const char* line1 = nullptr;
+            const char* line2 = nullptr;
+            const char* line3 = nullptr;
+    };
+
+} // namespace rd
