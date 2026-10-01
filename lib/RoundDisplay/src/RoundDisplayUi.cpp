@@ -25,7 +25,10 @@ namespace rd {
         constexpr float kHeatingThreshold = 5.0f;   // below setpoint - 5 K the heating screen is shown (as the OLED heating logo)
         constexpr float kRecoveryThreshold = 15.0f; // once warm, only a drop this large switches back to the heating screen
         constexpr float kHysteresis = 0.3f;
-        constexpr float kStopwatchScale = 30.0f;    // seconds per revolution without a target time
+        // Status symbols in the opening of the gauge: heater on the left, scale mirrored on the right,
+        // both on the ring path at the same height
+        constexpr float kStatusSymbolAngle = 212.5f;
+        constexpr float kStopwatchScale = 30.0f; // seconds per revolution without a target time
 
         // Transition lengths in ms
         constexpr uint32_t kIntroMs = 1700;
@@ -75,6 +78,7 @@ namespace rd {
         }
 
         void drawMarker(Painter& p, const float angle, const Color c) {
+            const LayerScope frame(p, Layer::Frame);
             const float x = Painter::px(kCx, kRingRadius, angle);
             const float y = Painter::py(kCy, kRingRadius, angle);
             p.disc(x, y, 9.0f, kBackground);
@@ -82,15 +86,15 @@ namespace rd {
         }
 
         void drawNoWifiIcon(Painter& p, const float x, const float y, const Color c) {
-            // Arcs around a point at the bottom, crossed out
-            const float baseY = y + 6.0f;
+            // Arcs around a point at the bottom, crossed out; sized for the hint font
+            const float baseY = y + 5.0f;
 
             for (int i = 0; i < 3; ++i) {
-                p.arc(x, baseY, 4.5f + static_cast<float>(i) * 4.0f, 1.9f, -45.0f, 45.0f, c);
+                p.arc(x, baseY, 3.6f + static_cast<float>(i) * 3.2f, 1.6f, -45.0f, 45.0f, c);
             }
 
-            p.disc(x, baseY - 0.5f, 1.6f, c);
-            p.line(x - 9.0f, y - 8.0f, x + 9.0f, y + 7.0f, 1.9f, c);
+            p.disc(x, baseY - 0.4f, 1.3f, c);
+            p.line(x - 7.0f, y - 6.5f, x + 7.0f, y + 5.5f, 1.6f, c);
         }
 
         /** Resistor symbol (lead, zigzag, lead) as printed above the heater lamp of the Orione */
@@ -100,6 +104,22 @@ namespace rd {
 
             for (int i = 1; i < count; ++i) {
                 p.line(x + points[i - 1][0], y + points[i - 1][1], x + points[i][0], y + points[i][1], 1.6f, c);
+            }
+        }
+
+        /** Coffee scale: platform on a flat base with a small display; crossed out when not connected */
+        /** Coffee scale (platform on a flat base with a small display), same box and stroke as the heater symbol */
+        void drawScaleIcon(Painter& p, const float x, const float y, const Color c, const bool crossed) {
+            const float w = 1.6f;
+            p.line(x - 9.0f, y - 3.8f, x + 9.0f, y - 3.8f, w, c); // platform
+            p.line(x - 7.0f, y - 1.0f, x + 7.0f, y - 1.0f, w, c); // base
+            p.line(x - 7.0f, y + 3.8f, x + 7.0f, y + 3.8f, w, c);
+            p.line(x - 7.0f, y - 1.0f, x - 7.0f, y + 3.8f, w, c);
+            p.line(x + 7.0f, y - 1.0f, x + 7.0f, y + 3.8f, w, c);
+            p.line(x + 1.5f, y + 1.4f, x + 4.0f, y + 1.4f, 1.4f, c); // display
+
+            if (crossed) {
+                p.line(x - 8.0f, y + 4.6f, x + 8.0f, y - 4.6f, w, c);
             }
         }
 
@@ -566,6 +586,7 @@ namespace rd {
     }
 
     void RoundUi::drawIris(Painter& p, const float radius, const float glow) const {
+        const LayerScope frame(p, Layer::Frame);
         p.mask(kCx, kCy, radius, 10.0f);
 
         // Crema colored rim that lights up the edge of the opening
@@ -576,6 +597,7 @@ namespace rd {
     }
 
     void RoundUi::drawIntro(Painter& p, const float t) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         // Instrument self test: the gauge sweeps to full scale while the name fades in, then the
         // fill retracts to the arc of the message screen, so the version message follows seamlessly.
         const float ms = t * static_cast<float>(kIntroMs);
@@ -626,6 +648,7 @@ namespace rd {
         // Name: rises into place, then moves up and dims to where the message screen has it
         const float y = 128.0f + 8.0f * (1.0f - name) - 40.0f * retract;
         const Color c = mix(mix(kBackground, kText, name), kTextDim, retract);
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), brand_, kCx, y, c);
     }
 
@@ -675,19 +698,21 @@ namespace rd {
         }
 
         const char* text = strings(m.language).noWifi;
-        const float w = static_cast<float>(p.textWidth(fonts::text(), text));
-        const float left = kCx - (w + 26.0f) * 0.5f;
-        drawNoWifiIcon(p, left + 9.0f, y - 7.0f, kTextFaint);
-        p.text(fonts::text(), text, left + 26.0f, y, kTextFaint, Align::Left);
+        const float w = static_cast<float>(p.textWidth(fonts::hint(), text));
+        const float left = kCx - (w + 21.0f) * 0.5f;
+        drawNoWifiIcon(p, left + 7.0f, y - 5.5f, kTextFaint);
+        p.text(fonts::hint(), text, left + 21.0f, y, kTextFaint, Align::Left);
         return true;
     }
 
     void RoundUi::drawHeaterBar(Painter& p) const {
+        const LayerScope frame(p, Layer::Frame);
         // Heater output as a short arc in the opening of the gauge, filled from left to right,
         // with the heater symbol printed on the Orione front (resistor zigzag) to its left
-        constexpr float from = 148.0f;
+        // The scale symbol sits mirrored on the right, the bar in the middle between both
+        constexpr float from = 162.0f;
         constexpr float to = 198.0f;
-        constexpr float symbolAngle = 207.5f;
+        constexpr float symbolAngle = kStatusSymbolAngle;
         const float fill = clampf(view_.heaterPercent / 100.0f, 0.0f, 1.0f);
 
         p.arc(kCx, kCy, kRingRadius, 4.0f, from, to, kTrack);
@@ -697,6 +722,32 @@ namespace rd {
         }
 
         drawHeaterIcon(p, Painter::px(kCx, kRingRadius, symbolAngle), Painter::py(kCy, kRingRadius, symbolAngle), kTextDim);
+    }
+
+    void RoundUi::drawScaleStatus(Painter& p) const {
+        const LayerScope frame(p, Layer::Frame);
+        // Always shown, so the bottom group stays the same. Mirror image of the heater symbol.
+        //   green: scale connected and working        red: scale fault
+        //   grey: bluetooth scale switched on in the settings, not connected (yet)
+        //   faint grey, crossed out: no scale
+        const Model& m = view_;
+        const bool fault = m.scaleEnabled && m.scaleFault;
+        const bool connected = m.scaleEnabled && (!m.bleScale || m.bleScaleConnected);
+        const bool waiting = m.scaleEnabled && !connected;
+        Color c = kTextFaint;
+
+        if (fault) {
+            c = kAlarm;
+        }
+        else if (connected) {
+            c = kReady;
+        }
+        else if (waiting) {
+            c = kTextDim;
+        }
+
+        const float angle = 360.0f - kStatusSymbolAngle;
+        drawScaleIcon(p, Painter::px(kCx, kRingRadius, angle), Painter::py(kCy, kRingRadius, angle), c, !m.scaleEnabled);
     }
 
     void RoundUi::drawTemperatureRow(Painter& p, const float y) const {
@@ -726,8 +777,10 @@ namespace rd {
     // Screens
 
     void RoundUi::drawBoot(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, -30.0f, kBrewDark, kBrew);
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), brand_, kCx, 128.0f, kText);
     }
 
@@ -739,7 +792,7 @@ namespace rd {
         };
 
         constexpr int kMaxRows = 7;
-        constexpr float kTextRadius = 104.0f; // text stays inside the ring
+        constexpr float kTextRadius = 98.0f; // text keeps 8 px to the inner edge of the ring
 
         bool onlyCapitals(const char* text) {
             for (const char* c = text; *c != '\0'; ++c) {
@@ -762,7 +815,7 @@ namespace rd {
 
         /** Width the circle leaves for a text row with this baseline */
         float rowWidth(const float baseline) {
-            const float dy = std::max(std::fabs(baseline - 15.0f - kCy), std::fabs(baseline + 5.0f - kCy));
+            const float dy = std::max(std::fabs(baseline - 18.0f - kCy), std::fabs(baseline + 4.0f - kCy)); // umlauts to descenders
             return dy >= kTextRadius ? 0.0f : 2.0f * std::sqrt(kTextRadius * kTextRadius - dy * dy);
         }
 
@@ -837,25 +890,69 @@ namespace rd {
 
             return count;
         }
+
+        /**
+         * Baselines of n centered rows. A row without anything as tall as an "x" (the dots of
+         * "....") would leave a visibly larger gap above it, so it and the rows below move up by
+         * the missing height; the block stays centered.
+         */
+        void opticalBaselines(const MessageRow* rows, const int count, const int n, float* out) {
+            const Font* body = fonts::textSmall();
+            const int xHeight = body->inkTop("x");
+            float shift = 0.0f;
+
+            for (int i = 0; i < n; ++i) {
+                if (i > 0 && i < count && !rows[i].label) {
+                    const int top = body->inkTop(rows[i].text);
+
+                    if (top < xHeight) {
+                        shift += static_cast<float>(xHeight - top);
+                    }
+                }
+
+                out[i] = centeredBaseline(i, n) - shift;
+            }
+
+            for (int i = 0; i < n; ++i) {
+                out[i] += shift * 0.5f;
+            }
+        }
     } // namespace
 
     void RoundUi::drawMessage(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, -30.0f, kBrewDark, kBrew);
 
+        p.setLayer(Layer::Content);
         MessageRow rows[kMaxRows];
         float widths[kMaxRows];
 
         // Short messages: brand, title and up to two lines as on the boot screens
-        std::fill(widths, widths + kMaxRows, 190.0f);
+        constexpr float shortRows[3] = {114.0f, 144.0f, 170.0f};
+        std::fill(widths, widths + kMaxRows, 0.0f);
+
+        for (int i = 0; i < 3; ++i) {
+            widths[i] = rowWidth(shortRows[i]);
+        }
+
         int count = layoutRows(p, message_, widths, rows);
 
         if (count <= 3) {
-            p.text(fonts::label(), brand_, kCx, 88.0f, kTextDim);
-            float y = 122.0f;
+            p.text(fonts::label(), brand_, kCx, 80.0f, kTextDim);
+            float y = shortRows[0];
 
             for (int i = 0; i < count; ++i) {
-                p.text(rows[i].label ? fonts::label() : fonts::text(), rows[i].text, kCx, y, rows[i].title ? kBrew : kText);
+                const Font* font = fonts::text();
+
+                if (rows[i].label) {
+                    font = fonts::label();
+                }
+                else if (static_cast<float>(p.textWidth(font, rows[i].text)) > rowWidth(y) - 12.0f) {
+                    font = fonts::textCompact(); // would come within a few pixels of the ring
+                }
+
+                p.text(font, rows[i].text, kCx, y, rows[i].title ? kBrew : kText);
                 y += i == 0 && rows[i].title ? 30.0f : 26.0f;
             }
 
@@ -877,14 +974,18 @@ namespace rd {
             }
         }
 
+        // Line breaks as measured with the text font, drawn one size smaller: more room to the ring
         n = std::min(n, kMaxRows);
+        float baselines[kMaxRows];
+        opticalBaselines(rows, count, n, baselines);
 
         for (int i = 0; i < count && i < n; ++i) {
-            p.text(rows[i].label ? fonts::label() : fonts::text(), rows[i].text, kCx, centeredBaseline(i, n), rows[i].title ? kBrew : kText);
+            p.text(rows[i].label ? fonts::label() : fonts::textSmall(), rows[i].text, kCx, baselines[i], rows[i].title ? kBrew : kText);
         }
     }
 
     void RoundUi::drawTemperatureGauge(Painter& p, const bool heating) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
         const float deviation = m.temperature - m.setpoint;
@@ -956,6 +1057,7 @@ namespace rd {
             }
         }
 
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), label, kCx, kLabelY, accent);
         const float right = drawBigValue(p, m.temperature, kValueY, kText, true, nullptr);
 
@@ -974,7 +1076,7 @@ namespace rd {
         char buf[48];
         formatNumber(num, sizeof(num), m.setpoint, 1, m.language);
         snprintf(buf, sizeof(buf), "%s %s°", s.setpoint, num);
-        p.text(fonts::text(), buf, kCx, kRowAY, kTextDim);
+        p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
 
         if (drawConnectionHint(p, kRowBY)) {
             // a connection problem is shown instead
@@ -993,9 +1095,11 @@ namespace rd {
         }
 
         drawHeaterBar(p);
+        drawScaleStatus(p);
     }
 
     void RoundUi::drawSteam(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
         const float span = std::max(m.setpoint - kAmbient, 1.0f);
@@ -1007,6 +1111,7 @@ namespace rd {
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, head, mix(kSteam, kBackground, 0.7f), kSteam);
         drawMarker(p, head, mix(kSteam, kText, 0.4f));
 
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), s.steam, kCx, kLabelY, kSteam);
         drawBigValue(p, m.temperature, kValueY, kText, true, nullptr);
 
@@ -1014,9 +1119,10 @@ namespace rd {
         char buf[48];
         formatNumber(num, sizeof(num), m.setpoint, 0, m.language);
         snprintf(buf, sizeof(buf), "%s %s°", s.setpoint, num);
-        p.text(fonts::text(), buf, kCx, kRowAY, kTextDim);
+        p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
         drawConnectionHint(p, kRowBY);
         drawHeaterBar(p);
+        drawScaleStatus(p);
     }
 
     void RoundUi::drawBrewLabel(Painter& p, const bool done) const {
@@ -1045,6 +1151,7 @@ namespace rd {
     }
 
     void RoundUi::drawBrew(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         // The ring always shows what ends the shot: the weight with brew by weight, otherwise the time
         const Model& m = view_;
         const Strings& s = strings(m.language);
@@ -1070,11 +1177,11 @@ namespace rd {
         }
 
         p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
-        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew);
+        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew, false); // flat: starts exactly at the zero mark
 
         if (fill > 1.0f) {
             // Running over: a second, brighter lap
-            p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill - 1.0f, 1.0f), mix(kBrew, kText, 0.5f));
+            p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill - 1.0f, 1.0f), mix(kBrew, kText, 0.5f), false);
         }
 
         if (!done) {
@@ -1083,6 +1190,7 @@ namespace rd {
             drawMarker(p, 360.0f * std::fmod(fill, 1.0f), mix(kBrew, kText, 0.4f));
         }
 
+        p.setLayer(Layer::Content);
         drawBrewLabel(p, done);
         drawBigValue(p, m.brewTime, kValueY, kText, false, "s");
 
@@ -1092,15 +1200,15 @@ namespace rd {
         if (m.scaleEnabled) {
             // Scale without a weight target: weight as a number
             if (m.scaleFault) {
-                p.text(fonts::text(), s.scaleFault, kCx, kRowAY, kAlarm);
+                p.text(fonts::hint(), s.scaleFault, kCx, kRowAY, kAlarm);
             }
             else if (!scaleConnected) {
-                p.text(fonts::text(), s.scaleDisconnected, kCx, kRowAY, kTextDim);
+                p.text(fonts::hint(), s.scaleDisconnected, kCx, kRowAY, kTextDim);
             }
             else {
                 formatNumber(num, sizeof(num), m.brewWeight, 1, m.language);
                 snprintf(buf, sizeof(buf), "%s g", num);
-                p.text(fonts::mid(), buf, kCx, kRowAY + 2.0f, kWeight);
+                p.text(fonts::midSmall(), buf, kCx, kSecondNumberY, kWeight);
             }
 
             return;
@@ -1109,7 +1217,7 @@ namespace rd {
         if (m.brewTargetTime > 0.0f) {
             formatNumber(num, sizeof(num), m.brewTargetTime, 0, m.language);
             snprintf(buf, sizeof(buf), "%s %s s", s.target, num);
-            p.text(fonts::text(), buf, kCx, kRowAY, kTextDim);
+            p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
         }
 
         if (done && shotAverage_ > 0.0f) {
@@ -1123,6 +1231,7 @@ namespace rd {
     }
 
     void RoundUi::drawBrewWeightRing(Painter& p, const bool done) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         // Brew by weight: the weight ends the shot, so the ring shows the weight up to the target
         const Model& m = view_;
         const Strings& s = strings(m.language);
@@ -1135,7 +1244,7 @@ namespace rd {
         }
 
         p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
-        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew);
+        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew, false); // flat: starts exactly at the zero mark
 
         if (!done) {
             drawShimmer(p, 360.0f * std::min(fill, 1.0f));
@@ -1143,14 +1252,15 @@ namespace rd {
             drawMarker(p, 360.0f * std::min(fill, 1.0f), mix(kBrew, kText, 0.4f));
         }
 
+        p.setLayer(Layer::Content);
         drawBrewLabel(p, done);
-        drawBigValue(p, m.brewWeight, kValueY, kText, false, "g");
+        drawBigValue(p, m.brewWeight, kValueY - 2.0f, kText, false, "g"); // two lines below: a little more room for them
 
         char num[16];
         char buf[48];
         formatNumber(num, sizeof(num), m.brewTime, 1, m.language);
         snprintf(buf, sizeof(buf), "%s s", num);
-        p.text(fonts::mid(), buf, kCx, kRowAY + 2.0f, mix(kText, kBackground, 0.25f));
+        p.text(fonts::midSmall(), buf, kCx, kSecondNumberY, mix(kText, kBackground, 0.25f));
 
         if (done && shotAverage_ > 0.0f) {
             formatNumber(num, sizeof(num), shotAverage_, 1, m.language);
@@ -1161,10 +1271,11 @@ namespace rd {
             snprintf(buf, sizeof(buf), "%s %s g", s.target, num);
         }
 
-        p.text(fonts::text(), buf, kCx, kRowBY + 4.0f, kTextDim);
+        p.text(fonts::textSmall(), buf, kCx, kRowBY + 6.0f, kTextDim);
     }
 
     void RoundUi::drawShimmer(Painter& p, const float fillAngle) const {
+        const LayerScope frame(p, Layer::Frame);
         // A soft light runs along the filled part of the brew ring, about once a second and a half
         if (fillAngle < 30.0f) {
             return;
@@ -1175,7 +1286,8 @@ namespace rd {
         const float a0 = std::max(0.0f, g - half);
         const float a1 = std::min(fillAngle, g + half);
         const auto base = [fillAngle](const float a) { return mix(kBrewDark, kBrew, a / fillAngle); };
-        const Color light = mix(base(clampf(g, 0.0f, fillAngle)), kText, 0.5f);
+        const float strength = phase(g, -half, half) * (1.0f - phase(g, fillAngle - half, fillAngle + half)); // fade in and out at the ends
+        const Color light = mix(base(clampf(g, 0.0f, fillAngle)), kText, 0.5f * strength);
 
         if (a0 < std::min(g, a1)) {
             p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, a0, std::min(g, a1), base(a0), light, false);
@@ -1214,6 +1326,7 @@ namespace rd {
     }
 
     void RoundUi::drawStopwatch(Painter& p, const char* label, const float seconds) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const float fill = std::fmod(std::max(0.0f, seconds), kStopwatchScale) / kStopwatchScale;
 
         p.circle(kCx, kCy, kRingRadius, kRingWidth, kTrack);
@@ -1223,15 +1336,17 @@ namespace rd {
         }
 
         p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
-        p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * fill, mix(kWater, kBackground, 0.35f));
+        p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * fill, mix(kWater, kBackground, 0.35f), false);
         drawMarker(p, 360.0f * fill, mix(kWater, kText, 0.4f));
 
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), label, kCx, kLabelY, kWater);
         drawBigValue(p, seconds, kValueY, kText, false, "s");
         drawTemperatureRow(p, kRowBY);
     }
 
     void RoundUi::drawBackflush(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
         const int cycles = std::max<int>(m.backflushCycles, 1);
@@ -1254,13 +1369,14 @@ namespace rd {
             p.arc(kCx, kCy, kRingRadius, kRingWidth, a0, a1, c, false);
         }
 
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), s.backflush, kCx, kLabelY, kBrew);
 
         if (running) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%d/%d", m.backflushCycle, m.backflushCycles);
             p.text(fonts::big(), buf, kCx, kValueY, kText);
-            p.text(fonts::text(), m.backflushPhase == BackflushPhase::Filling ? s.filling : s.flushing, kCx, kRowAY, kTextDim);
+            p.text(fonts::textSmall(), m.backflushPhase == BackflushPhase::Filling ? s.filling : s.flushing, kCx, kRowAY, kTextDim);
         }
         else {
             const bool ending = m.backflushPhase == BackflushPhase::Ending || m.backflushPhase == BackflushPhase::Finished;
@@ -1270,14 +1386,16 @@ namespace rd {
     }
 
     void RoundUi::drawWaterTankEmpty(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
 
         p.circle(kCx, kCy, kRingRadius, kRingWidth, mix(kWater, kBackground, 0.55f));
+        p.setLayer(Layer::Content);
         drawDropIcon(p, kCx, 84.0f, 52.0f, kWater);
         p.text(fonts::label(), s.waterTank, kCx, 140.0f, kWater);
         p.text(fonts::label(), s.empty, kCx, 164.0f, kWater);
-        p.text(fonts::text(), s.refill, kCx, 192.0f, kTextDim);
+        p.text(fonts::hint(), s.refill, kCx, 190.0f, kTextDim);
     }
 
     void RoundUi::drawStandby(Painter& p) const {
@@ -1293,49 +1411,44 @@ namespace rd {
     }
 
     void RoundUi::drawPidDisabled(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
 
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
+        p.setLayer(Layer::Content);
         p.text(fonts::label(), s.pidOff, kCx, kLabelY, kTextDim);
         drawBigValue(p, m.temperature, kValueY, kTextDim, true, nullptr);
-        p.text(fonts::text(), s.pidOffHint, kCx, kRowAY, kTextFaint);
+        p.text(fonts::hint(), s.pidOffHint, kCx, kRowAY, kTextFaint);
     }
 
     void RoundUi::drawAlarm(Painter& p, const bool sensorError, const uint32_t nowMs) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
         const bool bright = nowMs / 500 % 2 == 0;
 
         p.circle(kCx, kCy, kRingRadius, kRingWidth, bright ? kAlarm : kAlarmDark);
 
+        p.setLayer(Layer::Content);
         char num[16];
         char buf[48];
 
+        // Both alarms share one layout: symbol, what happened, the temperature, what to do
+        drawWarningIcon(p, kCx, 64.0f, 42.0f, kAlarm);
+        p.text(fonts::label(), sensorError ? s.sensorError : s.overTemp, kCx, 114.0f, kAlarm);
+        formatNumber(num, sizeof(num), m.temperature, sensorError ? 1 : 0, m.language);
+        snprintf(buf, sizeof(buf), "%s°", num);
+        p.text(fonts::mid(), buf, kCx, 152.0f, sensorError ? kText : kAlarm);
+        p.text(fonts::hint(), s.heaterOff, kCx, 182.0f, kTextDim);
+
         if (sensorError) {
-            drawWarningIcon(p, kCx, 64.0f, 42.0f, kAlarm);
-            p.text(fonts::label(), s.sensorError, kCx, 114.0f, kAlarm);
-            formatNumber(num, sizeof(num), m.temperature, 1, m.language);
-            snprintf(buf, sizeof(buf), "%s°", num);
-            p.text(fonts::mid(), buf, kCx, 152.0f, kText);
-            p.text(fonts::text(), s.heaterOff, kCx, 180.0f, kTextDim);
-            p.text(fonts::text(), s.checkSensor, kCx, 202.0f, kTextDim);
+            p.text(fonts::hint(), s.checkSensor, kCx, 200.0f, kTextDim);
         }
         else {
-            drawWarningIcon(p, kCx, 52.0f, 34.0f, kAlarm);
-            p.text(fonts::label(), s.overTemp, kCx, 94.0f, kAlarm);
-            drawBigValue(p, m.temperature, 156.0f, kAlarm, true, nullptr);
             formatNumber(num, sizeof(num), m.emergencyResetTemp, 0, m.language);
-            snprintf(buf, sizeof(buf), "%s %s %s°", s.heaterOff, s.heaterOffUntil, num);
-
-            if (p.textWidth(fonts::text(), buf) <= 170) {
-                p.text(fonts::text(), buf, kCx, 190.0f, kTextDim);
-            }
-            else {
-                p.text(fonts::text(), s.heaterOff, kCx, 186.0f, kTextDim);
-                snprintf(buf, sizeof(buf), "%s %s°", s.heaterOffUntil, num);
-                p.text(fonts::text(), buf, kCx, 208.0f, kTextDim);
-            }
+            snprintf(buf, sizeof(buf), "%s %s°", s.heaterOffUntil, num);
+            p.text(fonts::hint(), buf, kCx, 200.0f, kTextDim);
         }
     }
 

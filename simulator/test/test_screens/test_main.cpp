@@ -20,6 +20,8 @@
 
 #include <sys/stat.h>
 
+#include <array>
+
 #include <cstring>
 #include <string>
 #include <vector>
@@ -275,6 +277,142 @@ void test_texts_fit_into_the_circle() {
     }
 }
 
+void test_status_symbols_are_mirrored() {
+    // Heater symbol (left) and scale symbol (right) in the opening of the gauge: same height, mirrored
+    const sim::Scenario* sc = sim::findScenario(all(), "scale-ok");
+    TEST_ASSERT_NOT_NULL(sc);
+    sim::Panel panel;
+    sim::renderScenario(*sc, panel, Language::German);
+
+    int minX[2] = {240, 240}, maxX[2] = {0, 0}, minY[2] = {240, 240}, maxY[2] = {0, 0};
+
+    const auto centroid = [&](const int x0, const int x1, float& cx, float& cy) {
+        float sum = 0;
+        cx = cy = 0;
+        const int k = x0 < 120 ? 0 : 1;
+
+        for (int y = 204; y <= 226; ++y) {
+            for (int x = x0; x <= x1; ++x) {
+                const Color c = ts::pixel(panel.screen, x, y);
+                const float w = static_cast<float>(std::max({ts::channel(c, 16), ts::channel(c, 8), ts::channel(c, 0)}));
+
+                if (w > 30.0f) {
+                    sum += w;
+                    cx += w * (static_cast<float>(x) + 0.5f);
+                    cy += w * (static_cast<float>(y) + 0.5f);
+                    minX[k] = std::min(minX[k], x);
+                    maxX[k] = std::max(maxX[k], x);
+                    minY[k] = std::min(minY[k], y);
+                    maxY[k] = std::max(maxY[k], y);
+                }
+            }
+        }
+
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, static_cast<int>(sum), "symbol missing");
+        cx /= sum;
+        cy /= sum;
+    };
+
+    float lx, ly, rx, ry;
+    centroid(44, 78, lx, ly);
+    centroid(162, 196, rx, ry);
+    const std::string msg = "heater at " + std::to_string(lx) + "," + std::to_string(ly) + ", scale at " + std::to_string(rx) + "," + std::to_string(ry);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(1.0f, ly, ry, msg.c_str());
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(1.5f, 240.0f - lx, rx, msg.c_str());
+
+    // Same size: width and height of both symbols within a pixel
+    const std::string size = "heater " + std::to_string(maxX[0] - minX[0] + 1) + "x" + std::to_string(maxY[0] - minY[0] + 1) + ", scale " + std::to_string(maxX[1] - minX[1] + 1) + "x" + std::to_string(maxY[1] - minY[1] + 1);
+    TEST_ASSERT_INT_WITHIN_MESSAGE(1, maxX[0] - minX[0], maxX[1] - minX[1], size.c_str());
+    TEST_ASSERT_INT_WITHIN_MESSAGE(1, maxY[0] - minY[0], maxY[1] - minY[1], size.c_str());
+    TEST_ASSERT_INT_WITHIN_MESSAGE(1, minY[0], minY[1], size.c_str());
+}
+
+void test_progress_rings_start_at_the_zero_mark() {
+    // The fill starts exactly at 12 o'clock: 2.5 px before it the ring is still empty, 2.5 px after it filled
+    // (a round cap used to stick out in front of the zero mark)
+    const Color track = rgb(34, 34, 36);
+
+    for (const char* name : {"brew", "scale-18", "flush"}) {
+        const sim::Scenario* sc = sim::findScenario(all(), name);
+        TEST_ASSERT_NOT_NULL(sc);
+        sim::Panel panel;
+        sim::renderScenario(*sc, panel, Language::German);
+        const Color before = ts::pixel(panel.screen, 117, 9);
+        const Color after = ts::pixel(panel.screen, 122, 9);
+        TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(12, ts::difference(before, track), (std::string(name) + ": ring filled before the zero mark").c_str());
+        TEST_ASSERT_GREATER_THAN_MESSAGE(40, ts::difference(after, track), (std::string(name) + ": ring not filled after the zero mark").c_str());
+    }
+}
+
+void test_hint_font_contains_every_hint() {
+    // Texts drawn with the smaller hint font, plus the digits and degree sign of "bis unter 99°"
+    for (const Strings* t : {&kGerman, &kEnglish}) {
+        for (const char* text : {t->heaterOff, t->heaterOffUntil, t->checkSensor, t->refill, t->pidOffHint, t->noWifi, t->scaleFault, t->scaleDisconnected, "0123456789°"}) {
+            const std::string missing = ts::missingGlyphs(rd::fonts::hint(), text);
+            TEST_ASSERT_TRUE_MESSAGE(missing.empty(), (std::string("hint font lacks '") + missing + "' for \"" + text + "\"").c_str());
+        }
+    }
+}
+
+void test_scale_symbol_always_shows_its_state() {
+    // Right of the heater bar: green connected, red fault, grey not connected, fainter grey and crossed out without a scale
+    struct Look {
+            int r, g, b, lit;
+    };
+
+    const auto look = [](const char* name) {
+        const sim::Scenario* sc = sim::findScenario(all(), name);
+        TEST_ASSERT_NOT_NULL(sc);
+        sim::Panel panel;
+        sim::renderScenario(*sc, panel, Language::German);
+        Look l{0, 0, 0, 0};
+
+        for (int y = 204; y <= 226; ++y) {
+            for (int x = 162; x <= 196; ++x) {
+                const Color c = ts::pixel(panel.screen, x, y);
+
+                if (std::max({ts::channel(c, 16), ts::channel(c, 8), ts::channel(c, 0)}) > 60) {
+                    l.r += ts::channel(c, 16);
+                    l.g += ts::channel(c, 8);
+                    l.b += ts::channel(c, 0);
+                    ++l.lit;
+                }
+            }
+        }
+
+        TEST_ASSERT_GREATER_THAN_MESSAGE(15, l.lit, (std::string(name) + ": no scale symbol").c_str());
+        l.r /= l.lit;
+        l.g /= l.lit;
+        l.b /= l.lit;
+        return l;
+    };
+
+    const Look ok = look("scale-ok");
+    TEST_ASSERT_GREATER_THAN_MESSAGE(ok.r + 40, ok.g, "a connected scale is green");
+
+    const Look fault = look("scale-fault");
+    TEST_ASSERT_GREATER_THAN_MESSAGE(fault.g + 40, fault.r, "a scale fault is red");
+
+    const Look waiting = look("scale-lost"); // switched on, not connected
+    const Look none = look("ready");         // no scale
+    TEST_ASSERT_INT_WITHIN_MESSAGE(12, waiting.r, waiting.g, "a scale that is not connected is grey");
+    TEST_ASSERT_INT_WITHIN_MESSAGE(12, none.r, none.g, "without a scale the symbol is grey");
+    TEST_ASSERT_GREATER_THAN_MESSAGE(none.g + 25, waiting.g, "not connected is brighter than no scale");
+
+    // The cross runs through the inside of the scale's base, where the symbol itself has no lines
+    const auto crossPixel = [](const char* name) {
+        sim::Panel panel;
+        sim::renderScenario(*sim::findScenario(all(), name), panel, Language::German);
+        const float x = Painter::px(120.0f, 111.0f, 147.5f) - 3.2f; // 30 % along the cross line
+        const float y = Painter::py(120.0f, 111.0f, 147.5f) + 1.84f;
+        const Color c = ts::pixel(panel.screen, static_cast<int>(x), static_cast<int>(y));
+        return std::max({ts::channel(c, 16), ts::channel(c, 8), ts::channel(c, 0)});
+    };
+
+    TEST_ASSERT_GREATER_THAN_MESSAGE(40, crossPixel("ready"), "no scale: the symbol is crossed out");
+    TEST_ASSERT_LESS_THAN_MESSAGE(15, crossPixel("scale-lost"), "not connected: the symbol is not crossed out");
+}
+
 int main() {
     if (!RoundUi::begin()) {
         return 1;
@@ -289,5 +427,9 @@ int main() {
     RUN_TEST(test_fonts_contain_numbers_units_and_names);
     RUN_TEST(test_fonts_contain_the_firmware_message_titles);
     RUN_TEST(test_texts_fit_into_the_circle);
+    RUN_TEST(test_status_symbols_are_mirrored);
+    RUN_TEST(test_progress_rings_start_at_the_zero_mark);
+    RUN_TEST(test_hint_font_contains_every_hint);
+    RUN_TEST(test_scale_symbol_always_shows_its_state);
     return UNITY_END();
 }

@@ -5,47 +5,68 @@
 #include "RoundDisplayFonts.h"
 
 #include "fonts/fontBig.h"
+#include "fonts/fontHint.h"
 #include "fonts/fontLabel.h"
 #include "fonts/fontMid.h"
+#include "fonts/fontMidSmall.h"
 #include "fonts/fontText.h"
+#include "fonts/fontTextCompact.h"
+#include "fonts/fontTextSmall.h"
+
+#include <initializer_list>
 
 namespace rd::fonts {
 
     namespace {
-        lgfx::PointerWrapper bigData(rd_font_big, sizeof(rd_font_big));
-        lgfx::PointerWrapper midData(rd_font_mid, sizeof(rd_font_mid));
-        lgfx::PointerWrapper textData(rd_font_text, sizeof(rd_font_text));
-        lgfx::PointerWrapper labelData(rd_font_label, sizeof(rd_font_label));
-
-        lgfx::VLWfont bigFont;
-        lgfx::VLWfont midFont;
-        lgfx::VLWfont textFont;
-        lgfx::VLWfont labelFont;
-
-        bool loaded = false;
+        constexpr Font bigFont(rd_font_big);
+        constexpr Font midFont(rd_font_mid);
+        constexpr Font midSmallFont(rd_font_mid_small);
+        constexpr Font textFont(rd_font_text);
+        constexpr Font textSmallFont(rd_font_text_small);
+        constexpr Font textCompactFont(rd_font_text_compact);
+        constexpr Font hintFont(rd_font_hint);
+        constexpr Font labelFont(rd_font_label);
     } // namespace
 
     bool load() {
-        if (!loaded) {
-            loaded = bigFont.loadFont(&bigData) && midFont.loadFont(&midData) && textFont.loadFont(&textData) && labelFont.loadFont(&labelData);
+        for (const Font* f : {&bigFont, &midFont, &midSmallFont, &textFont, &textSmallFont, &textCompactFont, &hintFont, &labelFont}) {
+            if (!f->valid()) {
+                return false;
+            }
         }
 
-        return loaded;
+        return true;
     }
 
-    const lgfx::IFont* big() {
+    const Font* big() {
         return &bigFont;
     }
 
-    const lgfx::IFont* mid() {
+    const Font* mid() {
         return &midFont;
     }
 
-    const lgfx::IFont* text() {
+    const Font* midSmall() {
+        return &midSmallFont;
+    }
+
+    const Font* text() {
         return &textFont;
     }
 
-    const lgfx::IFont* label() {
+    const Font* textSmall() {
+        return &textSmallFont;
+    }
+
+    const Font* textCompact() {
+        return &textCompactFont;
+    }
+
+    const Font* hint() {
+        return &hintFont;
+    }
+
+    const Font* label() {
         return &labelFont;
     }
 

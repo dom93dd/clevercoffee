@@ -86,16 +86,15 @@ namespace ts {
     }
 
     /** Characters of text that the font does not contain (empty if all are there) */
-    inline std::string missingGlyphs(const lgfx::IFont* font, const char* text) {
-        const auto* vlw = static_cast<const lgfx::VLWfont*>(font);
+    inline std::string missingGlyphs(const rd::Font* font, const char* text) {
         std::string missing;
+        rd::Font::Glyph glyph;
 
         for (const char* p = text; *p != '\0';) {
             const char* start = p;
             const uint32_t cp = nextCodePoint(p);
-            uint16_t index = 0;
 
-            if (cp != ' ' && (cp > 0xFFFF || !vlw->getUnicodeIndex(static_cast<uint16_t>(cp), &index))) {
+            if (cp != ' ' && !font->find(cp, glyph)) {
                 missing.append(start, p);
             }
         }

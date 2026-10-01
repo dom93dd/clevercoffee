@@ -19,11 +19,13 @@ namespace rd::theme {
     constexpr float kGaugeStart = -135.0f; // 270 degree gauge, open at the bottom
     constexpr float kGaugeEnd = 135.0f;
 
-    // Vertical layout (baselines)
-    constexpr float kLabelY = 72.0f;
-    constexpr float kValueY = 148.0f;
-    constexpr float kRowAY = 180.0f;
-    constexpr float kRowBY = 205.0f;
+    // Vertical layout (baselines). Content keeps 8 px to the ring, ticks and status symbols,
+    // 12 px between the big digits and the rows below (simulator/test/test_layout checks it)
+    constexpr float kLabelY = 64.0f;
+    constexpr float kValueY = 139.0f;
+    constexpr float kRowAY = 172.0f;
+    constexpr float kRowBY = 197.0f;
+    constexpr float kSecondNumberY = 177.0f; // second number under the big one (brewing with the scale)
 
     // Colors
     constexpr Color kBackground = rgb(0, 0, 0);

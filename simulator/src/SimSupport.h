@@ -179,6 +179,36 @@ namespace sim {
 
                  runMachine(m, ui, 60.0f);
              }},
+            {"scale-ok", "Waage verbunden",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.settle();
+                 m.setHeater(18);
+                 m.setLastShot(25.3f);
+             }},
+            {"scale-lost", "Waage nicht verbunden",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.scaleConnected = false;
+                 m.settle();
+                 m.setHeater(18);
+                 m.setLastShot(25.3f);
+             }},
+            {"scale-fault", "Waage gestört",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.scaleBroken = true;
+                 m.settle();
+                 m.setHeater(18);
+                 m.setLastShot(25.3f);
+             }},
+            {"scale-heating", "Aufheizen mit Waage",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.reset(61.4f);
+                 m.scale = true;
+                 m.setHeater(100);
+             }},
             {"heating", "Aufheizen",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(61.4f);
@@ -296,7 +326,7 @@ namespace sim {
         ui.setBrand(brand);
         gSimulatedMs = 0;
         sc.setup(machine, ui);
-        const uint32_t at = gSimulatedMs > 0 ? gSimulatedMs : sc.atMs;
+        const uint32_t at = gSimulatedMs > 0 ? gSimulatedMs + sc.atMs : sc.atMs; // simulated scenarios: atMs is an offset
         ui.update(machine.model(), at);
         panel.render(ui, at);
     }

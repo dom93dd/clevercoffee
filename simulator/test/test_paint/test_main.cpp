@@ -178,6 +178,94 @@ void test_text_alignment() {
     TEST_ASSERT_INT_WITHIN(3, 100, minX);
 }
 
+void test_font_decodes_utf8() {
+    const char* s = "aÄ€\xF0\x9F\x98\x80";
+    const char* p = s;
+    TEST_ASSERT_EQUAL_UINT32('a', rd::Font::next(p));
+    TEST_ASSERT_EQUAL_UINT32(0xC4, rd::Font::next(p));
+    TEST_ASSERT_EQUAL_UINT32(0x20AC, rd::Font::next(p));
+    TEST_ASSERT_EQUAL_UINT32(0x1F600, rd::Font::next(p));
+    TEST_ASSERT_EQUAL_CHAR('\0', *p);
+
+    const char* cyrillic = "\xD0\x96"; // U+0416, uses all five bits of the lead byte
+    TEST_ASSERT_EQUAL_UINT32(0x416, rd::Font::next(cyrillic));
+
+    const char* cut = "\xC3";          // sequence cut off at the end of the string
+    TEST_ASSERT_EQUAL_UINT32(0xC3, rd::Font::next(cut));
+    TEST_ASSERT_EQUAL_CHAR('\0', *cut);
+}
+
+void test_fonts_find_their_glyphs() {
+    const rd::Font* all[] = {rd::fonts::big(), rd::fonts::mid(), rd::fonts::midSmall(), rd::fonts::text(), rd::fonts::textSmall(), rd::fonts::textCompact(), rd::fonts::hint(), rd::fonts::label()};
+    const int sizes[] = {80, 34, 32, 20, 19, 18, 16, 19};
+    rd::Font::Glyph g;
+
+    for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); ++i) {
+        TEST_ASSERT_TRUE(all[i]->valid());
+        TEST_ASSERT_EQUAL_INT(sizes[i], all[i]->size());
+        TEST_ASSERT_TRUE(all[i]->find('0', g)); // digits are in every font
+        TEST_ASSERT_TRUE(g.width > 0 && g.height > 0 && g.advance > 0);
+        TEST_ASSERT_FALSE(all[i]->find(0x4E2D, g));
+    }
+
+    // First, last and an umlaut of the sorted table
+    TEST_ASSERT_TRUE(rd::fonts::text()->find(' ', g));
+    TEST_ASSERT_TRUE(rd::fonts::text()->find(0xC4, g));        // Ä
+    TEST_ASSERT_TRUE(rd::fonts::textSmall()->find(0x2013, g)); // en dash, the highest code point
+    TEST_ASSERT_TRUE(rd::fonts::textCompact()->find(0xD8, g)); // Ø
+
+    // Second number while brewing with the scale: time and weight, also negative after taring
+    TEST_ASSERT_EQUAL_STRING("", ts::missingGlyphs(rd::fonts::midSmall(), "-0123456789,. gs").c_str());
+}
+
+void test_font_sizes_get_smaller() {
+    // The smaller text fonts exist to save a little room: same text, less width and height
+    const char* s = "Soll 94,0°";
+    const int w20 = rd::fonts::text()->width(s);
+    const int w19 = rd::fonts::textSmall()->width(s);
+    const int w18 = rd::fonts::textCompact()->width(s);
+    TEST_ASSERT_TRUE(w20 > w19 && w19 > w18);
+    TEST_ASSERT_TRUE(rd::fonts::text()->inkTop("S") > rd::fonts::textCompact()->inkTop("S"));
+    TEST_ASSERT_TRUE(rd::fonts::mid()->inkTop("8") > rd::fonts::midSmall()->inkTop("8"));
+}
+
+void test_font_width_and_ink_top() {
+    const rd::Font* f = rd::fonts::text();
+    rd::Font::Glyph a;
+    rd::Font::Glyph b;
+    rd::Font::Glyph space;
+    TEST_ASSERT_TRUE(f->find('S', a));
+    TEST_ASSERT_TRUE(f->find('o', b));
+    TEST_ASSERT_TRUE(f->find(' ', space));
+    TEST_ASSERT_EQUAL_INT(a.advance + b.advance, f->width("So"));
+    TEST_ASSERT_EQUAL_INT(a.advance + space.advance, f->width("S\xE4\xB8\xAD")); // missing glyph counts as a space
+
+    // Dots sit far below the x-height, capitals above it
+    TEST_ASSERT_TRUE(f->inkTop("....") < f->inkTop("x") / 2);
+    TEST_ASSERT_TRUE(f->inkTop("Sx") > f->inkTop("x"));
+    TEST_ASSERT_EQUAL_INT(0, f->inkTop("  "));
+}
+
+void test_text_blends_coverage() {
+    // A glyph edge is a mix of text and background color, the stem the full text color
+    Painter p(screen, 0);
+    p.text(rd::fonts::big(), "1", 120, 150, rgb(255, 0, 0));
+    int full = 0;
+    int partial = 0;
+
+    for (int y = 80; y < 160; ++y) {
+        for (int x = 80; x < 160; ++x) {
+            const int r = ts::channel(ts::pixel(screen, x, y), 16);
+            full += r >= 247 ? 1 : 0;
+            partial += r > 16 && r < 240 ? 1 : 0;
+            TEST_ASSERT_EQUAL_INT(0, ts::channel(ts::pixel(screen, x, y), 8)); // never another color
+        }
+    }
+
+    TEST_ASSERT_GREATER_THAN(300, full);
+    TEST_ASSERT_GREATER_THAN(20, partial);
+}
+
 int main() {
     if (!rd::RoundUi::begin()) {
         return 1; // fonts could not be loaded
@@ -205,5 +293,10 @@ int main() {
     RUN_TEST(test_mix_interpolates_and_clamps);
     RUN_TEST(test_text_is_drawn_only_in_its_band);
     RUN_TEST(test_text_alignment);
+    RUN_TEST(test_font_decodes_utf8);
+    RUN_TEST(test_fonts_find_their_glyphs);
+    RUN_TEST(test_font_sizes_get_smaller);
+    RUN_TEST(test_font_width_and_ink_top);
+    RUN_TEST(test_text_blends_coverage);
     return UNITY_END();
 }

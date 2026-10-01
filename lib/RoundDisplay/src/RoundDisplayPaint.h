@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "RoundDisplayFont.h"
+
 #include <LovyanGFX.hpp>
 #include <cstdint>
 
@@ -31,8 +33,25 @@ namespace rd {
         Right,
     };
 
+    /**
+     * What a drawing belongs to: the frame (ring, ticks, markers, status symbols at the ring) or the
+     * content inside it (texts, icons). Only the layout tests look at this: they draw one layer at a
+     * time to measure the spacing between content and frame.
+     */
+    enum class Layer : uint8_t {
+        Frame = 1,
+        Content = 2,
+    };
+
     class Painter {
         public:
+            /** Layers that are drawn at all (test hook; normally both) */
+            static inline uint8_t drawnLayers = 0xFF;
+
+            /** Called for every text that is drawn (test hook for the layout checks) */
+            using TextObserver = void (*)(const Font* font, const char* text, float x, float y, Align align);
+            static inline TextObserver textObserver = nullptr;
+
             /**
              * @param band 16 bit sprite, full screen width
              * @param top  screen row that corresponds to the first row of the sprite
@@ -52,6 +71,14 @@ namespace rd {
             }
 
             void clear(Color c);
+
+            void setLayer(const Layer layer) {
+                layer_ = layer;
+            }
+
+            Layer layer() const {
+                return layer_;
+            }
 
             /**
              * Ring segment. Angles in degrees, clockwise, 0 = 12 o'clock; a1 > a0.
@@ -75,9 +102,9 @@ namespace rd {
              */
             void mask(float cx, float cy, float radius, float feather);
 
-            /** Text with its baseline at y. */
-            void text(const lgfx::IFont* font, const char* s, float x, float y, Color c, Align align = Align::Center);
-            int textWidth(const lgfx::IFont* font, const char* s);
+            /** Text with its baseline at y, x rounded to whole pixels (glyphs stay as crisp as rendered). */
+            void text(const Font* font, const char* s, float x, float y, Color c, Align align = Align::Center);
+            int textWidth(const Font* font, const char* s);
 
             /** Point on a circle, angle as for arc(). */
             static float px(float cx, float radius, float angle);
@@ -92,11 +119,43 @@ namespace rd {
 
             void blend(int x, int y, Color c, float alpha);
 
+            /** Blends c over the pixel; a = 0..256 */
+            void blendFixed(int x, int y, Color c, int a);
+
+            bool drawing() const {
+                return (drawnLayers & static_cast<uint8_t>(layer_)) != 0;
+            }
+
             lgfx::LGFX_Sprite& band_;
+            Layer layer_ = Layer::Content;
             uint16_t* buffer_;
             int top_;
             int width_;
             int height_;
+    };
+
+} // namespace rd
+
+namespace rd {
+
+    /** Switches a painter to a layer for the lifetime of the object */
+    class LayerScope {
+        public:
+            LayerScope(Painter& p, const Layer layer) :
+                p_(p), previous_(p.layer()) {
+                p_.setLayer(layer);
+            }
+
+            ~LayerScope() {
+                p_.setLayer(previous_);
+            }
+
+            LayerScope(const LayerScope&) = delete;
+            LayerScope& operator=(const LayerScope&) = delete;
+
+        private:
+            Painter& p_;
+            Layer previous_;
     };
 
 } // namespace rd

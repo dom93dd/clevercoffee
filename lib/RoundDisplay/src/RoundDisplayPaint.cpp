@@ -68,16 +68,21 @@ namespace rd {
     }
 
     void Painter::blend(const int x, const int y, const Color c, const float alpha) {
+        if (alpha > 0.0f) {
+            blendFixed(x, y, c, static_cast<int>(alpha * 256.0f));
+        }
+    }
+
+    void Painter::blendFixed(const int x, const int y, const Color c, const int a) {
         const int row = y - top_;
 
-        if (alpha <= 0.0f || x < 0 || x >= width_ || row < 0 || row >= height_) {
+        if (a <= 0 || x < 0 || x >= width_ || row < 0 || row >= height_) {
             return;
         }
 
         // 16 bit sprites keep RGB565 with swapped bytes (the order the panel expects)
         uint16_t& pixel = buffer_[row * width_ + x];
         const uint16_t v = static_cast<uint16_t>(pixel >> 8 | pixel << 8);
-
         int r = v >> 11 & 0x1F;
         int g = v >> 5 & 0x3F;
         int b = v & 0x1F;
@@ -85,7 +90,6 @@ namespace rd {
         g = g << 2 | g >> 4;
         b = b << 3 | b >> 2;
 
-        const int a = static_cast<int>(alpha * 256.0f);
         r += (static_cast<int>(c >> 16 & 0xFF) - r) * a >> 8;
         g += (static_cast<int>(c >> 8 & 0xFF) - g) * a >> 8;
         b += (static_cast<int>(c & 0xFF) - b) * a >> 8;
@@ -98,7 +102,7 @@ namespace rd {
     void Painter::shadeArc(const float cx, const float cy, const float radius, const float width, const float a0, const float a1, const bool roundCaps, Shade shade) {
         const float sweep = a1 - a0;
 
-        if (sweep < 0.0f) {
+        if (sweep < 0.0f || !drawing()) {
             return;
         }
 
@@ -184,6 +188,10 @@ namespace rd {
 
     template <typename Distance>
     void Painter::fillShape(const float x0, const float y0, const float x1, const float y1, const Color c, Distance distance) {
+        if (!drawing()) {
+            return;
+        }
+
         const int yStart = std::max(top_, static_cast<int>(std::floor(y0)) - 1);
         const int yEnd = std::min(top_ + height_ - 1, static_cast<int>(std::ceil(y1)) + 1);
         const int xStart = std::max(0, static_cast<int>(std::floor(x0)) - 1);
@@ -235,6 +243,10 @@ namespace rd {
     }
 
     void Painter::mask(const float cx, const float cy, const float radius, const float feather) {
+        if (!drawing()) {
+            return;
+        }
+
         for (int y = top_; y < top_ + height_; ++y) {
             const float dy = static_cast<float>(y) + 0.5f - cy;
 
@@ -249,37 +261,62 @@ namespace rd {
         }
     }
 
-    void Painter::text(const lgfx::IFont* font, const char* s, const float x, const float y, const Color c, const Align align) {
-        if (s == nullptr || *s == '\0') {
+    void Painter::text(const Font* font, const char* s, const float x, const float y, const Color c, const Align align) {
+        if (font == nullptr || s == nullptr || *s == '\0' || !drawing()) {
             return;
         }
 
-        band_.setFont(font);
-        const auto h = static_cast<float>(band_.fontHeight());
+        if (textObserver != nullptr) {
+            textObserver(font, s, x, y, align);
+        }
 
-        if (!visible(y - h, y + h)) {
+        const int baseline = static_cast<int>(std::lround(y));
+
+        if (baseline + font->size() < top_ || baseline - 2 * font->size() >= top_ + height_) {
             return;
         }
 
-        switch (align) {
-            case Align::Left:
-                band_.setTextDatum(lgfx::textdatum_t::baseline_left);
-                break;
-            case Align::Right:
-                band_.setTextDatum(lgfx::textdatum_t::baseline_right);
-                break;
-            default:
-                band_.setTextDatum(lgfx::textdatum_t::baseline_center);
-                break;
+        // Positions as LovyanGFX's drawString placed its VLW fonts
+        int pen = static_cast<int>(std::lround(x)) + font->leftOverhang(s);
+
+        if (align == Align::Center) {
+            pen -= font->width(s) >> 1;
+        }
+        else if (align == Align::Right) {
+            pen -= font->width(s);
         }
 
-        band_.setTextColor(c);
-        band_.drawString(s, static_cast<int32_t>(std::lround(x)), static_cast<int32_t>(std::lround(y)) - top_);
+        Font::Glyph space;
+        font->find(' ', space);
+        Font::Glyph g;
+
+        for (const char* p = s; *p != '\0';) {
+            if (!font->find(Font::next(p), g)) {
+                pen += space.advance;
+                continue;
+            }
+
+            const int gx = pen + g.left;
+            const int gy = baseline - g.top;
+            const int row0 = std::max(0, top_ - gy);
+            const int row1 = std::min<int>(g.height, top_ + height_ - gy);
+
+            for (int row = row0; row < row1; ++row) {
+                for (int col = 0; col < g.width; ++col) {
+                    const int cov = g.coverage(col, row);
+
+                    if (cov != 0) {
+                        blendFixed(gx + col, gy + row, c, cov * 256 / 15);
+                    }
+                }
+            }
+
+            pen += g.advance;
+        }
     }
 
-    int Painter::textWidth(const lgfx::IFont* font, const char* s) {
-        band_.setFont(font);
-        return static_cast<int>(band_.textWidth(s));
+    int Painter::textWidth(const Font* font, const char* s) {
+        return font->width(s);
     }
 
 } // namespace rd

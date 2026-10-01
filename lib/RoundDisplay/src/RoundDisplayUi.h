@@ -167,6 +167,7 @@ namespace rd {
 
             bool drawConnectionHint(Painter& p, float y) const;
             void drawHeaterBar(Painter& p) const;
+            void drawScaleStatus(Painter& p) const;
             float drawBigValue(Painter& p, float value, float y, Color c, bool degree, const char* unit) const;
             void updateTrendAndShots(uint32_t nowMs);
             void drawShimmer(Painter& p, float fillAngle) const;

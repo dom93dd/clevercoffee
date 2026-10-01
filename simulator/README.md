@@ -23,7 +23,8 @@ Tasten (stehen auch rechts im Fenster):
 | Taste | Wirkung |
 |---|---|
 | Leertaste | Bezugsschalter an/aus (Bezug stoppt nach 25 s von selbst) |
-| G | Waage an/aus (Gewicht und Zielgewicht) |
+| G | Waage in den Einstellungen an/aus (aus: Symbol durchgestrichen) |
+| V | Bluetooth-Verbindung der Waage trennen/herstellen (getrennt: Symbol grau) |
 | S | Dampfschalter |
 | F / H | Spülen / Heißwasser |
 | B | Rückspülmodus (danach Leertaste = Start) |
@@ -47,6 +48,9 @@ Vorher einmal `pio run` (baut das Programm, `./run.sh` macht das automatisch).
 .pio/build/sim/program --shot brew brew.png        # ein Bildschirm als PNG
 .pio/build/sim/program --shot intro-1 i.png --at 900   # Bild aus einer Animation (Szenarien intro-1, reveal, close)
 .pio/build/sim/program --gallery galerie.png --scale 1
+.pio/build/sim/program --review ../../../review/round-display   # alle Szenarien DE+EN als PNG + index.html zum Abnehmen
+#   --compare ALTER_ORDNER  markiert, was sich gegenüber einer früheren Runde geändert hat (alte Bilder nach previous/, Knopf „Vorher zeigen“)
+#   --notes NOTIZEN.json    {"szenario": "was geändert wurde"} erscheint am jeweiligen Bildschirm
 .pio/build/sim/program --trace                     # Ablauf Kaltstart → Bezug → Dampf → Wassertank als Text
 ```
 Die PNGs sind unkomprimiert (einige MB); `sips -s format png a.png --out b.png` macht sie klein.
@@ -56,14 +60,16 @@ Die PNGs sind unkomprimiert (einige MB); `sips -s format png a.png --out b.png` 
 pio test -e test                        # alle Tests (etwa 10 s)
 pio test -e test -f test_ui             # nur eine Suite
 RD_UPDATE_GOLDEN=1 pio test -e test -f test_screens   # Referenzbilder neu schreiben (nach gewollten UI-Änderungen)
+RD_LAYOUT_BOXES=1 pio test -e test -f test_layout -v   # Abstands-Check mit Position jedes Textes
 ./check_firmware.sh                     # Firmware-Builds prüfen (1,5 min), --quick ohne Vergleich mit upstream/master
 ```
 | Suite | Prüft |
 |---|---|
-| `test_paint` | Kantenglättung, Winkel (0° = 12 Uhr, im Uhrzeigersinn), runde und gerade Enden, Clipping an Streifen- und Bildrändern, Maske, Text |
+| `test_paint` | Kantenglättung, Winkel (0° = 12 Uhr, im Uhrzeigersinn), runde und gerade Enden, Clipping an Streifen- und Bildrändern, Maske, Text; Schriftformat: UTF-8, Glyphensuche in allen acht Schriften, Breite, Tintenhöhe, Mischfarben an den Kanten |
 | `test_control` | Zuordnung der Firmware-Zustände, Bezugstimer mit Haltezeit, Meldungen (Aufteilung, Großschreibung mit Umlauten, UTF-8-sicheres Kürzen), Zahlenformat DE/EN, Display-aus-Ablauf |
 | `test_ui` | Bildschirmwahl (Alarme vor allem anderen), Hysterese Aufheizen/Bereit, Neuzeichnen nur bei sichtbaren Änderungen, Animationen |
 | `test_screens` | alle Szenarien in DE und EN: Streifen-Rendering pixelgleich zum Vollbild, nichts außerhalb des Glases, jeder Bildschirm zeigt etwas, Vergleich mit `test/golden/*.png`, jedes Zeichen in den Schriften vorhanden, jeder Text passt in den Kreis |
+| `test_layout` | Abstände auf allen Szenarien in DE und EN, gemessen an den gezeichneten Pixeln: Inhalt ≥ 8 px zu Ring, Strichen, Markern, Statussymbolen und Glasrand; Ziffern der großen Zahl ≥ 12 px zur nächsten Zeile (Komma ≥ 7 px); Texte übereinander ≥ 7 px, Zeilen eines Absatzes ≥ 3 px. Rahmen und Inhalt trennt der Painter über Ebenen (`Layer::Frame`/`Layer::Content`). Dazu das Feedback vom 01.10.2026: Schriftgröße je Zeilenart (Soll/Ziel 19 px, zweite Zahl 32 px, zu breite Meldungszeile 18 px), gleiche Zeilenumbrüche der Kalibriermeldung, gleichmäßiger Abstand bis zu den Punkten „....“ |
 
 Weicht ein Bild von der Referenz ab, legt der Test das neue Bild unter `test/golden/failed/` ab. `check_firmware.sh` baut `esp32_usb`, `esp32_round_usb` und `esp32_round_ota`, verlangt mindestens 16 KB freien Flash für die Rund-Builds und vergleicht die Größe der normalen Firmware mit einem Build von `upstream/master` (muss gleich sein).
 

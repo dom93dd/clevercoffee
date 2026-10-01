@@ -24,6 +24,8 @@ class FakeMachine {
         int backflushCycles = 5;
         bool scale = false;
         bool bleScale = true;
+        bool scaleConnected = true;
+        bool scaleBroken = false;
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -247,7 +249,8 @@ class FakeMachine {
 
             m.scaleEnabled = scale;
             m.bleScale = scale && bleScale;
-            m.bleScaleConnected = scale;
+            m.bleScaleConnected = scale && scaleConnected;
+            m.scaleFault = scale && scaleBroken;
             m.brewWeight = weight_;
             m.brewTargetWeight = scale ? targetBrewWeight : 0.0f;
 

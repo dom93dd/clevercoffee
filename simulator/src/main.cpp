@@ -9,6 +9,9 @@
  *   roundsim                       interactive window (keys: see side panel)
  *   roundsim --shot ready out.png  one screen as PNG, no window
  *   roundsim --gallery out.png     all screens on one sheet
+ *   roundsim --review DIR          every screen in German and English plus DIR/index.html to sign them off
+ *            [--compare OLD]       marks screens that differ from an earlier review in OLD (copied to DIR/previous)
+ *            [--notes FILE]        JSON {"scenario": "what was changed"}, shown on the screens
  *   options: --scale N, --lang de|en, --list
  */
 
@@ -21,6 +24,7 @@
 
 #include "FakeMachine.h"
 #include "Png.h"
+#include "ReviewPage.h"
 #include "SimSupport.h"
 
 #include <algorithm>
@@ -30,6 +34,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
@@ -199,6 +204,131 @@ namespace {
         return png::write(out, img.w, img.h, img.rgb.data()) ? 0 : 1;
     }
 
+    /** Every scenario in German and English as PNG files plus an index.html to go through them */
+    std::string readFile(const char* path) {
+        std::string out;
+        FILE* f = std::fopen(path, "rb");
+
+        if (f != nullptr) {
+            char buf[4096];
+            size_t n = 0;
+
+            while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
+                out.append(buf, n);
+            }
+
+            std::fclose(f);
+        }
+
+        return out;
+    }
+
+    /** More than a few pixels changed clearly (ignores the slightly different edge shades of a font update) */
+    bool visiblyDifferent(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+        int count = 0;
+
+        for (size_t i = 0; i + 2 < a.size() && i + 2 < b.size(); i += 3) {
+            int d = 0;
+
+            for (int c = 0; c < 3; ++c) {
+                d = std::max(d, std::abs(static_cast<int>(a[i + c]) - static_cast<int>(b[i + c])));
+            }
+
+            count += d > 24 ? 1 : 0;
+        }
+
+        return count > 40;
+    }
+
+    int runReview(const char* dir, const int scale, const char* compare, const char* notesFile) {
+        std::error_code error;
+        std::filesystem::create_directories(dir, error);
+
+        if (error) {
+            fprintf(stderr, "cannot create %s: %s\n", dir, error.message().c_str());
+            return 1;
+        }
+
+        const auto all = scenarios();
+        const int size = deviceSize(scale);
+        Panel panel;
+        std::string list = "[\n";
+
+        int changedCount = 0;
+
+        for (size_t i = 0; i < all.size(); ++i) {
+            char file[64];
+            snprintf(file, sizeof(file), "%02d-%s", static_cast<int>(i + 1), all[i].name);
+            bool changed = false;
+
+            for (const auto lang : {rd::Language::German, rd::Language::English}) {
+                renderScenario(all[i], panel, lang, gBrand);
+                Image img(size, size, 0xFFFFFF);
+                drawDevice(img, 0, 0, panel.screen, scale);
+                const std::string name = std::string(file) + (lang == rd::Language::German ? "-de.png" : "-en.png");
+                const std::string path = std::string(dir) + "/" + name;
+
+                if (compare != nullptr) {
+                    // Keep the earlier picture next to the new one when they differ
+                    const std::string old = std::string(compare) + "/" + name;
+                    int w = 0;
+                    int h = 0;
+                    std::vector<uint8_t> before;
+
+                    if (png::read(old.c_str(), w, h, before) && (w != img.w || h != img.h || visiblyDifferent(before, img.rgb))) {
+                        const std::string previous = std::string(dir) + "/previous";
+                        std::filesystem::create_directories(previous, error);
+                        std::filesystem::copy_file(old, previous + "/" + name, std::filesystem::copy_options::overwrite_existing, error);
+                        changed = true;
+                    }
+                }
+
+                if (!png::write(path.c_str(), img.w, img.h, img.rgb.data())) {
+                    fprintf(stderr, "cannot write %s\n", path.c_str());
+                    return 1;
+                }
+            }
+
+            changedCount += changed ? 1 : 0;
+
+            // Names and captions are plain text without quotes or backslashes
+            list += std::string("  {\"name\": \"") + all[i].name + "\", \"caption\": \"" + all[i].caption + "\", \"file\": \"" + file + "\", \"changed\": " + (changed ? "true" : "false") + "},\n";
+        }
+
+        list += "]";
+
+        // Optional notes per screen: a JSON object {"scenario": "what was changed"}
+        std::string notes = "{}";
+
+        if (notesFile != nullptr) {
+            notes = readFile(notesFile);
+
+            if (notes.empty() || notes.find("</") != std::string::npos) {
+                fprintf(stderr, "cannot use notes %s\n", notesFile);
+                return 1;
+            }
+        }
+
+        char stamp[64];
+        const std::time_t now = std::time(nullptr);
+        std::strftime(stamp, sizeof(stamp), "Stand %d.%m.%Y %H:%M", std::localtime(&now));
+
+        const std::string html = std::string(kReviewHead) + list + ";\nconst STAMP = \"" + stamp + ", " + std::to_string(all.size()) +
+                                 " Screens, Branch feature/round-display\";\nconst COMPARED = " + (compare != nullptr ? "true" : "false") + ";\nconst NOTES = " + notes + kReviewTail;
+        const std::string index = std::string(dir) + "/index.html";
+        FILE* f = std::fopen(index.c_str(), "wb");
+
+        if (f == nullptr || std::fwrite(html.data(), 1, html.size(), f) != html.size()) {
+            fprintf(stderr, "cannot write %s\n", index.c_str());
+            return 1;
+        }
+
+        std::fclose(f);
+        printf("%s (%zu screens, German and English", index.c_str(), all.size());
+        printf(compare != nullptr ? ", %d changed)\n" : ")\n", changedCount);
+        return 0;
+    }
+
     /**
      * Plays a fixed sequence (cold start, heat up, shot, steam, water tank) without a window and
      * prints every screen change - a quick check of transitions and hysteresis.
@@ -242,7 +372,8 @@ namespace {
 
     const KeyHelp kKeys[] = {
         {"Leertaste", "Bezugsschalter an/aus"},
-        {"G", "Waage an/aus"},
+        {"G", "Waage in Einstellungen an/aus"},
+        {"V", "Waage verbinden/trennen"},
         {"S", "Dampfschalter"},
         {"F / H", "Spülen / Heißwasser"},
         {"B", "Rückspülmodus"},
@@ -359,6 +490,9 @@ namespace {
                             break;
                         case SDLK_g:
                             machine.scale = !machine.scale;
+                            break;
+                        case SDLK_v:
+                            machine.scaleConnected = !machine.scaleConnected;
                             break;
                         case SDLK_s:
                             machine.toggleSteam();
@@ -517,6 +651,9 @@ int main(int argc, char** argv) {
     const char* shot = nullptr;
     const char* shotOut = nullptr;
     const char* gallery = nullptr;
+    const char* review = nullptr;
+    const char* compare = nullptr;
+    const char* notes = nullptr;
     int frames = 0;
     const char* windowPng = nullptr;
     int atMs = -1;
@@ -547,6 +684,15 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--gallery") == 0 && i + 1 < argc) {
             gallery = argv[++i];
         }
+        else if (std::strcmp(argv[i], "--review") == 0 && i + 1 < argc) {
+            review = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--compare") == 0 && i + 1 < argc) {
+            compare = argv[++i]; // with --review: earlier review folder
+        }
+        else if (std::strcmp(argv[i], "--notes") == 0 && i + 1 < argc) {
+            notes = argv[++i];   // with --review: JSON {"scenario": "what was changed"}
+        }
         else if (std::strcmp(argv[i], "--trace") == 0) {
             return runTrace();
         }
@@ -557,7 +703,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         else {
-            fprintf(stderr, "usage: %s [--scale N] [--lang de|en] [--frames N] [--brand NAME] [--shot NAME OUT.png | --gallery OUT.png | --list]\n", argv[0]);
+            fprintf(stderr, "usage: %s [--scale N] [--lang de|en] [--frames N] [--brand NAME] [--shot NAME OUT.png | --gallery OUT.png | --review DIR [--compare OLD] [--notes FILE] | --list]\n", argv[0]);
             return 1;
         }
     }
@@ -573,6 +719,10 @@ int main(int argc, char** argv) {
 
     if (gallery != nullptr) {
         return runGallery(gallery, scale, lang);
+    }
+
+    if (review != nullptr) {
+        return runReview(review, scale, compare, notes);
     }
 
     return runWindow(scale, lang, frames, windowPng);
