@@ -36,6 +36,7 @@ Gestaltungsregeln: große Ziffern für das, was man aus einem Meter Entfernung s
 | Intro | beim Einschalten, vor der Versionsmeldung (blockiert `setup()` so lange) | 1,7 s |
 | Blende auf | erster Bildschirm nach den Startmeldungen; Verlassen des Standby; Display wieder an | 0,9 s |
 | Blende zu | Wechsel in den Standby; Display aus (10 min nach Standby) | 0,8 s |
+| Gleiten | Wechsel zwischen Aufheiz-Skala und Bereit-Skala (zoomt auf Soll ±5 K): Punkt und Balken gleiten an die neue Stelle | 0,4 s |
 
 Schriftzug: `ROUND_DISPLAY_BRAND` in `src/display/roundDisplay.h` (Standard „DOMS COFFEE“), im Simulator `--brand`. Beim Intro fährt der Skalenring auf Vollausschlag wie bei einem Instrumenten-Selbsttest, der Schriftzug blendet ein, ein Lichtreflex läuft über den Ring, dann zieht sich der Ring auf die Versionsmeldung zurück. Blende auf öffnet eine runde Blende mit Crema-Rand, die Temperatur zählt dabei hoch. Blende zu schließt sie, ein Punkt glimmt nach. Alarme zeigen sich immer sofort, ohne Animation. Einzelbilder aus den Animationen: `simulator/.pio/build/sim/program --shot intro-1 bild.png --at 900` (Szenarien `intro-1`, `reveal`, `close`).
 
@@ -59,4 +60,4 @@ Gemessen im ESP32-Emulator (`simulator/esp32-bench`, Zeit geschätzt mit 1,0–1
 Flash 1.669.553 von 1.703.936 B (98,0 %, ~34 KB frei); 4.0.3 ohne rundes Display: 1.545.069 B. Davon Schriften 44,5 KB (acht Schriften im kompakten Format; die fünf VLW-Schriften vorher brauchten 60,1 KB), LovyanGFX ~40 KB, UI ~13 KB. Zur Laufzeit kommen 2 × 19 KB Streifenpuffer dazu (Heap, nur auf echter Hardware messbar).
 
 ## Tests
-108 Tests in `simulator/test` (Zeichnen, Schrift, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder, Abstands-Check aller Bildschirme, Schriftgröße je Zeilenart, Fuzz-Test mit kaputten Werten, Schutz gegen hängende `loop()`), alle auch mit AddressSanitizer/UBSan (`pio test -e sanitize`), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.
+111 Tests in `simulator/test` (Zeichnen, Schrift, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder, Abstands-Check aller Bildschirme, Schriftgröße je Zeilenart, Fuzz-Test mit kaputten Werten, Schutz gegen hängende `loop()`), alle auch mit AddressSanitizer/UBSan (`pio test -e sanitize`), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.

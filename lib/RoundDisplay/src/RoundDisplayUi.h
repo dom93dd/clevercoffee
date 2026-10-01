@@ -116,6 +116,9 @@ namespace rd {
             /** The light runs along the brew ring (shot running): frames as often as during animations */
             bool shimmering() const;
 
+            /** The point glides to its place after a switch between heating screen and ready gauge */
+            bool gliding(uint32_t nowMs) const;
+
             /** Temperature counts as ready (green label), with hysteresis */
             bool ready() const {
                 return ready_;
@@ -193,6 +196,7 @@ namespace rd {
             void drawBoot(Painter& p) const;
             void drawMessage(Painter& p) const;
             void drawTemperatureGauge(Painter& p, bool heating) const;
+            float glidingAngle(float target) const; // the point's angle, on its way during a glide
             void drawSteam(Painter& p) const;
             void drawBrew(Painter& p) const;
             void drawBrewLabel(Painter& p, bool done) const;
@@ -241,6 +245,9 @@ namespace rd {
             bool readyPulsePending_ = false;
             uint32_t readyPulseStart_ = 0;
             bool readyPulse_ = false;
+            uint32_t glideStart_ = 0;
+            float glideFrom_ = 0.0f; // angle of the point on the scale shown before
+            bool glide_ = false;
             float shotTempSum_ = 0;
             int shotTempCount_ = 0;
             float shotLastTime_ = 0;

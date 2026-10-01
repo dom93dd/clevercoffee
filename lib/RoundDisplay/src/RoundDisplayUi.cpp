@@ -36,6 +36,7 @@ namespace rd {
         constexpr uint32_t kRevealMs = 900;
         constexpr uint32_t kCloseMs = 800;
         constexpr uint32_t kReadyPulseMs = 1400;
+        constexpr uint32_t kGlideMs = 400; // heating screen <-> ready gauge
         constexpr float kIrisMax = 132.0f; // radius that uncovers the whole round screen incl. the soft edge
 
         uint32_t animationLength(const Animation a) {
@@ -286,6 +287,16 @@ namespace rd {
         const Screen previous = screen_;
         screen_ = selectScreen(model_);
 
+        // Heating screen <-> ready gauge: the scale zooms in (or out), so the point glides from where it
+        // was to its place on the new scale instead of jumping
+        const bool gauges = (previous == Screen::Heating && screen_ == Screen::Ready) || (previous == Screen::Ready && screen_ == Screen::Heating);
+
+        if (drawnOnce_ && gauges && !animating(nowMs)) {
+            glide_ = true;
+            glideStart_ = nowMs;
+            glideFrom_ = previous == Screen::Heating ? heatingAngle(model_.temperature, model_.setpoint) : readyAngle(model_.temperature, model_.setpoint);
+        }
+
         if (isAlarm(screen_)) {
             animation_ = Animation::None; // alarms show up at once
         }
@@ -328,6 +339,10 @@ namespace rd {
         const Model& m = model_;
         const bool done = m.brewPhase == BrewPhase::Finished || (m.mode != Mode::Brew && m.brewPhase == BrewPhase::Idle);
         return screen_ == Screen::Brew && !done;
+    }
+
+    bool RoundUi::gliding(const uint32_t nowMs) const {
+        return glide_ && nowMs - glideStart_ < kGlideMs;
     }
 
     bool RoundUi::effectActive(const uint32_t nowMs) const {
@@ -478,6 +493,10 @@ namespace rd {
             h = hashAdd(h, static_cast<int32_t>(nowMs / animationFrameIntervalMs));
         }
 
+        if (gliding(nowMs)) {
+            h = hashAdd(h, static_cast<int32_t>((nowMs - glideStart_) / animationFrameIntervalMs));
+        }
+
         h = hashAdd(h, ready_);
 
         if (screen_ == Screen::Message) {
@@ -523,7 +542,7 @@ namespace rd {
 
         const uint32_t since = nowMs - lastDrawMs_;
 
-        if (since < (animating(nowMs) || effectActive(nowMs) || shimmering() ? animationFrameIntervalMs : minFrameIntervalMs)) {
+        if (since < (animating(nowMs) || effectActive(nowMs) || shimmering() || gliding(nowMs) ? animationFrameIntervalMs : minFrameIntervalMs)) {
             return false;
         }
 
@@ -1130,7 +1149,7 @@ namespace rd {
         if (heating) {
             // Progress from room temperature to the setpoint at the top; the minor tick marks where the
             // zoomed ready gauge takes over
-            const float head = heatingAngle(m.temperature, m.setpoint);
+            const float head = glidingAngle(heatingAngle(m.temperature, m.setpoint));
             const float readyAt = heatingAngle(m.setpoint - kHeatingThreshold, m.setpoint);
 
             p.tick(kCx, kCy, readyAt, 94.0f, 100.0f, 1.6f, kTickMinor);
@@ -1167,7 +1186,7 @@ namespace rd {
                 accent = kCool;
             }
 
-            const float a = readyAngle(m.temperature, m.setpoint);
+            const float a = glidingAngle(readyAngle(m.temperature, m.setpoint));
             p.arc(kCx, kCy, kRingRadius, kRingWidth, std::min(0.0f, a), std::max(0.0f, a), mix(accent, kBackground, 0.45f));
             drawMarker(p, a, accent);
 
@@ -1227,6 +1246,15 @@ namespace rd {
 
         drawHeaterBar(p);
         drawScaleStatus(p);
+    }
+
+    float RoundUi::glidingAngle(const float target) const {
+        if (!gliding(drawNow_)) {
+            return target;
+        }
+
+        const float t = easeInOutCubic(phase(static_cast<float>(drawNow_ - glideStart_), 0.0f, static_cast<float>(kGlideMs)));
+        return glideFrom_ + (target - glideFrom_) * t;
     }
 
     void RoundUi::drawSteam(Painter& p) const {

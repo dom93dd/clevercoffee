@@ -718,8 +718,11 @@ namespace {
 
             switched = r.until([&] { return r.ui.screen() == rd::Screen::Ready; }, 600000);
             in.shot(r.ui, r.now, switched ? "Umschalten auf Bereit-Skala" : "FEHLER: kein Umschalten");
-            r.advance(600);
-            in.shot(r.ui, r.now, "Umschalten +0,6 s");
+
+            for (int i = 0; i < 4; ++i) { // the point glides to the zoomed scale
+                r.advance(100);
+                in.shot(r.ui, r.now, "Gleiten +" + std::to_string((i + 1) * 100) + " ms");
+            }
             r.until([&] { return r.ui.ready(); }, 600000);
             in.shot(r.ui, r.now, "BEREIT erreicht");
             r.advance(2000);
