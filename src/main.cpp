@@ -91,6 +91,7 @@ inline bool systemInitialized = false;
 // Display
 #ifdef ROUND_DISPLAY
 #include "display/roundDisplayDevice.h" // round SPI TFT (GC9A01), provides u8g2 for setPowerSave()
+#include "display/roundLoopGuard.h"     // heater off while loop() hangs (read in isr.h)
 #else
 U8G2* u8g2 = nullptr;
 #endif
@@ -1213,6 +1214,10 @@ void setup() {
 
     enableTimer1();
 
+#ifdef ROUND_DISPLAY
+    loopGuardStart();
+#endif
+
     double fsUsage = ((double)LittleFS.usedBytes() / LittleFS.totalBytes()) * 100;
     LOGF(INFO, "LittleFS: %d%% (used %ld bytes from %ld bytes)", (int)ceil(fsUsage), LittleFS.usedBytes(), LittleFS.totalBytes());
 
@@ -1238,6 +1243,10 @@ void setup() {
 }
 
 void loop() {
+#ifdef ROUND_DISPLAY
+    loopGuardBeat();
+#endif
+
     // Accept potential connections for remote logging
     Logger::update();
 

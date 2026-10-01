@@ -164,6 +164,22 @@ namespace rd {
             p.line(cx - size * 0.12f, cy + size * 0.32f, cx + size * 0.45f, cy - size * 0.3f, w, c);
         }
 
+        /**
+         * Values that steer loops, sizes or fills are made safe here, so a broken sensor or setting cannot
+         * hang the display (e.g. a ring tick every 5 s of an endless target time). Values that are only
+         * shown may stay NaN or huge; they appear as "--".
+         */
+        Model sanitized(Model m) {
+            const auto orZero = [](const float v) { return std::isfinite(v) ? v : 0.0f; };
+            m.heaterPercent = clampf(orZero(m.heaterPercent), 0.0f, 100.0f);
+            m.readyBand = std::isfinite(m.readyBand) ? clampf(m.readyBand, 0.0f, 5.0f) : Model().readyBand;
+            m.brewTargetTime = clampf(orZero(m.brewTargetTime), 0.0f, 600.0f);
+            m.brewTargetWeight = clampf(orZero(m.brewTargetWeight), 0.0f, 2000.0f);
+            m.backflushCycles = std::min<uint8_t>(m.backflushCycles, 30); // one ring segment each
+            m.wifiBars = std::min<uint8_t>(m.wifiBars, 4);
+            return m;
+        }
+
     } // namespace
 
     const char* screenName(const Screen s) {
@@ -217,7 +233,7 @@ namespace rd {
     }
 
     void RoundUi::update(const Model& model, const uint32_t nowMs) {
-        model_ = model;
+        model_ = sanitized(model);
 
         // Heating screen while warming up from cold. Once warm, the dip after a shot stays on the
         // zoomed ready gauge instead of switching scales for a few seconds.
@@ -846,18 +862,41 @@ namespace rd {
                     break;
                 }
 
+                const auto fits = [&](const char* s) { return static_cast<float>(p.textWidth(fonts::text(), s)) <= widths[count]; };
                 char candidate[64];
                 snprintf(candidate, sizeof(candidate), "%s%s%.*s", line, line[0] != '\0' ? " " : "", static_cast<int>(end - word), word);
 
-                if (line[0] == '\0' || static_cast<float>(p.textWidth(fonts::text(), candidate)) <= widths[count]) {
+                if (fits(candidate)) {
                     snprintf(line, sizeof(line), "%s", candidate);
-                }
-                else {
-                    flush(line);
-                    snprintf(line, sizeof(line), "%.*s", static_cast<int>(end - word), word);
+                    word = end;
+                    continue;
                 }
 
-                word = end;
+                if (line[0] != '\0') {
+                    flush(line); // the word starts the next row
+                    line[0] = '\0';
+                    continue;
+                }
+
+                // One word wider than the row (a long network or host name): break it between characters
+                const char* cut = word;
+
+                while (cut < end) {
+                    const char* after = cut;
+                    Font::next(after);
+                    snprintf(candidate, sizeof(candidate), "%.*s", static_cast<int>(after - word), word);
+
+                    if (cut != word && !fits(candidate)) {
+                        break;
+                    }
+
+                    cut = after;
+                }
+
+                snprintf(line, sizeof(line), "%.*s", static_cast<int>(cut - word), word);
+                flush(line);
+                line[0] = '\0';
+                word = cut;
             }
 
             if (line[0] != '\0' && count < kMaxRows) {

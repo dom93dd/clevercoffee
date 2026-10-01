@@ -17,7 +17,11 @@ unsigned long windowStartTime;
 unsigned int windowSize = 1000;
 
 void IRAM_ATTR onTimer() {
+#ifdef ROUND_DISPLAY
+    if (pidOutput <= isrCounter || loopGuardHoldHeater) { // loop() hangs: display/roundLoopGuard.h
+#else
     if (pidOutput <= isrCounter) {
+#endif
         heaterRelay->off();
     }
     else {

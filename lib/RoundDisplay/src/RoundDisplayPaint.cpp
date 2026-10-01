@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 
 namespace rd {
 
@@ -23,6 +24,25 @@ namespace rd {
         // Share of a pixel that is covered when its center has the signed distance d to the edge
         float coverage(const float d) {
             return clamp01(0.5f - d);
+        }
+
+        bool finite(const std::initializer_list<float> values) {
+            for (const float v : values) {
+                if (!std::isfinite(v)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Pixel index of a coordinate; huge values are clamped first, their conversion to int would be undefined
+        int pixelFloor(const float v) {
+            return static_cast<int>(std::floor(std::max(-16384.0f, std::min(16384.0f, v))));
+        }
+
+        int pixelCeil(const float v) {
+            return static_cast<int>(std::ceil(std::max(-16384.0f, std::min(16384.0f, v))));
         }
 
         float segmentDistance(const float x, const float y, const float x0, const float y0, const float x1, const float y1) {
@@ -102,7 +122,8 @@ namespace rd {
     void Painter::shadeArc(const float cx, const float cy, const float radius, const float width, const float a0, const float a1, const bool roundCaps, Shade shade) {
         const float sweep = a1 - a0;
 
-        if (sweep < 0.0f || !drawing()) {
+        // A broken value (NaN, infinity) from the machine draws nothing instead of garbage
+        if (!finite({cx, cy, radius, width, a0, a1}) || sweep < 0.0f || !drawing()) {
             return;
         }
 
@@ -116,8 +137,8 @@ namespace rd {
         const float cap1x = px(cx, radius, a1);
         const float cap1y = py(cy, radius, a1);
 
-        const int yStart = std::max(top_, static_cast<int>(std::floor(cy - rOut)));
-        const int yEnd = std::min(top_ + height_ - 1, static_cast<int>(std::ceil(cy + rOut)));
+        const int yStart = std::max(top_, pixelFloor(cy - rOut));
+        const int yEnd = std::min(top_ + height_ - 1, pixelCeil(cy + rOut));
 
         for (int y = yStart; y <= yEnd; ++y) {
             const float dy = static_cast<float>(y) + 0.5f - cy;
@@ -137,8 +158,8 @@ namespace rd {
             for (int s = 0; s < spans; ++s) {
                 const float from = s == 0 ? cx - xo : cx + xi;
                 const float to = spans == 1 ? cx + xo : (s == 0 ? cx - xi : cx + xo);
-                const int xStart = std::max(0, static_cast<int>(std::floor(from)));
-                const int xEnd = std::min(width_ - 1, static_cast<int>(std::ceil(to)));
+                const int xStart = std::max(0, pixelFloor(from));
+                const int xEnd = std::min(width_ - 1, pixelCeil(to));
 
                 for (int x = xStart; x <= xEnd; ++x) {
                     const float dx = static_cast<float>(x) + 0.5f - cx;
@@ -188,14 +209,14 @@ namespace rd {
 
     template <typename Distance>
     void Painter::fillShape(const float x0, const float y0, const float x1, const float y1, const Color c, Distance distance) {
-        if (!drawing()) {
+        if (!finite({x0, y0, x1, y1}) || !drawing()) {
             return;
         }
 
-        const int yStart = std::max(top_, static_cast<int>(std::floor(y0)) - 1);
-        const int yEnd = std::min(top_ + height_ - 1, static_cast<int>(std::ceil(y1)) + 1);
-        const int xStart = std::max(0, static_cast<int>(std::floor(x0)) - 1);
-        const int xEnd = std::min(width_ - 1, static_cast<int>(std::ceil(x1)) + 1);
+        const int yStart = std::max(top_, pixelFloor(y0) - 1);
+        const int yEnd = std::min(top_ + height_ - 1, pixelCeil(y1) + 1);
+        const int xStart = std::max(0, pixelFloor(x0) - 1);
+        const int xEnd = std::min(width_ - 1, pixelCeil(x1) + 1);
 
         for (int y = yStart; y <= yEnd; ++y) {
             for (int x = xStart; x <= xEnd; ++x) {
@@ -243,7 +264,7 @@ namespace rd {
     }
 
     void Painter::mask(const float cx, const float cy, const float radius, const float feather) {
-        if (!drawing()) {
+        if (!finite({cx, cy, radius, feather}) || !drawing()) {
             return;
         }
 
@@ -262,7 +283,7 @@ namespace rd {
     }
 
     void Painter::text(const Font* font, const char* s, const float x, const float y, const Color c, const Align align) {
-        if (font == nullptr || s == nullptr || *s == '\0' || !drawing()) {
+        if (font == nullptr || s == nullptr || *s == '\0' || !finite({x, y}) || !drawing()) {
             return;
         }
 
@@ -270,14 +291,14 @@ namespace rd {
             textObserver(font, s, x, y, align);
         }
 
-        const int baseline = static_cast<int>(std::lround(y));
+        const int baseline = pixelFloor(y + 0.5f);
 
         if (baseline + font->size() < top_ || baseline - 2 * font->size() >= top_ + height_) {
             return;
         }
 
         // Positions as LovyanGFX's drawString placed its VLW fonts
-        int pen = static_cast<int>(std::lround(x)) + font->leftOverhang(s);
+        int pen = pixelFloor(x + 0.5f) + font->leftOverhang(s);
 
         if (align == Align::Center) {
             pen -= font->width(s) >> 1;

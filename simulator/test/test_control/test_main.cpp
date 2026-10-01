@@ -9,6 +9,7 @@
 
 #include <RoundDisplayControl.h>
 #include <RoundDisplayFormat.h>
+#include <RoundDisplayGuard.h>
 
 #include <cstring>
 
@@ -268,6 +269,41 @@ void test_power_request_withdrawn_while_closing() {
     TEST_ASSERT_FALSE(power.asleep());
 }
 
+// Loop guard: heater off while loop() hangs, restart if it does not come back
+
+void test_guard_waits_for_the_first_loop() {
+    TEST_ASSERT_TRUE(rd::loopGuardAction(60000, 0, true) == rd::GuardAction::None);
+}
+
+void test_guard_holds_the_heater_then_restarts() {
+    const uint32_t beat = 100000;
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + 50, beat, true) == rd::GuardAction::None);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + rd::kGuardHoldMs - 1, beat, true) == rd::GuardAction::None);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + rd::kGuardHoldMs, beat, true) == rd::GuardAction::HoldHeater);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + rd::kGuardRestartMs - 1, beat, true) == rd::GuardAction::HoldHeater);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + rd::kGuardRestartMs, beat, true) == rd::GuardAction::Restart);
+}
+
+void test_guard_stays_out_while_the_heater_timer_is_off() {
+    // OTA upload: loop() stands in ArduinoOTA.handle() for a minute, the firmware stopped the heater timer itself
+    TEST_ASSERT_TRUE(rd::loopGuardAction(100000 + 90000, 100000, false) == rd::GuardAction::None);
+}
+
+void test_guard_across_the_millis_overflow() {
+    const uint32_t beat = 0xFFFFF000u; // 4096 ms before the overflow
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + 4096 + 1000, beat, true) == rd::GuardAction::None);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(beat + rd::kGuardHoldMs, beat, true) == rd::GuardAction::HoldHeater);
+}
+
+void test_guard_limits_above_the_intended_pauses() {
+    // Places where loop() stops on purpose (see RoundDisplayGuard.h) must not trigger the guard
+    constexpr uint32_t bluetoothConnect = 5000 + 2 * 500;                          // connect timeout plus delays and service discovery
+    constexpr uint32_t scaleCalibration = 2000 + 2000 + 10000 + 2000;
+    TEST_ASSERT_GREATER_THAN_UINT32(bluetoothConnect, rd::kGuardHoldMs);
+    TEST_ASSERT_GREATER_THAN_UINT32(scaleCalibration + 4000, rd::kGuardRestartMs); // plus tare and margin
+    TEST_ASSERT_LESS_THAN_UINT32(rd::kGuardRestartMs, rd::kGuardHoldMs);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_machine_states_map_to_modes);
@@ -291,5 +327,10 @@ int main() {
     RUN_TEST(test_power_stays_on_without_request);
     RUN_TEST(test_power_closes_iris_then_sleeps_then_wakes);
     RUN_TEST(test_power_request_withdrawn_while_closing);
+    RUN_TEST(test_guard_waits_for_the_first_loop);
+    RUN_TEST(test_guard_holds_the_heater_then_restarts);
+    RUN_TEST(test_guard_stays_out_while_the_heater_timer_is_off);
+    RUN_TEST(test_guard_across_the_millis_overflow);
+    RUN_TEST(test_guard_limits_above_the_intended_pauses);
     return UNITY_END();
 }

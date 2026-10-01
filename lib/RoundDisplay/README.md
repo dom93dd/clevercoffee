@@ -10,6 +10,7 @@ Oberfläche für ein rundes GC9A01-TFT (240×240, SPI) an CleverCoffee, gezeichn
 | `src/RoundDisplayPaint.*` | `rd::Painter`: kantengeglättete Ringe, Kreise, Linien und Text in einem Bildstreifen. |
 | `src/RoundDisplayTheme.h` | Farben und Maße, vertikales Raster (Grundlinien von Titel, großer Zahl und zwei Zeilen darunter). |
 | `src/RoundDisplayStrings.h`, `src/RoundDisplayFormat.h` | Texte DE/EN, Zahlenformat (Dezimalkomma im Deutschen). |
+| `src/RoundDisplayGuard.h` | Entscheidung des Schutzes gegen eine hängende `loop()` (Heizung aus nach 8 s, Neustart nach 30 s); Anbindung in `src/display/roundLoopGuard.h`. |
 | `src/RoundDisplayControl.*` | Logik zwischen Firmware und UI ohne Hardware: Zustandszuordnung, Bezugstimer, Meldungen aufteilen, Display aus/an. Firmware und Simulator nutzen dieselbe getestete Logik. |
 | `src/RoundDisplayFont.*` | `rd::Font`: eigenes kompaktes Schriftformat (4 Bit Kantenglättung, 10-Byte-Glyphen), der Painter zeichnet die Glyphen selbst. Text sitzt pixelgenau dort, wo LovyanGFX ihn mit VLW-Schriften hingesetzt hat. |
 | `src/RoundDisplayFonts.*`, `src/fonts/` | Die acht Schriften (Barlow Semi Condensed, SIL OFL 1.1): groß 80, mittel 34 und 32, Text 20, 19 und 18, Hinweis 16, Titel 19 px. |
@@ -24,6 +25,8 @@ Aufheizen (Ring von 20 °C bis Soll) · Bereit (gezoomte Skala Soll ±5 K, Punkt
 Waagen-Symbol: steht immer unten rechts auf der Ringbahn, spiegelbildlich und auf gleicher Höhe wie das Heizsymbol links und genauso groß (grün = Waage verbunden und bereit, grau = Bluetooth-Waage eingeschaltet, aber nicht verbunden, blassgrau durchgestrichen = keine Waage, rot = Waagenfehler). Hinweistexte (Alarme, „Kein WLAN“, „Bitte nachfüllen“ …) stehen in einer kleineren Schrift (16 px) als der übrige Text. Fortschrittsringe beginnen bündig an der Nullmarke.
 
 Dezente Zusatzelemente: Tendenzpfeil ▲/▼ neben der Temperatur (Steigung über 5 s, nicht während „BEREIT“), Bereit-Moment (zwei Wellen am grünen Punkt, einmal nach dem Aufheizen), Lichtreflex auf dem Ring während des Bezugs, Ø-Brühtemperatur nach dem Bezug, die letzten fünf Bezüge als Punkte auf dem Bereit-Bildschirm (grün = höchstens 1,5 s vom Ziel entfernt).
+
+Robustheit: Werte, die Schleifen oder Größen steuern, bereinigt `RoundUi::update()` (z. B. Zielzeit höchstens 600 s, höchstens 30 Rückspülzyklen); Zahlen, die keine sind (NaN, unendlich, ab 10000), erscheinen als „--“; der Painter zeichnet bei ungültigen Koordinaten nichts; überlange Wörter in Meldungen werden zwischen Zeichen umgebrochen.
 
 Gestaltungsregeln: große Ziffern für das, was man aus einem Meter Entfernung sehen muss. Farbe nur für den Zustand (bernstein = heizt, grün = bereit, crema = Bezug, blau = Wasser, rot = Alarm). Verbindungsprobleme erscheinen nur, wenn es wirklich eins gibt. Alarme haben Vorrang vor allem anderen.
 
@@ -49,4 +52,4 @@ Größen und Zeichensätze stehen in `build_fonts.sh`. Ziffern werden gleich bre
 Flash 1.666.841 von 1.703.936 B (97,8 %, ~37 KB frei); 4.0.3 ohne rundes Display: 1.545.069 B. Davon Schriften 44,5 KB (acht Schriften im kompakten Format; die fünf VLW-Schriften vorher brauchten 60,1 KB), LovyanGFX ~40 KB, UI ~13 KB. Zur Laufzeit kommen 2 × 19 KB Streifenpuffer dazu (Heap, nur auf echter Hardware messbar).
 
 ## Tests
-89 Tests in `simulator/test` (Zeichnen, Schrift, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder, Abstands-Check aller Bildschirme, Schriftgröße je Zeilenart), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.
+97 Tests in `simulator/test` (Zeichnen, Schrift, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder, Abstands-Check aller Bildschirme, Schriftgröße je Zeilenart, Fuzz-Test mit kaputten Werten, Schutz gegen hängende `loop()`), alle auch mit AddressSanitizer/UBSan (`pio test -e sanitize`), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.

@@ -16,7 +16,15 @@
 namespace rd {
 
     /** Number with fixed decimals (0..2); German uses a decimal comma. Never prints "-0,0". */
+    /** Values beyond this are no measurement but a broken sensor or setting; they show as "--" */
+    constexpr float kLargestShownValue = 10000.0f;
+
     inline void formatNumber(char* out, const size_t size, float value, const int decimals, const Language lang) {
+        if (!std::isfinite(value) || std::fabs(value) >= kLargestShownValue) {
+            snprintf(out, size, "--");
+            return;
+        }
+
         const float half = decimals == 0 ? 0.5f : (decimals == 1 ? 0.05f : 0.005f);
 
         if (std::fabs(value) < half) {

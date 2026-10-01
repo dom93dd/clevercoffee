@@ -2,3 +2,4 @@
 *.png
 !test/golden/*.png
 test/golden/failed/
+test/fuzz-failure.png

@@ -49,5 +49,10 @@ env.Append(
     LIBS=[f[2:] for f in libs if f.startswith("-l")] + ["z"],
 )
 
+# AddressSanitizer and UBSan for env:sanitize; any finding aborts the test run
+if env["PIOENV"] == "sanitize":
+    sanitize = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer", "-g"]
+    env.Append(CCFLAGS=sanitize, LINKFLAGS=sanitize)
+
 # Tests find their golden images here
 env.Append(CPPDEFINES=[("RD_GOLDEN_DIR", '\\"' + env.subst("$PROJECT_DIR/test/golden") + '\\"')])

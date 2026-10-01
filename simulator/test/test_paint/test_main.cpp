@@ -6,6 +6,8 @@
 
 #include "../support/TestSupport.h"
 
+#include <limits>
+
 using rd::Painter;
 using rd::rgb;
 
@@ -266,6 +268,39 @@ void test_text_blends_coverage() {
     TEST_ASSERT_GREATER_THAN(20, partial);
 }
 
+void test_broken_coordinates_draw_nothing() {
+    // NaN, infinity and values beyond int must neither draw garbage nor run into undefined behaviour
+    // (pio test -e sanitize reports the latter); huge loops from such bounds would hang the ESP32
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    Painter p(screen, 0);
+
+    for (const float bad : {nan, inf, -inf}) {
+        p.arc(bad, 120, 100, 8, 0, 90, kWhite);
+        p.arc(120, 120, 100, 8, 0, bad, kWhite);
+        p.arcGradient(120, bad, 100, 8, 0, 90, kWhite, kWhite);
+        p.circle(120, 120, bad, 8, kWhite);
+        p.disc(bad, bad, 10, kWhite);
+        p.line(bad, 10, 100, 100, 2, kWhite);
+        p.tick(120, 120, bad, 90, 100, 2, kWhite);
+        p.text(rd::fonts::text(), "Soll", bad, 100, kWhite);
+        p.text(rd::fonts::text(), "Soll", 100, bad, kWhite);
+        p.mask(120, 120, bad, 1);
+    }
+
+    // Finite but beyond int: the shapes lie far outside the screen
+    for (const float far : {3e9f, -3e9f, 1e30f, -1e30f}) {
+        p.arc(far, 120, 100, 8, 0, 90, kWhite);
+        p.arcGradient(120, far, 100, 8, 0, 90, kWhite, kWhite);
+        p.disc(far, far, 10, kWhite);
+        p.line(far, far, far + 10.0f, far, 2, kWhite);
+        p.text(rd::fonts::text(), "Soll", far, 100, kWhite);
+        p.text(rd::fonts::text(), "Soll", 100, far, kWhite);
+    }
+
+    TEST_ASSERT_EQUAL_INT(0, ts::countNonBlack(screen));
+}
+
 int main() {
     if (!rd::RoundUi::begin()) {
         return 1; // fonts could not be loaded
@@ -298,5 +333,6 @@ int main() {
     RUN_TEST(test_font_sizes_get_smaller);
     RUN_TEST(test_font_width_and_ink_top);
     RUN_TEST(test_text_blends_coverage);
+    RUN_TEST(test_broken_coordinates_draw_nothing);
     return UNITY_END();
 }
