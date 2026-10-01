@@ -13,13 +13,15 @@
  */
 
 #include <LovyanGFX.hpp>
+#include <RoundDisplayControl.h>
 #include <RoundDisplayFonts.h>
 #include <RoundDisplayUi.h>
 
 #include <SDL.h>
 
 #include "FakeMachine.h"
-#include "PngWriter.h"
+#include "Png.h"
+#include "SimSupport.h"
 
 #include <algorithm>
 #include <chrono>
@@ -32,37 +34,15 @@
 #include <string>
 #include <vector>
 
+using namespace sim;
+
 namespace {
 
-    constexpr int kDisplay = rd::RoundUi::kWidth;
-    constexpr int kBandHeight = 40;
     constexpr int kBezel = 26;          // black frame around the glass, in display pixels
     constexpr int kMargin = 14;         // steel around the frame
     constexpr int kPanelWidth = 390;
 
-    const char* gBrand = "DOMS COFFEE"; // --brand
-
-    // -------------------------------------------------------------------------------------------
-    // Simulated panel: the UI renders its bands into this sprite
-
-    struct Panel {
-            lgfx::LGFX_Sprite screen;
-            lgfx::LGFX_Sprite bands[2];
-
-            Panel() {
-                screen.setColorDepth(16);
-                screen.createSprite(kDisplay, kDisplay);
-
-                for (auto& b : bands) {
-                    b.setColorDepth(16);
-                    b.createSprite(kDisplay, kBandHeight);
-                }
-            }
-
-            void render(rd::RoundUi& ui, const uint32_t nowMs) {
-                ui.render(bands, 2, nowMs, [this](lgfx::LGFX_Sprite& band, const int top) { band.pushSprite(&screen, 0, top); });
-            }
-    };
+    const char* gBrand = kDefaultBrand; // --brand
 
     // -------------------------------------------------------------------------------------------
     // RGB image helpers
@@ -167,181 +147,6 @@ namespace {
         }
     }
 
-    // -------------------------------------------------------------------------------------------
-    // Scenarios for screenshots
-
-    struct Scenario {
-            const char* name;
-            const char* caption;
-            std::function<void(FakeMachine&, rd::RoundUi&)> setup;
-            uint32_t atMs = 0; // render time; > 0 shows a frame inside a transition
-    };
-
-    rd::Message msgVersion{"VERSION", "CleverCoffee", "4.0.3 + Rund-Display"};
-    rd::Message msgWifi{"WLAN", "Verbinde mit", "Orione-WLAN"};
-    rd::Message msgIp{"IP-ADRESSE", "silvia.local", "192.168.178.42"};
-    rd::Message msgPortal{"WLAN-EINRICHTUNG", "Hotspot: silvia", "192.168.4.1"};
-
-    std::vector<Scenario> scenarios() {
-        return {
-            {"intro-1", "Intro 0,45 s",
-             [](FakeMachine& m, rd::RoundUi& ui) {
-                 ui.showMessage(msgVersion);
-                 ui.play(rd::Animation::Intro, 0);
-             },
-             450},
-            {"intro-2", "Intro 1,0 s",
-             [](FakeMachine& m, rd::RoundUi& ui) {
-                 ui.showMessage(msgVersion);
-                 ui.play(rd::Animation::Intro, 0);
-             },
-             1000},
-            {"reveal", "Blende auf 0,35 s",
-             [](FakeMachine& m, rd::RoundUi& ui) {
-                 m.reset(61.4f);
-                 m.setHeater(100);
-                 ui.update(m.model(), 0);
-                 ui.play(rd::Animation::Reveal, 0);
-             },
-             350},
-            {"close", "Blende zu 0,45 s",
-             [](FakeMachine& m, rd::RoundUi& ui) {
-                 m.settle();
-                 m.setLastShot(25.3f);
-                 ui.update(m.model(), 0);
-                 ui.play(rd::Animation::Close, 0);
-             },
-             450},
-            {"boot", "Start", [](FakeMachine& m, rd::RoundUi& ui) { ui.showMessage(msgVersion); }},
-            {"wifi", "WLAN verbinden", [](FakeMachine& m, rd::RoundUi& ui) { ui.showMessage(msgWifi); }},
-            {"ip", "IP-Adresse", [](FakeMachine& m, rd::RoundUi& ui) { ui.showMessage(msgIp); }},
-            {"portal", "WLAN-Einrichtung", [](FakeMachine& m, rd::RoundUi& ui) { ui.showMessage(msgPortal); }},
-            {"heating", "Aufheizen",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.reset(61.4f);
-                 m.setHeater(100);
-             }},
-            {"ready", "Bereit (Letzter Bezug)",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.nudgeTemperature(0.1f);
-                 m.setHeater(18);
-                 m.setLastShot(25.3f);
-             }},
-            {"below", "Knapp unter Soll",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.nudgeTemperature(-1.8f);
-                 m.setHeater(64);
-             }},
-            {"above", "Über Soll",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.nudgeTemperature(2.4f);
-                 m.setHeater(0);
-             }},
-            {"brew", "Bezug (nach Zeit)",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.nudgeTemperature(-1.1f);
-                 m.setHeater(100);
-                 m.setBrewing(12.4f, 0);
-             }},
-            {"brew-scale", "Bezug mit Waage",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.scale = true;
-                 m.settle();
-                 m.nudgeTemperature(-0.7f);
-                 m.setHeater(100);
-                 m.setBrewing(18.2f, 21.6f);
-             }},
-            {"done", "Bezug fertig",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.nudgeTemperature(-0.9f);
-                 m.setBrewDone(25.0f, 0);
-             }},
-            {"flush", "Spülen",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.setFlush(6.2f);
-             }},
-            {"hotwater", "Heißwasser",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.setHotWater(14.0f);
-             }},
-            {"steam", "Dampf",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.toggleSteam();
-                 m.nudgeTemperature(18.0f);
-                 m.setHeater(100);
-             }},
-            {"backflush", "Rückspülen (Zyklus 3/5)",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.setBackflush(rd::BackflushPhase::Flushing, 3);
-             }},
-            {"backflush-start", "Rückspülen (Start)",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.setBackflush(rd::BackflushPhase::Idle, 0);
-             }},
-            {"water", "Wassertank leer",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.settle();
-                 m.toggleWaterEmpty();
-             }},
-            {"sensor", "Sensorfehler", [](FakeMachine& m, rd::RoundUi&) { m.toggleSensorError(); }},
-            {"overtemp", "Übertemperatur", [](FakeMachine& m, rd::RoundUi&) { m.triggerOvertemperature(); }},
-            {"standby", "Standby",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.reset(71.0f);
-                 m.toggleStandby();
-             }},
-            {"pid-off", "PID aus",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.reset(48.3f);
-                 m.togglePid();
-             }},
-            {"no-wifi", "WLAN weg",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.wifiConnected = false;
-                 m.settle();
-                 m.setLastShot(24.8f);
-             }},
-            {"english", "Englisch (--lang en)",
-             [](FakeMachine& m, rd::RoundUi&) {
-                 m.language = rd::Language::English;
-                 m.settle();
-                 m.nudgeTemperature(-0.2f);
-                 m.setLastShot(25.3f);
-             }},
-        };
-    }
-
-    void renderScenario(const Scenario& sc, Panel& panel, const rd::Language lang) {
-        FakeMachine machine;
-        machine.language = lang;
-        machine.reset();
-        rd::RoundUi ui;
-        ui.setBrand(gBrand);
-        sc.setup(machine, ui);
-        ui.update(machine.model(), sc.atMs);
-        panel.render(ui, sc.atMs);
-    }
-
-    const Scenario* findScenario(const std::vector<Scenario>& all, const char* name) {
-        for (const auto& s : all) {
-            if (std::strcmp(s.name, name) == 0) {
-                return &s;
-            }
-        }
-
-        return nullptr;
-    }
-
     int runShot(const char* name, const char* out, const int scale, const rd::Language lang, const int atMs) {
         const auto all = scenarios();
         const Scenario* sc = findScenario(all, name);
@@ -358,7 +163,7 @@ namespace {
         }
 
         Panel panel;
-        renderScenario(scenario, panel, lang);
+        renderScenario(scenario, panel, lang, gBrand);
         Image img(deviceSize(scale), deviceSize(scale));
         drawDevice(img, 0, 0, panel.screen, scale);
         return png::write(out, img.w, img.h, img.rgb.data()) ? 0 : 1;
@@ -380,7 +185,7 @@ namespace {
         for (size_t i = 0; i < all.size(); ++i) {
             const int x = static_cast<int>(i % cols) * tile;
             const int y = static_cast<int>(i / cols) * (tile + captionHeight);
-            renderScenario(all[i], panel, lang);
+            renderScenario(all[i], panel, lang, gBrand);
             drawDevice(img, x, y, panel.screen, scale);
 
             caption.fillScreen(rd::rgb(196, 196, 200));
@@ -525,8 +330,7 @@ namespace {
         bool booting = true;
         uint32_t bootStart = SDL_GetTicks();
         bool displayOffRequested = false; // like u8g2->setPowerSave(1) in the firmware
-        bool displayAsleep = false;
-        bool displayClosing = false;
+        rd::PowerSequencer power;
         ui.showMessage(msgVersion);
         ui.play(rd::Animation::Intro, bootStart);
         uint32_t last = SDL_GetTicks();
@@ -665,24 +469,12 @@ namespace {
 
             ui.update(machine.model(), now);
 
-            if (displayOffRequested && !displayAsleep) {
-                if (!displayClosing) {
-                    ui.play(rd::Animation::Close, now);
-                    displayClosing = true;
-                }
-                else if (!ui.animating(now)) {
-                    panel.screen.fillScreen(rd::rgb(0, 0, 0)); // panel asleep: dark
-                    displayAsleep = true;
-                    displayClosing = false;
-                }
-            }
-            else if (!displayOffRequested && displayAsleep) {
-                displayAsleep = false;
-                ui.invalidate();
-                ui.play(rd::Animation::Reveal, now);
+            // Same sequence as roundDisplayLoop() in the firmware
+            if (power.update(displayOffRequested, ui, now) == rd::PowerSequencer::Action::Sleep) {
+                panel.screen.fillScreen(rd::rgb(0, 0, 0)); // panel asleep: dark
             }
 
-            if (!displayAsleep && ui.needsRedraw(now)) {
+            if (!power.asleep() && ui.needsRedraw(now)) {
                 const auto t0 = std::chrono::steady_clock::now();
                 panel.render(ui, now);
                 const auto t1 = std::chrono::steady_clock::now();

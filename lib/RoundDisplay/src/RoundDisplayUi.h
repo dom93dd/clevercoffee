@@ -86,6 +86,11 @@ namespace rd {
                 return screen_;
             }
 
+            /** Temperature counts as ready (green label), with hysteresis */
+            bool ready() const {
+                return ready_;
+            }
+
             /** Draws the part of the current screen that falls into the painter's band. */
             void draw(Painter& p, uint32_t nowMs) const;
 
@@ -128,6 +133,8 @@ namespace rd {
             void drawTemperatureGauge(Painter& p, bool heating) const;
             void drawSteam(Painter& p) const;
             void drawBrew(Painter& p) const;
+            void drawBrewLabel(Painter& p, bool done) const;
+            void drawBrewWeightRing(Painter& p, bool done) const;
             void drawStopwatch(Painter& p, const char* label, float seconds) const;
             void drawBackflush(Painter& p) const;
             void drawWaterTankEmpty(Painter& p) const;

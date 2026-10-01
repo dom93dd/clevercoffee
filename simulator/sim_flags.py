@@ -46,5 +46,8 @@ env.Append(
     CCFLAGS=cflags,
     CXXFLAGS=["-std=c++17"],
     LINKFLAGS=[f for f in libs if not f.startswith("-l")],
-    LIBS=[f[2:] for f in libs if f.startswith("-l")],
+    LIBS=[f[2:] for f in libs if f.startswith("-l")] + ["z"],
 )
+
+# Tests find their golden images here
+env.Append(CPPDEFINES=[("RD_GOLDEN_DIR", '\\"' + env.subst("$PROJECT_DIR/test/golden") + '\\"')])

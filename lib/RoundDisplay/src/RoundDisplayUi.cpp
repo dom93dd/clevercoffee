@@ -5,6 +5,8 @@
 #include "RoundDisplayUi.h"
 
 #include "RoundDisplayFonts.h"
+#include "RoundDisplayFormat.h"
+#include "RoundDisplayStrings.h"
 #include "RoundDisplayTheme.h"
 
 #include <algorithm>
@@ -17,126 +19,6 @@ namespace rd {
     using namespace theme;
 
     namespace {
-
-        struct Strings {
-                const char* heatingUp;
-                const char* ready;
-                const char* heating;
-                const char* cooling;
-                const char* brew;
-                const char* preinfusion;
-                const char* pause;
-                const char* done;
-                const char* flush;
-                const char* hotWater;
-                const char* steam;
-                const char* backflush;
-                const char* filling;
-                const char* flushing;
-                const char* waterTank;
-                const char* empty;
-                const char* refill;
-                const char* standby;
-                const char* pidOff;
-                const char* pidOffHint;
-                const char* sensorError;
-                const char* overTemp;
-                const char* heaterOff;
-                const char* checkSensor;
-                const char* heaterOffUntil;
-                const char* setpoint;
-                const char* target;
-                const char* lastShot;
-                const char* heater;
-                const char* switchOn;
-                const char* switchOff;
-                const char* toStart;
-                const char* toFinish;
-                const char* scaleFault;
-                const char* offline;
-                const char* noWifi;
-                const char* scaleDisconnected;
-        };
-
-        constexpr Strings kGerman = {
-            "HEIZT AUF",
-            "BEREIT",
-            "HEIZT",
-            "KÜHLT AB",
-            "BEZUG",
-            "PRE-INFUSION",
-            "PAUSE",
-            "FERTIG",
-            "SPÜLEN",
-            "HEISSWASSER",
-            "DAMPF",
-            "RÜCKSPÜLEN",
-            "Füllen",
-            "Spülen",
-            "WASSERTANK",
-            "LEER",
-            "Bitte nachfüllen",
-            "STANDBY",
-            "PID AUS",
-            "Manuell deaktiviert",
-            "SENSORFEHLER",
-            "ÜBERTEMPERATUR",
-            "Heizung aus",
-            "Fühler prüfen",
-            "bis unter",
-            "Soll",
-            "Ziel",
-            "Letzter Bezug",
-            "Heizung",
-            "Bezugsschalter an",
-            "Bezugsschalter aus",
-            "zum Starten",
-            "zum Beenden",
-            "Waage gestört",
-            "Offline",
-            "Kein WLAN",
-            "Waage getrennt",
-        };
-
-        constexpr Strings kEnglish = {
-            "HEATING UP",
-            "READY",
-            "HEATING",
-            "COOLING",
-            "BREW",
-            "PRE-INFUSION",
-            "PAUSE",
-            "DONE",
-            "FLUSH",
-            "HOT WATER",
-            "STEAM",
-            "BACKFLUSH",
-            "Filling",
-            "Flushing",
-            "WATER TANK",
-            "EMPTY",
-            "Please refill",
-            "STANDBY",
-            "PID OFF",
-            "Disabled manually",
-            "SENSOR ERROR",
-            "OVERTEMPERATURE",
-            "Heater off",
-            "Check sensor",
-            "until below",
-            "Set",
-            "Target",
-            "Last shot",
-            "Heater",
-            "Brew switch on",
-            "Brew switch off",
-            "to start",
-            "to finish",
-            "Scale fault",
-            "Offline",
-            "No WiFi",
-            "Scale not connected",
-        };
 
         constexpr float kAmbient = 20.0f;           // start of the heating gauge
         constexpr float kReadyScale = 5.0f;         // the ready gauge shows setpoint +- 5 K
@@ -164,20 +46,6 @@ namespace rd {
             }
         }
 
-        float easeOutCubic(const float t) {
-            const float u = 1.0f - t;
-            return 1.0f - u * u * u;
-        }
-
-        float easeInOutCubic(const float t) {
-            return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) * 0.5f;
-        }
-
-        /** 0..1 progress of the time window [from, to] */
-        float phase(const float x, const float from, const float to) {
-            return std::max(0.0f, std::min(1.0f, (x - from) / (to - from)));
-        }
-
         bool isAlarm(const Screen s) {
             return s == Screen::EmergencyStop || s == Screen::SensorError;
         }
@@ -185,33 +53,6 @@ namespace rd {
         /** Screens whose big temperature counts up when revealed */
         bool countsUp(const Screen s) {
             return s == Screen::Heating || s == Screen::Ready || s == Screen::Steam || s == Screen::PidDisabled;
-        }
-
-        const Strings& strings(const Language lang) {
-            return lang == Language::German ? kGerman : kEnglish;
-        }
-
-        float clampf(const float v, const float lo, const float hi) {
-            return std::max(lo, std::min(hi, v));
-        }
-
-        /** Number with fixed decimals, German uses a decimal comma. */
-        void formatNumber(char* out, const size_t size, float value, const int decimals, const Language lang) {
-            const float half = decimals == 0 ? 0.5f : (decimals == 1 ? 0.05f : 0.005f);
-
-            if (std::fabs(value) < half) {
-                value = 0.0f; // no "-0,0"
-            }
-
-            snprintf(out, size, "%.*f", decimals, static_cast<double>(value));
-
-            if (lang == Language::German) {
-                for (char* c = out; *c != '\0'; ++c) {
-                    if (*c == '.') {
-                        *c = ',';
-                    }
-                }
-            }
         }
 
         uint32_t hashAdd(uint32_t h, const int32_t v) {
@@ -436,11 +277,7 @@ namespace rd {
     }
 
     Screen RoundUi::selectScreen(const Model& m) const {
-        if (hasMessage_) {
-            return Screen::Message;
-        }
-
-        // Safety first: alarms win over everything else
+        // Safety first: alarms win over everything else, messages included
         switch (m.mode) {
             case Mode::EmergencyStop:
                 return Screen::EmergencyStop;
@@ -448,6 +285,10 @@ namespace rd {
                 return Screen::SensorError;
             default:
                 break;
+        }
+
+        if (hasMessage_) {
+            return Screen::Message;
         }
 
         if (m.brewTimerVisible) {
@@ -636,7 +477,7 @@ namespace rd {
         p.mask(kCx, kCy, radius, 10.0f);
 
         // Crema colored rim that lights up the edge of the opening
-        if (glow > 0.0f && radius > 2.0f && radius < kIrisMax - 4.0f) {
+        if (glow > 0.0f && radius > 2.0f && radius < 112.0f) { // rim and glow stay inside the glass (r < 120)
             p.circle(kCx, kCy, radius + 2.0f, 9.0f, mix(kBackground, kBrewDark, glow * 0.8f));
             p.circle(kCx, kCy, radius, 2.5f, mix(kBackground, kBrew, glow));
         }
@@ -686,7 +527,7 @@ namespace rd {
         if (sweep > 0.0f && moving > 0.0f) {
             const float x = Painter::px(kCx, kRingRadius, end);
             const float y = Painter::py(kCy, kRingRadius, end);
-            p.disc(x, y, 10.0f, mix(kBackground, kBrewDark, 0.6f * std::min(1.0f, moving * 3.0f)));
+            p.disc(x, y, 8.5f, mix(kBackground, kBrewDark, 0.6f * std::min(1.0f, moving * 3.0f))); // 111 + 8.5 stays inside the glass
             p.disc(x, y, 5.5f, mix(kBrew, kText, 0.55f));
         }
 
@@ -796,46 +637,156 @@ namespace rd {
         p.text(fonts::label(), brand_, kCx, 128.0f, kText);
     }
 
+    namespace {
+        struct MessageRow {
+                char text[64];
+                bool label; // capitals font (short title) instead of the text font
+                bool title;
+        };
+
+        constexpr int kMaxRows = 7;
+        constexpr float kTextRadius = 104.0f; // text stays inside the ring
+
+        bool onlyCapitals(const char* text) {
+            for (const char* c = text; *c != '\0'; ++c) {
+                if (*c >= 'a' && *c <= 'z') {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /** Line height and first baseline of a block of n centered rows */
+        float centeredLineHeight(const int n) {
+            return n > 5 ? 22.0f : 24.0f;
+        }
+
+        float centeredBaseline(const int i, const int n) {
+            return kCy + 6.0f - centeredLineHeight(n) * static_cast<float>(n - 1) * 0.5f + centeredLineHeight(n) * static_cast<float>(i);
+        }
+
+        /** Width the circle leaves for a text row with this baseline */
+        float rowWidth(const float baseline) {
+            const float dy = std::max(std::fabs(baseline - 15.0f - kCy), std::fabs(baseline + 5.0f - kCy));
+            return dy >= kTextRadius ? 0.0f : 2.0f * std::sqrt(kTextRadius * kTextRadius - dy * dy);
+        }
+
+        /** Breaks text into rows at spaces, row i at most widths[i] wide; returns the new row count */
+        int wrapInto(Painter& p, const char* text, const bool title, const float* widths, MessageRow* rows, int count) {
+            char line[64] = "";
+            const char* word = text;
+
+            const auto flush = [&](const char* content) {
+                MessageRow& row = rows[count++];
+                snprintf(row.text, sizeof(row.text), "%s", content);
+                row.label = false;
+                row.title = title;
+            };
+
+            while (*word != '\0' && count < kMaxRows) {
+                while (*word == ' ') {
+                    ++word;
+                }
+
+                const char* end = word;
+
+                while (*end != '\0' && *end != ' ') {
+                    ++end;
+                }
+
+                if (end == word) {
+                    break;
+                }
+
+                char candidate[64];
+                snprintf(candidate, sizeof(candidate), "%s%s%.*s", line, line[0] != '\0' ? " " : "", static_cast<int>(end - word), word);
+
+                if (line[0] == '\0' || static_cast<float>(p.textWidth(fonts::text(), candidate)) <= widths[count]) {
+                    snprintf(line, sizeof(line), "%s", candidate);
+                }
+                else {
+                    flush(line);
+                    snprintf(line, sizeof(line), "%.*s", static_cast<int>(end - word), word);
+                }
+
+                word = end;
+            }
+
+            if (line[0] != '\0' && count < kMaxRows) {
+                flush(line);
+            }
+
+            return count;
+        }
+
+        int layoutRows(Painter& p, const Message& message, const float* widths, MessageRow* rows) {
+            int count = 0;
+
+            if (message.title != nullptr && message.title[0] != '\0') {
+                if (onlyCapitals(message.title) && static_cast<float>(p.textWidth(fonts::label(), message.title)) <= widths[0]) {
+                    MessageRow& row = rows[count++];
+                    snprintf(row.text, sizeof(row.text), "%s", message.title);
+                    row.label = true;
+                    row.title = true;
+                }
+                else {
+                    count = wrapInto(p, message.title, true, widths, rows, count);
+                }
+            }
+
+            for (const char* line : {message.line1, message.line2, message.line3}) {
+                if (line != nullptr && line[0] != '\0' && count < kMaxRows) {
+                    count = wrapInto(p, line, false, widths, rows, count);
+                }
+            }
+
+            return count;
+        }
+    } // namespace
+
     void RoundUi::drawMessage(Painter& p) const {
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, -30.0f, kBrewDark, kBrew);
 
-        const char* lines[] = {message_.line1, message_.line2, message_.line3};
-        int count = 0;
+        MessageRow rows[kMaxRows];
+        float widths[kMaxRows];
 
-        for (const char* l : lines) {
-            count += l != nullptr && *l != '\0' ? 1 : 0;
-        }
+        // Short messages: brand, title and up to two lines as on the boot screens
+        std::fill(widths, widths + kMaxRows, 190.0f);
+        int count = layoutRows(p, message_, widths, rows);
 
-        // Center the block vertically; three lines need the room of the brand line
-        float y = count > 2 ? 104.0f : 122.0f;
-
-        if (count <= 2) {
+        if (count <= 3) {
             p.text(fonts::label(), brand_, kCx, 88.0f, kTextDim);
+            float y = 122.0f;
+
+            for (int i = 0; i < count; ++i) {
+                p.text(rows[i].label ? fonts::label() : fonts::text(), rows[i].text, kCx, y, rows[i].title ? kBrew : kText);
+                y += i == 0 && rows[i].title ? 30.0f : 26.0f;
+            }
+
+            return;
         }
 
-        if (message_.title != nullptr) {
-            bool capitals = true;
+        // Longer texts: centered block, each row as wide as the circle allows at its height
+        int n = 4;
 
-            for (const char* c = message_.title; *c != '\0'; ++c) {
-                capitals &= !(*c >= 'a' && *c <= 'z');
+        for (; n <= kMaxRows; ++n) {
+            for (int i = 0; i < kMaxRows; ++i) {
+                widths[i] = i < n ? rowWidth(centeredBaseline(i, n)) : 0.0f;
             }
 
-            if (capitals && p.textWidth(fonts::label(), message_.title) <= 190) {
-                p.text(fonts::label(), message_.title, kCx, y, kBrew);
-            }
-            else {
-                p.text(fonts::text(), message_.title, kCx, y, kBrew);
+            count = layoutRows(p, message_, widths, rows);
+
+            if (count <= n) {
+                break;
             }
         }
 
-        y += 30.0f;
+        n = std::min(n, kMaxRows);
 
-        for (const char* l : lines) {
-            if (l != nullptr && *l != '\0') {
-                p.text(fonts::text(), l, kCx, y, kText);
-                y += 26.0f;
-            }
+        for (int i = 0; i < count && i < n; ++i) {
+            p.text(rows[i].label ? fonts::label() : fonts::text(), rows[i].text, kCx, centeredBaseline(i, n), rows[i].title ? kBrew : kText);
         }
     }
 
@@ -941,51 +892,9 @@ namespace rd {
         drawHeaterBar(p);
     }
 
-    void RoundUi::drawBrew(Painter& p) const {
+    void RoundUi::drawBrewLabel(Painter& p, const bool done) const {
         const Model& m = view_;
         const Strings& s = strings(m.language);
-        const bool done = m.brewPhase == BrewPhase::Finished || (m.mode != Mode::Brew && m.brewPhase == BrewPhase::Idle);
-        const float scale = m.brewTargetTime > 0.0f ? m.brewTargetTime : kStopwatchScale;
-        const float fill = std::max(0.0f, m.brewTime / scale);
-        const bool scaleConnected = !m.bleScale || m.bleScaleConnected;
-        const bool showWeight = m.scaleEnabled && !m.scaleFault && scaleConnected;
-        const bool weightRing = showWeight && m.brewTargetWeight > 0.0f;
-
-        // Outer ring: time, one tick every 5 s (left out when the weight ring needs the space)
-        p.circle(kCx, kCy, kRingRadius, kRingWidth, kTrack);
-
-        if (!weightRing) {
-            const int ticks = static_cast<int>(scale / 5.0f);
-
-            for (int k = 1; k < ticks; ++k) {
-                p.tick(kCx, kCy, 360.0f * static_cast<float>(k) * 5.0f / scale, 95.0f, 100.0f, 1.6f, kTickMinor);
-            }
-
-            p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
-        }
-
-        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew);
-
-        if (fill > 1.0f) {
-            // Running over: a second, brighter lap
-            p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill - 1.0f, 1.0f), mix(kBrew, kText, 0.5f));
-        }
-
-        if (!done) {
-            drawMarker(p, 360.0f * std::fmod(fill, 1.0f), mix(kBrew, kText, 0.4f));
-        }
-
-        // Inner ring: weight
-        if (weightRing) {
-            const float wfill = clampf(m.brewWeight / m.brewTargetWeight, 0.0f, 1.0f);
-            p.circle(kCx, kCy, 98.0f, 4.0f, kTrack);
-
-            if (wfill > 0.0f) {
-                p.arc(kCx, kCy, 98.0f, 4.0f, 0.0f, 360.0f * wfill, kWeight);
-            }
-        }
-
-        // Label
         const char* label = s.brew;
         Color labelColor = kBrew;
 
@@ -1006,12 +915,53 @@ namespace rd {
         }
 
         p.text(fonts::label(), label, kCx, kLabelY, labelColor);
+    }
+
+    void RoundUi::drawBrew(Painter& p) const {
+        // The ring always shows what ends the shot: the weight with brew by weight, otherwise the time
+        const Model& m = view_;
+        const Strings& s = strings(m.language);
+        const bool done = m.brewPhase == BrewPhase::Finished || (m.mode != Mode::Brew && m.brewPhase == BrewPhase::Idle);
+        const bool scaleConnected = !m.bleScale || m.bleScaleConnected;
+        const bool showWeight = m.scaleEnabled && !m.scaleFault && scaleConnected;
+
+        if (showWeight && m.brewTargetWeight > 0.0f) {
+            drawBrewWeightRing(p, done);
+            return;
+        }
+
+        const float scale = m.brewTargetTime > 0.0f ? m.brewTargetTime : kStopwatchScale;
+        const float fill = std::max(0.0f, m.brewTime / scale);
+
+        // Ring: time, one tick every 5 s
+        p.circle(kCx, kCy, kRingRadius, kRingWidth, kTrack);
+
+        const int ticks = static_cast<int>(scale / 5.0f);
+
+        for (int k = 1; k < ticks; ++k) {
+            p.tick(kCx, kCy, 360.0f * static_cast<float>(k) * 5.0f / scale, 95.0f, 100.0f, 1.6f, kTickMinor);
+        }
+
+        p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
+        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew);
+
+        if (fill > 1.0f) {
+            // Running over: a second, brighter lap
+            p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill - 1.0f, 1.0f), mix(kBrew, kText, 0.5f));
+        }
+
+        if (!done) {
+            drawMarker(p, 360.0f * std::fmod(fill, 1.0f), mix(kBrew, kText, 0.4f));
+        }
+
+        drawBrewLabel(p, done);
         drawBigValue(p, m.brewTime, kValueY, kText, false, "s");
 
         char num[16];
         char buf[48];
 
         if (m.scaleEnabled) {
+            // Scale without a weight target: weight as a number
             if (m.scaleFault) {
                 p.text(fonts::text(), s.scaleFault, kCx, kRowAY, kAlarm);
             }
@@ -1021,14 +971,7 @@ namespace rd {
             else {
                 formatNumber(num, sizeof(num), m.brewWeight, 1, m.language);
                 snprintf(buf, sizeof(buf), "%s g", num);
-                p.text(fonts::mid(), buf, kCx, kRowAY, kWeight);
-
-                if (m.brewTargetWeight > 0.0f) {
-                    // Stay clear of the weight ring
-                    formatNumber(num, sizeof(num), m.brewTargetWeight, 0, m.language);
-                    snprintf(buf, sizeof(buf), "%s %s g", s.target, num);
-                    p.text(fonts::text(), buf, kCx, kRowAY + 21.0f, kTextDim);
-                }
+                p.text(fonts::mid(), buf, kCx, kRowAY + 2.0f, kWeight);
             }
 
             return;
@@ -1041,6 +984,39 @@ namespace rd {
         }
 
         drawTemperatureRow(p, kRowBY + 2.0f);
+    }
+
+    void RoundUi::drawBrewWeightRing(Painter& p, const bool done) const {
+        // Brew by weight: the weight ends the shot, so the ring shows the weight up to the target
+        const Model& m = view_;
+        const Strings& s = strings(m.language);
+        const float fill = std::max(0.0f, m.brewWeight / m.brewTargetWeight);
+
+        p.circle(kCx, kCy, kRingRadius, kRingWidth, kTrack);
+
+        for (int k = 1; k < 4; ++k) {
+            p.tick(kCx, kCy, 90.0f * static_cast<float>(k), 95.0f, 100.0f, 1.6f, kTickMinor);
+        }
+
+        p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
+        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew);
+
+        if (!done) {
+            drawMarker(p, 360.0f * std::min(fill, 1.0f), mix(kBrew, kText, 0.4f));
+        }
+
+        drawBrewLabel(p, done);
+        drawBigValue(p, m.brewWeight, kValueY, kText, false, "g");
+
+        char num[16];
+        char buf[48];
+        formatNumber(num, sizeof(num), m.brewTime, 1, m.language);
+        snprintf(buf, sizeof(buf), "%s s", num);
+        p.text(fonts::mid(), buf, kCx, kRowAY + 2.0f, mix(kText, kBackground, 0.25f));
+
+        formatNumber(num, sizeof(num), m.brewTargetWeight, 0, m.language);
+        snprintf(buf, sizeof(buf), "%s %s g", s.target, num);
+        p.text(fonts::text(), buf, kCx, kRowBY + 4.0f, kTextDim);
     }
 
     void RoundUi::drawStopwatch(Painter& p, const char* label, const float seconds) const {

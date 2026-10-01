@@ -1,2 +1,4 @@
 .pio/
 *.png
+!test/golden/*.png
+test/golden/failed/
