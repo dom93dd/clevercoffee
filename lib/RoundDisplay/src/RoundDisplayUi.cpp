@@ -31,6 +31,7 @@ namespace rd {
         constexpr uint32_t kIntroMs = 1700;
         constexpr uint32_t kRevealMs = 900;
         constexpr uint32_t kCloseMs = 800;
+        constexpr uint32_t kReadyPulseMs = 1400;
         constexpr float kIrisMax = 132.0f; // radius that uncovers the whole round screen incl. the soft edge
 
         uint32_t animationLength(const Animation a) {
@@ -258,6 +259,7 @@ namespace rd {
             animation_ = Animation::None;
         }
 
+        updateTrendAndShots(nowMs);
         signature_ = computeSignature(nowMs);
     }
 
@@ -274,6 +276,85 @@ namespace rd {
     float RoundUi::animationProgress(const uint32_t nowMs) const {
         const uint32_t length = animationLength(animation_);
         return length == 0 ? 1.0f : std::min(1.0f, static_cast<float>(nowMs - animationStart_) / static_cast<float>(length));
+    }
+
+    bool RoundUi::effectActive(const uint32_t nowMs) const {
+        return readyPulse_ && nowMs - readyPulseStart_ < kReadyPulseMs;
+    }
+
+    void RoundUi::updateTrendAndShots(const uint32_t nowMs) {
+        const Model& m = model_;
+
+        // Tendency of the temperature: one sample per second, slope over the last five seconds.
+        // A window instead of smoothing: small wobbles cancel out, and it settles 5 s after a change.
+        if (trendSamples_ == 0 || nowMs < trendMs_) {
+            trendMs_ = nowMs;
+            trendHistory_[0] = m.temperature;
+            trendSamples_ = 1;
+            trendRate_ = 0;
+        }
+        else if (nowMs - trendMs_ >= 1000) {
+            trendMs_ = nowMs;
+
+            if (trendSamples_ == kTrendWindow) {
+                for (int i = 1; i < kTrendWindow; ++i) {
+                    trendHistory_[i - 1] = trendHistory_[i];
+                }
+
+                --trendSamples_;
+            }
+
+            trendHistory_[trendSamples_++] = m.temperature;
+            trendRate_ = (trendHistory_[trendSamples_ - 1] - trendHistory_[0]) / static_cast<float>(trendSamples_ - 1);
+        }
+
+        if (trend_ == 0) {
+            trend_ = trendRate_ > 0.04f ? 1 : (trendRate_ < -0.04f ? -1 : 0);
+        }
+        else if ((trend_ > 0 && trendRate_ < 0.015f) || (trend_ < 0 && trendRate_ > -0.015f)) {
+            trend_ = 0;
+        }
+
+        // Ready moment: after warming up, pulse once when the label turns green
+        if (screen_ == Screen::Heating) {
+            readyPulsePending_ = true;
+        }
+
+        if (readyPulsePending_ && screen_ == Screen::Ready && ready_) {
+            readyPulsePending_ = false;
+            readyPulse_ = true;
+            readyPulseStart_ = nowMs;
+        }
+
+        // Shot statistics: average temperature while brewing, duration of the last shots
+        const bool brewing = m.mode == Mode::Brew && m.brewPhase != BrewPhase::Idle && m.brewPhase != BrewPhase::Finished;
+        const bool wasBrewing = shotTempCount_ > 0 && shotLastTime_ >= 0.0f;
+
+        if (brewing) {
+            if (!wasBrewing || m.brewTime + 0.05f < shotLastTime_) {
+                shotTempSum_ = 0;
+                shotTempCount_ = 0;
+            }
+
+            shotTempSum_ += m.temperature;
+            ++shotTempCount_;
+            shotLastTime_ = m.brewTime;
+        }
+        else if (wasBrewing) {
+            shotAverage_ = shotTempSum_ / static_cast<float>(shotTempCount_);
+
+            if (shotCount_ == kShotHistory) {
+                for (int i = 1; i < kShotHistory; ++i) {
+                    shots_[i - 1] = shots_[i];
+                }
+
+                --shotCount_;
+            }
+
+            shots_[shotCount_++] = std::max(shotLastTime_, m.brewTime);
+            shotTempCount_ = 0;
+            shotLastTime_ = -1.0f;
+        }
     }
 
     Screen RoundUi::selectScreen(const Model& m) const {
@@ -331,6 +412,16 @@ namespace rd {
         }
 
         h = hashAdd(h, static_cast<int32_t>(m.language));
+
+        h = hashAdd(h, trend_);
+        h = hashAdd(h, q(shotAverage_, 0.1f));
+        h = hashAdd(h, shotCount_);
+        h = hashAdd(h, q(shotCount_ > 0 ? shots_[shotCount_ - 1] : 0.0f, 0.1f));
+
+        if (effectActive(nowMs)) {
+            h = hashAdd(h, static_cast<int32_t>((nowMs - readyPulseStart_) / animationFrameIntervalMs));
+        }
+
         h = hashAdd(h, ready_);
 
         if (screen_ == Screen::Message) {
@@ -376,7 +467,7 @@ namespace rd {
 
         const uint32_t since = nowMs - lastDrawMs_;
 
-        if (since < (animating(nowMs) ? animationFrameIntervalMs : minFrameIntervalMs)) {
+        if (since < (animating(nowMs) || effectActive(nowMs) ? animationFrameIntervalMs : minFrameIntervalMs)) {
             return false;
         }
 
@@ -386,6 +477,7 @@ namespace rd {
     void RoundUi::draw(Painter& p, const uint32_t nowMs) const {
         p.clear(kBackground);
         view_ = model_;
+        drawNow_ = nowMs;
 
         const bool running = animating(nowMs);
         const float t = animationProgress(nowMs);
@@ -540,7 +632,7 @@ namespace rd {
     // ---------------------------------------------------------------------------------------------
     // Building blocks
 
-    void RoundUi::drawBigValue(Painter& p, const float value, const float y, const Color c, const bool degree, const char* unit) const {
+    float RoundUi::drawBigValue(Painter& p, const float value, const float y, const Color c, const bool degree, const char* unit) const {
         char buf[16];
         formatNumber(buf, sizeof(buf), value, 1, view_.language);
 
@@ -570,6 +662,8 @@ namespace rd {
         else if (unit != nullptr) {
             p.text(fonts::mid(), unit, right + 4.0f, y, mix(c, kBackground, 0.35f), Align::Left);
         }
+
+        return right;
     }
 
     bool RoundUi::drawConnectionHint(Painter& p, const float y) const {
@@ -844,10 +938,37 @@ namespace rd {
             const float a = readyAngle(m.temperature, m.setpoint);
             p.arc(kCx, kCy, kRingRadius, kRingWidth, std::min(0.0f, a), std::max(0.0f, a), mix(accent, kBackground, 0.45f));
             drawMarker(p, a, accent);
+
+            if (effectActive(drawNow_)) {
+                // Two rings spreading out from the marker, like a drop on water
+                const float x = Painter::px(kCx, kRingRadius, a);
+                const float y = Painter::py(kCy, kRingRadius, a);
+
+                for (int k = 0; k < 2; ++k) {
+                    const float t = phase(static_cast<float>(drawNow_ - readyPulseStart_), 450.0f * static_cast<float>(k), 450.0f * static_cast<float>(k) + 900.0f);
+
+                    if (t > 0.0f && t < 1.0f) {
+                        p.circle(x, y, 8.0f + 12.0f * easeOutCubic(t), 2.6f - 1.6f * t, mix(kBackground, kReady, 0.9f * (1.0f - t)));
+                    }
+                }
+
+                p.mask(kCx, kCy, 118.5f, 1.0f); // the waves around the marker reach past the glass
+            }
         }
 
         p.text(fonts::label(), label, kCx, kLabelY, accent);
-        drawBigValue(p, m.temperature, kValueY, kText, true, nullptr);
+        const float right = drawBigValue(p, m.temperature, kValueY, kText, true, nullptr);
+
+        if (trend_ != 0 && !ready_) {
+            // Chevron under the degree sign: up while the temperature rises, down while it falls.
+            // Hidden while ready, where it would only show the controller swinging around the setpoint.
+            const float x = right + 8.0f;
+            const float y = kValueY - 20.0f;
+            const float d = trend_ > 0 ? 3.0f : -3.0f;
+            const Color c = trend_ > 0 ? kHeat : kCool;
+            p.line(x - 5.0f, y + d, x, y - d, 2.2f, c);
+            p.line(x, y - d, x + 5.0f, y + d, 2.2f, c);
+        }
 
         char num[16];
         char buf[48];
@@ -855,7 +976,13 @@ namespace rd {
         snprintf(buf, sizeof(buf), "%s %s°", s.setpoint, num);
         p.text(fonts::text(), buf, kCx, kRowAY, kTextDim);
 
-        if (!drawConnectionHint(p, kRowBY) && !heating && m.lastBrewTime > 0.0f) {
+        if (drawConnectionHint(p, kRowBY)) {
+            // a connection problem is shown instead
+        }
+        else if (!heating && shotCount_ >= 2) {
+            drawShotHistory(p, kRowBY);
+        }
+        else if (!heating && m.lastBrewTime > 0.0f) {
             // Duration of the previous shot, handy while dialing in
             formatNumber(num, sizeof(num), m.lastBrewTime, 1, m.language);
             snprintf(buf, sizeof(buf), "%s s", num);
@@ -951,6 +1078,8 @@ namespace rd {
         }
 
         if (!done) {
+            drawShimmer(p, 360.0f * std::min(fill, 1.0f));
+
             drawMarker(p, 360.0f * std::fmod(fill, 1.0f), mix(kBrew, kText, 0.4f));
         }
 
@@ -983,6 +1112,13 @@ namespace rd {
             p.text(fonts::text(), buf, kCx, kRowAY, kTextDim);
         }
 
+        if (done && shotAverage_ > 0.0f) {
+            formatNumber(num, sizeof(num), shotAverage_, 1, m.language);
+            snprintf(buf, sizeof(buf), "Ø %s°", num);
+            p.text(fonts::text(), buf, kCx, kRowBY + 2.0f, kTextDim);
+            return;
+        }
+
         drawTemperatureRow(p, kRowBY + 2.0f);
     }
 
@@ -1002,6 +1138,8 @@ namespace rd {
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew);
 
         if (!done) {
+            drawShimmer(p, 360.0f * std::min(fill, 1.0f));
+
             drawMarker(p, 360.0f * std::min(fill, 1.0f), mix(kBrew, kText, 0.4f));
         }
 
@@ -1014,9 +1152,65 @@ namespace rd {
         snprintf(buf, sizeof(buf), "%s s", num);
         p.text(fonts::mid(), buf, kCx, kRowAY + 2.0f, mix(kText, kBackground, 0.25f));
 
-        formatNumber(num, sizeof(num), m.brewTargetWeight, 0, m.language);
-        snprintf(buf, sizeof(buf), "%s %s g", s.target, num);
+        if (done && shotAverage_ > 0.0f) {
+            formatNumber(num, sizeof(num), shotAverage_, 1, m.language);
+            snprintf(buf, sizeof(buf), "Ø %s°", num);
+        }
+        else {
+            formatNumber(num, sizeof(num), m.brewTargetWeight, 0, m.language);
+            snprintf(buf, sizeof(buf), "%s %s g", s.target, num);
+        }
+
         p.text(fonts::text(), buf, kCx, kRowBY + 4.0f, kTextDim);
+    }
+
+    void RoundUi::drawShimmer(Painter& p, const float fillAngle) const {
+        // A soft light runs along the filled part of the brew ring, about once a second and a half
+        if (fillAngle < 30.0f) {
+            return;
+        }
+
+        constexpr float half = 16.0f;
+        const float g = -half + (fillAngle + 2.0f * half) * static_cast<float>(drawNow_ % 1600) / 1600.0f;
+        const float a0 = std::max(0.0f, g - half);
+        const float a1 = std::min(fillAngle, g + half);
+        const auto base = [fillAngle](const float a) { return mix(kBrewDark, kBrew, a / fillAngle); };
+        const Color light = mix(base(clampf(g, 0.0f, fillAngle)), kText, 0.5f);
+
+        if (a0 < std::min(g, a1)) {
+            p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, a0, std::min(g, a1), base(a0), light, false);
+        }
+
+        if (std::max(g, a0) < a1) {
+            p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, std::max(g, a0), a1, light, base(a1), false);
+        }
+    }
+
+    void RoundUi::drawShotHistory(Painter& p, const float y) const {
+        // The last shots as dots, green when within 1.5 s of the target (or of the median), newest on the right
+        const Model& m = view_;
+        float sorted[kShotHistory];
+        std::copy(shots_, shots_ + shotCount_, sorted);
+        std::sort(sorted, sorted + shotCount_);
+        const float reference = m.brewTargetTime > 0.0f ? m.brewTargetTime : sorted[shotCount_ / 2];
+
+        char num[16];
+        char buf[24];
+        formatNumber(num, sizeof(num), shots_[shotCount_ - 1], 1, m.language);
+        snprintf(buf, sizeof(buf), "%s s", num);
+
+        constexpr float spacing = 11.0f;
+        const float dots = spacing * static_cast<float>(shotCount_ - 1);
+        const float w = static_cast<float>(p.textWidth(fonts::text(), buf));
+        const float left = kCx - (dots + 14.0f + w) * 0.5f;
+
+        for (int i = 0; i < shotCount_; ++i) {
+            const bool newest = i == shotCount_ - 1;
+            const Color c = std::fabs(shots_[i] - reference) <= 1.5f ? kReady : kHeat;
+            p.disc(left + spacing * static_cast<float>(i), y - 6.0f, newest ? 4.0f : 3.2f, newest ? c : mix(c, kBackground, 0.4f));
+        }
+
+        p.text(fonts::text(), buf, left + dots + 14.0f, y, kTextFaint, Align::Left);
     }
 
     void RoundUi::drawStopwatch(Painter& p, const char* label, const float seconds) const {

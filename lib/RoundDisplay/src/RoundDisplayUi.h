@@ -52,6 +52,7 @@ namespace rd {
         public:
             static constexpr int kWidth = 240;
             static constexpr int kHeight = 240;
+            static constexpr int kShotHistory = 5;
 
             /** Loads the fonts. Call once before the first frame. */
             static bool begin();
@@ -85,6 +86,28 @@ namespace rd {
             Screen screen() const {
                 return screen_;
             }
+
+            /** Tendency of the temperature: 1 rising, -1 falling, 0 steady */
+            int trend() const {
+                return trend_;
+            }
+
+            /** Average temperature during the last shot, 0 before the first one */
+            float shotAverage() const {
+                return shotAverage_;
+            }
+
+            /** Durations of the last shots, oldest first (at most kShotHistory) */
+            int shotCount() const {
+                return shotCount_;
+            }
+
+            float shot(const int i) const {
+                return shots_[i];
+            }
+
+            /** True while the ready moment (two waves at the marker) plays */
+            bool effectActive(uint32_t nowMs) const;
 
             /** Temperature counts as ready (green label), with hysteresis */
             bool ready() const {
@@ -144,7 +167,10 @@ namespace rd {
 
             bool drawConnectionHint(Painter& p, float y) const;
             void drawHeaterBar(Painter& p) const;
-            void drawBigValue(Painter& p, float value, float y, Color c, bool degree, const char* unit) const;
+            float drawBigValue(Painter& p, float value, float y, Color c, bool degree, const char* unit) const;
+            void updateTrendAndShots(uint32_t nowMs);
+            void drawShimmer(Painter& p, float fillAngle) const;
+            void drawShotHistory(Painter& p, float y) const;
             void drawTemperatureRow(Painter& p, float y) const;
 
             const char* brand_ = "CLEVERCOFFEE";
@@ -160,6 +186,24 @@ namespace rd {
             uint32_t drawnSignature_ = 0;
             uint32_t lastDrawMs_ = 0;
             bool drawnOnce_ = false;
+
+            // Tendency, ready moment and shot statistics
+            mutable uint32_t drawNow_ = 0;
+            static constexpr int kTrendWindow = 6; // samples one second apart: a 5 s window
+            float trendHistory_[kTrendWindow] = {};
+            int trendSamples_ = 0;
+            uint32_t trendMs_ = 0;
+            float trendRate_ = 0; // K/s
+            int8_t trend_ = 0;    // -1 falling, 0 steady, 1 rising
+            bool readyPulsePending_ = false;
+            uint32_t readyPulseStart_ = 0;
+            bool readyPulse_ = false;
+            float shotTempSum_ = 0;
+            int shotTempCount_ = 0;
+            float shotLastTime_ = 0;
+            float shotAverage_ = 0;
+            float shots_[kShotHistory] = {};
+            int shotCount_ = 0;
 
             Animation animation_ = Animation::None;
             uint32_t animationStart_ = 0;

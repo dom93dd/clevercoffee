@@ -20,6 +20,8 @@ Ein ganzes Bild in 16 Bit sind 115 KB. Das passt nicht neben WLAN, Bluetooth und
 ## Bildschirme
 Aufheizen (Ring von 20 °C bis Soll) · Bereit (gezoomte Skala Soll ±5 K, Punkt = Ist, grün innerhalb `display.blinking.delta`) · Bezug (der Ring zeigt, was den Bezug beendet: mit Zielgewicht das Gewicht, sonst die Zeit) · Fertig (Haltezeit `display.post_brew_timer_duration`) · Spülen · Heißwasser · Dampf · Rückspülen · Wassertank leer · Standby · PID aus · Übertemperatur · Sensorfehler · Meldungen (Start, WLAN, IP, Waagen-Kalibrierung; lange Texte werden passend zur Kreisform umgebrochen).
 
+Dezente Zusatzelemente: Tendenzpfeil ▲/▼ neben der Temperatur (Steigung über 5 s, nicht während „BEREIT“), Bereit-Moment (zwei Wellen am grünen Punkt, einmal nach dem Aufheizen), Lichtreflex auf dem Ring während des Bezugs, Ø-Brühtemperatur nach dem Bezug, die letzten fünf Bezüge als Punkte auf dem Bereit-Bildschirm (grün = höchstens 1,5 s vom Ziel entfernt).
+
 Gestaltungsregeln: große Ziffern für das, was man aus einem Meter Entfernung sehen muss. Farbe nur für den Zustand (bernstein = heizt, grün = bereit, crema = Bezug, blau = Wasser, rot = Alarm). Verbindungsprobleme erscheinen nur, wenn es wirklich eins gibt. Alarme haben Vorrang vor allem anderen.
 
 ## Animationen
@@ -41,7 +43,7 @@ pip install freetype-py
 Größen und Zeichensätze stehen in `build_fonts.sh`. Ziffern werden gleich breit gemacht, damit Zahlen beim Zählen nicht springen.
 
 ## Speicher (Stand 30.09.2026, Env `esp32_round_usb`, mit Bluetooth)
-Flash 1.673.833 von 1.703.936 B (98,2 %, ~30 KB frei); 4.0.3 ohne rundes Display: 1.545.069 B. Davon Schriften ~50 KB, LovyanGFX ~40 KB, UI ~12 KB. Zur Laufzeit kommen 2 × 19 KB Streifenpuffer dazu (Heap, nur auf echter Hardware messbar).
+Flash 1.676.933 von 1.703.936 B (98,4 %, ~27 KB frei); 4.0.3 ohne rundes Display: 1.545.069 B. Davon Schriften ~50 KB, LovyanGFX ~40 KB, UI ~12 KB. Zur Laufzeit kommen 2 × 19 KB Streifenpuffer dazu (Heap, nur auf echter Hardware messbar).
 
 ## Tests
-67 Tests in `simulator/test` (Zeichnen, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Anleitung in `simulator/README.md`.
+74 Tests in `simulator/test` (Zeichnen, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.

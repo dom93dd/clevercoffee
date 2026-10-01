@@ -41,6 +41,7 @@ Tasten (stehen auch rechts im Fenster):
 | C | Screenshot als PNG in den aktuellen Ordner |
 
 ## Ohne Fenster
+Vorher einmal `pio run` (baut das Programm, `./run.sh` macht das automatisch).
 ```sh
 .pio/build/sim/program --list                      # alle Szenarien
 .pio/build/sim/program --shot brew brew.png        # ein Bildschirm als PNG
@@ -52,9 +53,9 @@ Die PNGs sind unkomprimiert (einige MB); `sips -s format png a.png --out b.png` 
 
 ## Tests
 ```sh
-pio test -e sim                         # alle Tests (etwa 10 s)
-pio test -e sim -f test_ui              # nur eine Suite
-RD_UPDATE_GOLDEN=1 pio test -e sim -f test_screens   # Referenzbilder neu schreiben (nach gewollten UI-Änderungen)
+pio test -e test                        # alle Tests (etwa 10 s)
+pio test -e test -f test_ui             # nur eine Suite
+RD_UPDATE_GOLDEN=1 pio test -e test -f test_screens   # Referenzbilder neu schreiben (nach gewollten UI-Änderungen)
 ./check_firmware.sh                     # Firmware-Builds prüfen (1,5 min), --quick ohne Vergleich mit upstream/master
 ```
 | Suite | Prüft |

@@ -65,6 +65,36 @@ namespace sim {
             uint32_t atMs = 0; // render time; > 0 shows a frame inside a transition
     };
 
+    /** Time the last runMachine() call ended at; scenarios that simulate a while render there */
+    inline uint32_t gSimulatedMs = 0;
+
+    /** Runs the simulated machine for some seconds, feeding the UI every 100 ms like the loop does */
+    inline void runMachine(FakeMachine& m, rd::RoundUi& ui, const float seconds) {
+        for (float t = 0.0f; t < seconds; t += 0.1f) {
+            m.step(0.1f);
+            gSimulatedMs += 100;
+            ui.update(m.model(), gSimulatedMs);
+        }
+    }
+
+    /** Lets the machine run until the ready label turns green, then on for extraMs */
+    inline void runUntilReady(FakeMachine& m, rd::RoundUi& ui, const uint32_t extraMs) {
+        for (int i = 0; i < 3000 && !(ui.screen() == rd::Screen::Ready && ui.ready()); ++i) {
+            runMachine(m, ui, 0.1f);
+        }
+
+        runMachine(m, ui, static_cast<float>(extraMs) / 1000.0f);
+    }
+
+    /** One shot by time (25 s) from switch on to switch off */
+    inline void pullShot(FakeMachine& m, rd::RoundUi& ui, const float targetSeconds) {
+        m.targetBrewTime = targetSeconds;
+        m.toggleBrewSwitch();
+        runMachine(m, ui, targetSeconds + 0.5f);
+        m.toggleBrewSwitch();
+        runMachine(m, ui, 20.0f);
+    }
+
     inline const rd::Message msgVersion{"VERSION", "CleverCoffee", "4.0.3 + Rund-Display"};
     inline const rd::Message msgWifi{"WLAN", "Verbinde mit", "Orione-WLAN"};
     inline const rd::Message msgIp{"IP-ADRESSE", "silvia.local", "192.168.178.42"};
@@ -117,6 +147,38 @@ namespace sim {
             {"msg-calibrate-de", "Kalibrierung (lang, DE)", [](FakeMachine&, rd::RoundUi& ui) { showFirmwareMessage(ui, "Kalibrierung läuft. Bitte in den nächsten 10 Sekunden ein bekanntes Gewicht auflegen 267.00g\n"); }},
             {"msg-calibrate-es", "Kalibrierung (lang, ES)", [](FakeMachine&, rd::RoundUi& ui) { showFirmwareMessage(ui, "Calibrando. Coloque un peso conocido en la balanza en los próximos 10 segundos 267.00g\n"); }},
             {"msg-reboot", "Neustart", [](FakeMachine&, rd::RoundUi& ui) { showFirmwareMessage(ui, "REBOOTING\nPlease wait..."); }},
+            {"trend-up", "Aufheizen nach 30 s (Tendenz steigt)", [](FakeMachine& m, rd::RoundUi& ui) { runMachine(m, ui, 30.0f); }},
+            {"trend-down", "Abkühlen nach Dampf (Tendenz fällt)",
+             [](FakeMachine& m, rd::RoundUi& ui) {
+                 m.toggleSteam();
+                 m.settle();
+                 runMachine(m, ui, 2.0f);
+                 m.toggleSteam();
+                 runMachine(m, ui, 8.0f);
+             }},
+            {"ready-moment", "Bereit-Moment (+0,6 s)", [](FakeMachine& m, rd::RoundUi& ui) { runUntilReady(m, ui, 600); }},
+            {"brew-shimmer", "Bezug mit Lichtreflex (12,5 s)",
+             [](FakeMachine& m, rd::RoundUi& ui) {
+                 m.settle();
+                 m.toggleBrewSwitch();
+                 runMachine(m, ui, 12.5f);
+             }},
+            {"done-average", "Bezug fertig mit Ø-Temperatur",
+             [](FakeMachine& m, rd::RoundUi& ui) {
+                 m.settle();
+                 m.toggleBrewSwitch();
+                 runMachine(m, ui, 26.0f);
+             }},
+            {"shot-history", "Nach fünf Bezügen (Verlauf)",
+             [](FakeMachine& m, rd::RoundUi& ui) {
+                 m.settle();
+
+                 for (const float t : {25.0f, 27.5f, 25.0f, 24.5f, 25.0f}) {
+                     pullShot(m, ui, t);
+                 }
+
+                 runMachine(m, ui, 60.0f);
+             }},
             {"heating", "Aufheizen",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(61.4f);
@@ -232,12 +294,15 @@ namespace sim {
         machine.reset();
         rd::RoundUi ui;
         ui.setBrand(brand);
+        gSimulatedMs = 0;
         sc.setup(machine, ui);
-        ui.update(machine.model(), sc.atMs);
-        panel.render(ui, sc.atMs);
+        const uint32_t at = gSimulatedMs > 0 ? gSimulatedMs : sc.atMs;
+        ui.update(machine.model(), at);
+        panel.render(ui, at);
     }
 
     inline const Scenario* findScenario(const std::vector<Scenario>& all, const char* name) {
+
         for (const auto& s : all) {
             if (std::strcmp(s.name, name) == 0) {
                 return &s;

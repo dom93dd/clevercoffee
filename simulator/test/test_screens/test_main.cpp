@@ -143,7 +143,7 @@ void test_screens_match_the_golden_images() {
         int w = 0;
         int h = 0;
         std::vector<uint8_t> expected;
-        const std::string missing = "missing golden image " + file + " (run the tests once with RD_UPDATE_GOLDEN=1)";
+        const std::string missing = "missing golden image " + file + " (run once: RD_UPDATE_GOLDEN=1 pio test -e test -f test_screens)";
         TEST_ASSERT_TRUE_MESSAGE(png::read(file.c_str(), w, h, expected), missing.c_str());
         TEST_ASSERT_EQUAL_INT(240, w);
         TEST_ASSERT_EQUAL_INT(240, h);

@@ -9,7 +9,7 @@
  * frame buffer. Also provides the display functions the rest of the firmware calls
  * (displayLogo, displayWrappedMessage, displayScaleFailed, shouldDisplayBrewTimer).
  * Everything that works without hardware lives in RoundDisplayControl and is tested
- * in simulator/test.
+ * in simulator/test (pio test -e test).
  */
 
 #pragma once

@@ -311,6 +311,118 @@ void test_power_sequence_on_the_real_ui() {
     TEST_ASSERT_TRUE(power.asleep());
 }
 
+// --- tendency, ready moment, shot statistics ---------------------------------------------
+
+namespace {
+    /** Feeds temperatures 100 ms apart, starting at t0, returns the next time */
+    uint32_t feed(RoundUi& ui, uint32_t t, const float from, const float to, const float seconds, Model m = normal()) {
+        const int steps = static_cast<int>(seconds * 10.0f);
+
+        for (int i = 0; i <= steps; ++i) {
+            m.temperature = from + (to - from) * static_cast<float>(i) / static_cast<float>(steps);
+            ui.update(m, t);
+            t += 100;
+        }
+
+        return t;
+    }
+
+    /** One shot: brewing for the given seconds at a constant temperature, then the hold time */
+    uint32_t brewShot(RoundUi& ui, uint32_t t, const float seconds, const float temperature) {
+        Model m = normal(temperature);
+        m.mode = Mode::Brew;
+        m.brewPhase = BrewPhase::Running;
+        m.brewTimerVisible = true;
+
+        for (float b = 0.0f; b <= seconds; b += 0.1f) {
+            m.brewTime = b;
+            ui.update(m, t);
+            t += 100;
+        }
+
+        m.mode = Mode::Normal;
+        m.brewPhase = BrewPhase::Finished;
+        ui.update(m, t);
+        return t + 100;
+    }
+} // namespace
+
+void test_trend_follows_the_temperature() {
+    RoundUi ui;
+    uint32_t t = feed(ui, 1, 60.0f, 65.0f, 5.0f); // +1 K/s
+    TEST_ASSERT_EQUAL_INT(1, ui.trend());
+    t = feed(ui, t, 65.0f, 65.0f, 5.0f);          // steady
+    TEST_ASSERT_EQUAL_INT(0, ui.trend());
+    t = feed(ui, t, 65.0f, 60.0f, 5.0f);          // -1 K/s
+    TEST_ASSERT_EQUAL_INT(-1, ui.trend());
+}
+
+void test_trend_ignores_small_wobbles() {
+    RoundUi ui;
+    uint32_t t = 1;
+
+    for (int i = 0; i < 20; ++i) {
+        t = feed(ui, t, 94.0f, 94.1f, 1.0f);
+        t = feed(ui, t, 94.1f, 94.0f, 1.0f);
+        TEST_ASSERT_EQUAL_INT(0, ui.trend());
+    }
+}
+
+void test_ready_moment_plays_once_after_warming_up() {
+    RoundUi ui;
+    uint32_t t = feed(ui, 1, 60.0f, 93.9f, 30.0f); // heating up until the label turns green
+    TEST_ASSERT_TRUE(ui.ready());
+    TEST_ASSERT_TRUE(ui.effectActive(t - 100));
+    t = feed(ui, t, 93.9f, 93.9f, 1.5f);
+    TEST_ASSERT_FALSE(ui.effectActive(t)); // 1.4 s
+
+    // A dip after a shot keeps the ready gauge and does not pulse again
+    t = feed(ui, t, 93.9f, 88.0f, 5.0f);
+    t = feed(ui, t, 88.0f, 93.9f, 5.0f);
+    TEST_ASSERT_TRUE(ui.ready());
+    TEST_ASSERT_FALSE(ui.effectActive(t - 100));
+}
+
+void test_no_ready_moment_when_already_warm() {
+    RoundUi ui;
+    feed(ui, 1, 94.0f, 94.0f, 3.0f);
+    TEST_ASSERT_FALSE(ui.effectActive(500));
+}
+
+void test_ready_moment_frames_are_drawn() {
+    RoundUi ui;
+    uint32_t t = feed(ui, 1, 60.0f, 93.9f, 30.0f) - 100;
+    render(ui, t);
+    ui.update(normal(93.9f), t + 35);
+    TEST_ASSERT_TRUE(ui.needsRedraw(t + 35));
+}
+
+void test_shot_average_and_history() {
+    RoundUi ui;
+    uint32_t t = feed(ui, 1, 94.0f, 94.0f, 1.0f);
+    t = brewShot(ui, t, 25.0f, 91.5f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 91.5f, ui.shotAverage());
+    TEST_ASSERT_EQUAL_INT(1, ui.shotCount());
+    TEST_ASSERT_FLOAT_WITHIN(0.15f, 25.0f, ui.shot(0));
+
+    t = brewShot(ui, t, 28.0f, 93.0f); // a new shot starts a new average
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 93.0f, ui.shotAverage());
+    TEST_ASSERT_EQUAL_INT(2, ui.shotCount());
+}
+
+void test_shot_history_keeps_the_last_five() {
+    RoundUi ui;
+    uint32_t t = 1;
+
+    for (int i = 0; i < 7; ++i) {
+        t = brewShot(ui, t, 20.0f + static_cast<float>(i), 93.0f);
+    }
+
+    TEST_ASSERT_EQUAL_INT(RoundUi::kShotHistory, ui.shotCount());
+    TEST_ASSERT_FLOAT_WITHIN(0.15f, 22.0f, ui.shot(0)); // the two oldest are gone
+    TEST_ASSERT_FLOAT_WITHIN(0.15f, 26.0f, ui.shot(RoundUi::kShotHistory - 1));
+}
+
 int main() {
     if (!RoundUi::begin()) {
         return 1;
@@ -344,5 +456,12 @@ int main() {
     RUN_TEST(test_alarm_stops_a_transition);
     RUN_TEST(test_transitions_draw_at_frame_rate);
     RUN_TEST(test_power_sequence_on_the_real_ui);
+    RUN_TEST(test_trend_follows_the_temperature);
+    RUN_TEST(test_trend_ignores_small_wobbles);
+    RUN_TEST(test_ready_moment_plays_once_after_warming_up);
+    RUN_TEST(test_no_ready_moment_when_already_warm);
+    RUN_TEST(test_ready_moment_frames_are_drawn);
+    RUN_TEST(test_shot_average_and_history);
+    RUN_TEST(test_shot_history_keeps_the_last_five);
     return UNITY_END();
 }
