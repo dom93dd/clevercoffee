@@ -20,7 +20,7 @@ Oberfläche für ein rundes GC9A01-TFT (240×240, SPI) an CleverCoffee, gezeichn
 Ein ganzes Bild in 16 Bit sind 115 KB. Das passt nicht neben WLAN, Bluetooth und Webserver in den RAM des ESP32-WROOM (kein PSRAM). Deshalb wird jedes Bild in 6 Streifen à 240×40 gezeichnet. Zwei Streifenpuffer (je 19 KB) wechseln sich ab: Während DMA den einen zum Display schickt, zeichnet die CPU den nächsten. Gezeichnet wird nur, wenn sich etwas Sichtbares ändert (Werte so gerundet, wie sie angezeigt werden), höchstens alle 80 ms.
 
 ## Bildschirme
-Aufheizen (Ring von 20 °C bis Soll) · Bereit (gezoomte Skala Soll ±5 K, Punkt = Ist, grün innerhalb `display.blinking.delta`) · Bezug (der Ring zeigt, was den Bezug beendet: mit Zielgewicht das Gewicht, sonst die Zeit) · Fertig (Haltezeit `display.post_brew_timer_duration`) · Spülen · Heißwasser · Dampf · Rückspülen · Wassertank leer · Standby · PID aus · Übertemperatur · Sensorfehler · Meldungen (Start, WLAN, IP, Waagen-Kalibrierung; lange Texte werden passend zur Kreisform umgebrochen).
+Aufheizen (linke Ringhälfte von 20 °C bis Soll, Soll oben wie auf der Bereit-Skala) · Bereit (gezoomte Skala Soll ±5 K, Punkt = Ist, grün innerhalb `display.blinking.delta`) · Bezug (der Ring zeigt, was den Bezug beendet: mit Zielgewicht das Gewicht, sonst die Zeit) · Fertig (Haltezeit `display.post_brew_timer_duration`) · Spülen · Heißwasser · Dampf · Rückspülen · Wassertank leer · Standby · PID aus · Übertemperatur · Sensorfehler · Meldungen (Start, WLAN, IP, Waagen-Kalibrierung; lange Texte werden passend zur Kreisform umgebrochen).
 
 Waagen-Symbol: steht immer unten rechts auf der Ringbahn, spiegelbildlich und auf gleicher Höhe wie das Heizsymbol links und genauso groß (grün = Waage verbunden und bereit, grau = Bluetooth-Waage eingeschaltet, aber nicht verbunden, blassgrau durchgestrichen = keine Waage, rot = Waagenfehler). Hinweistexte (Alarme, „Kein WLAN“, „Bitte nachfüllen“ …) stehen in einer kleineren Schrift (16 px) als der übrige Text. Fortschrittsringe beginnen bündig an der Nullmarke.
 
@@ -48,8 +48,15 @@ pip install freetype-py
 ```
 Größen und Zeichensätze stehen in `build_fonts.sh`. Ziffern werden gleich breit gemacht, damit Zahlen beim Zählen nicht springen.
 
+## Tempo auf dem ESP32
+Gemessen im ESP32-Emulator (`simulator/esp32-bench`, Zeit geschätzt mit 1,0–1,6 Takten pro Befehl): ein ganzes Bild des Bereit-Bildschirms 10–17 ms Zeichnen, Blende 30–47 ms; dazu die Übertragung (bei 27 MHz SPI 5,7 ms pro 240×40-Streifen, per DMA parallel zum Zeichnen des nächsten). Damit das flüssig bleibt und `loop()` nicht lange steht:
+- Der Painter rechnet pro Pixel weder `atan2` noch `fmod` (Bogen-Test per Skalarprodukt), kurze Bögen nur in ihrem Rechteck, die Blende nur an der Kante.
+- `RoundUi::renderBand()` zeichnet einen Streifen pro `loop()`-Durchlauf; alle Streifen eines Bildes zeigen denselben Zeitpunkt.
+- `rd::BandFilter` lässt Streifen weg, die das Display schon zeigt (Hash pro Streifen).
+- Animationen und der Lichtreflex beim Bezug laufen im 30-ms-Takt; im Simulator lässt sich das im ESP32-Tempo ansehen (`--spi 27`).
+
 ## Speicher (Stand 01.10.2026, Env `esp32_round_usb`, mit Bluetooth)
-Flash 1.666.841 von 1.703.936 B (97,8 %, ~37 KB frei); 4.0.3 ohne rundes Display: 1.545.069 B. Davon Schriften 44,5 KB (acht Schriften im kompakten Format; die fünf VLW-Schriften vorher brauchten 60,1 KB), LovyanGFX ~40 KB, UI ~13 KB. Zur Laufzeit kommen 2 × 19 KB Streifenpuffer dazu (Heap, nur auf echter Hardware messbar).
+Flash 1.669.553 von 1.703.936 B (98,0 %, ~34 KB frei); 4.0.3 ohne rundes Display: 1.545.069 B. Davon Schriften 44,5 KB (acht Schriften im kompakten Format; die fünf VLW-Schriften vorher brauchten 60,1 KB), LovyanGFX ~40 KB, UI ~13 KB. Zur Laufzeit kommen 2 × 19 KB Streifenpuffer dazu (Heap, nur auf echter Hardware messbar).
 
 ## Tests
-97 Tests in `simulator/test` (Zeichnen, Schrift, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder, Abstands-Check aller Bildschirme, Schriftgröße je Zeilenart, Fuzz-Test mit kaputten Werten, Schutz gegen hängende `loop()`), alle auch mit AddressSanitizer/UBSan (`pio test -e sanitize`), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.
+108 Tests in `simulator/test` (Zeichnen, Schrift, Logik, UI-Verhalten, alle Bildschirme gegen Referenzbilder, Abstands-Check aller Bildschirme, Schriftgröße je Zeilenart, Fuzz-Test mit kaputten Werten, Schutz gegen hängende `loop()`), alle auch mit AddressSanitizer/UBSan (`pio test -e sanitize`), dazu `simulator/check_firmware.sh` für die Firmware-Builds. Start mit `cd simulator && pio test -e test`, Anleitung in `simulator/README.md`.

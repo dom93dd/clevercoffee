@@ -2,7 +2,9 @@
 # Checks the firmware side of the round display branch:
 #  1. esp32_usb, esp32_round_usb and esp32_round_ota build
 #  2. the round display build leaves at least MIN_FREE bytes of the app partition free
-#  3. the stock esp32_usb build has exactly the size of upstream/master, i.e. the branch
+#  3. drawing time of every screen on the ESP32, measured in the QEMU emulator
+#     (esp32-bench; skipped if QEMU is not installed, see esp32-bench/run_qemu.sh)
+#  4. the stock esp32_usb build has exactly the size of upstream/master, i.e. the branch
 #     does not change the normal firmware (builds master in a temporary git worktree;
 #     skip with --quick)
 #
@@ -35,6 +37,16 @@ for env in esp32_usb esp32_round_usb esp32_round_ota; do
         esp32_round_*) [ $(( $2 - $1 )) -ge $MIN_FREE ] || fail "$env leaves less than $MIN_FREE bytes free" ;;
     esac
 done
+
+echo "== Drawing time on the ESP32 (QEMU)"
+if ls "$HOME"/.espressif/tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa >/dev/null 2>&1 || [ -n "$QEMU" ]; then
+    RC=0
+    REPORT=$(simulator/esp32-bench/run_qemu.sh --check 2>/dev/null) || RC=$?
+    echo "$REPORT" | grep -E "slowest frame|TOO SLOW|ERROR" | sed 's/^/   /'
+    [ $RC -eq 0 ] || fail "a screen draws too slowly on the ESP32 (see simulator/esp32-bench/run_qemu.sh)"
+else
+    echo "   skipped: QEMU not installed (see simulator/esp32-bench/run_qemu.sh)"
+fi
 
 if [ $QUICK -eq 1 ]; then
     echo "== Skipped comparison with upstream/master (--quick)"

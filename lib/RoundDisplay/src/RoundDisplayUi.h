@@ -7,6 +7,10 @@
  *   ui.update(model, now);
  *   if (ui.needsRedraw(now)) { ui.render(bands, 2, now, push); }
  *
+ * Or one band per loop iteration, so loop() is never blocked for a whole frame:
+ *   if (ui.frameOpen()) { ui.renderBand(bands, 2, push); }          // no update() in between
+ *   else { ui.update(model, now); if (ui.needsRedraw(now)) { ui.renderBand(bands, 2, push, now); } }
+ *
  * Drawing is band by band (see RoundDisplayPaint.h), so the same code runs on the
  * ESP32 without a frame buffer and in the desktop simulator.
  */
@@ -109,6 +113,9 @@ namespace rd {
             /** True while the ready moment (two waves at the marker) plays */
             bool effectActive(uint32_t nowMs) const;
 
+            /** The light runs along the brew ring (shot running): frames as often as during animations */
+            bool shimmering() const;
+
             /** Temperature counts as ready (green label), with hysteresis */
             bool ready() const {
                 return ready_;
@@ -124,18 +131,50 @@ namespace rd {
              */
             template <typename Push>
             void render(lgfx::LGFX_Sprite* bands, const int bandCount, const uint32_t nowMs, Push push) {
-                const int bandHeight = bands[0].height();
+                abortFrame();
 
-                for (int top = 0, i = 0; top < kHeight; top += bandHeight, ++i) {
-                    lgfx::LGFX_Sprite& band = bands[i % bandCount];
-                    Painter p(band, top);
-                    draw(p, nowMs);
-                    push(band, top);
+                while (!renderBand(bands, bandCount, push, nowMs)) {}
+            }
+
+            /**
+             * Draws the next band of the open frame, or opens a frame at nowMs and draws its first band.
+             * All bands of a frame show the same moment; do not call update() while frameOpen().
+             * @return true when the frame is complete
+             */
+            template <typename Push>
+            bool renderBand(lgfx::LGFX_Sprite* bands, const int bandCount, Push push, const uint32_t nowMs = 0) {
+                if (!frameOpen_) {
+                    frameOpen_ = true;
+                    frameNow_ = nowMs;
+                    nextBand_ = 0;
                 }
 
+                const int bandHeight = bands[0].height();
+                const int top = nextBand_ * bandHeight;
+                lgfx::LGFX_Sprite& band = bands[nextBand_ % bandCount];
+                Painter p(band, top);
+                draw(p, frameNow_);
+                push(band, top);
+
+                if (++nextBand_ * bandHeight < kHeight) {
+                    return false;
+                }
+
+                frameOpen_ = false;
                 drawnSignature_ = signature_;
-                lastDrawMs_ = nowMs;
+                lastDrawMs_ = frameNow_;
                 drawnOnce_ = true;
+                return true;
+            }
+
+            /** A frame is being drawn band by band */
+            bool frameOpen() const {
+                return frameOpen_;
+            }
+
+            /** Drops a half drawn frame (e.g. a message is drawn right away instead) */
+            void abortFrame() {
+                frameOpen_ = false;
             }
 
             uint32_t minFrameIntervalMs = 80;
@@ -187,6 +226,9 @@ namespace rd {
             uint32_t drawnSignature_ = 0;
             uint32_t lastDrawMs_ = 0;
             bool drawnOnce_ = false;
+            bool frameOpen_ = false;
+            uint32_t frameNow_ = 0;
+            int nextBand_ = 0;
 
             // Tendency, ready moment and shot statistics
             mutable uint32_t drawNow_ = 0;

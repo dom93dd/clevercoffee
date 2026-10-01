@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <initializer_list>
 
 namespace rd {
@@ -75,6 +76,15 @@ namespace rd {
 
         float readyAngle(const float temperature, const float setpoint) {
             return clampf((temperature - setpoint) / kReadyScale, -1.0f, 1.0f) * kGaugeEnd;
+        }
+
+        /**
+         * Heating up (and steam): room temperature to setpoint over the left half of the gauge, so the
+         * setpoint sits at 12 o'clock as on the ready gauge
+         */
+        float heatingAngle(const float temperature, const float setpoint) {
+            const float span = std::max(setpoint - kAmbient, 1.0f);
+            return kGaugeStart + (0.0f - kGaugeStart) * clampf((temperature - kAmbient) / span, 0.0f, 1.0f);
         }
 
         void drawMarker(Painter& p, const float angle, const Color c) {
@@ -314,6 +324,12 @@ namespace rd {
         return length == 0 ? 1.0f : std::min(1.0f, static_cast<float>(nowMs - animationStart_) / static_cast<float>(length));
     }
 
+    bool RoundUi::shimmering() const {
+        const Model& m = model_;
+        const bool done = m.brewPhase == BrewPhase::Finished || (m.mode != Mode::Brew && m.brewPhase == BrewPhase::Idle);
+        return screen_ == Screen::Brew && !done;
+    }
+
     bool RoundUi::effectActive(const uint32_t nowMs) const {
         return readyPulse_ && nowMs - readyPulseStart_ < kReadyPulseMs;
     }
@@ -458,6 +474,10 @@ namespace rd {
             h = hashAdd(h, static_cast<int32_t>((nowMs - readyPulseStart_) / animationFrameIntervalMs));
         }
 
+        if (shimmering()) {
+            h = hashAdd(h, static_cast<int32_t>(nowMs / animationFrameIntervalMs));
+        }
+
         h = hashAdd(h, ready_);
 
         if (screen_ == Screen::Message) {
@@ -503,7 +523,7 @@ namespace rd {
 
         const uint32_t since = nowMs - lastDrawMs_;
 
-        if (since < (animating(nowMs) || effectActive(nowMs) ? animationFrameIntervalMs : minFrameIntervalMs)) {
+        if (since < (animating(nowMs) || effectActive(nowMs) || shimmering() ? animationFrameIntervalMs : minFrameIntervalMs)) {
             return false;
         }
 
@@ -803,8 +823,9 @@ namespace rd {
     namespace {
         struct MessageRow {
                 char text[64];
-                bool label; // capitals font (short title) instead of the text font
+                bool label;   // capitals font (short title) instead of the text font
                 bool title;
+                bool compact; // one word that fits only one size smaller
         };
 
         constexpr int kMaxRows = 7;
@@ -836,15 +857,21 @@ namespace rd {
         }
 
         /** Breaks text into rows at spaces, row i at most widths[i] wide; returns the new row count */
-        int wrapInto(Painter& p, const char* text, const bool title, const float* widths, MessageRow* rows, int count) {
+        /**
+         * Breaks text into rows at spaces, row i at most widths[i] wide; returns the new row count.
+         * A word wider than its row is set one size smaller if that fits, otherwise broken between
+         * characters (preferably after - _ . /). truncated is set if text is left over.
+         */
+        int wrapInto(Painter& p, const char* text, const bool title, const float* widths, MessageRow* rows, int count, bool& truncated) {
             char line[64] = "";
             const char* word = text;
 
-            const auto flush = [&](const char* content) {
+            const auto flush = [&](const char* content, const bool compact) {
                 MessageRow& row = rows[count++];
                 snprintf(row.text, sizeof(row.text), "%s", content);
                 row.label = false;
                 row.title = title;
+                row.compact = compact;
             };
 
             while (*word != '\0' && count < kMaxRows) {
@@ -862,23 +889,29 @@ namespace rd {
                     break;
                 }
 
-                const auto fits = [&](const char* s) { return static_cast<float>(p.textWidth(fonts::text(), s)) <= widths[count]; };
+                const auto fits = [&](const char* s, const Font* font) { return static_cast<float>(p.textWidth(font, s)) <= widths[count]; };
                 char candidate[64];
                 snprintf(candidate, sizeof(candidate), "%s%s%.*s", line, line[0] != '\0' ? " " : "", static_cast<int>(end - word), word);
 
-                if (fits(candidate)) {
+                if (fits(candidate, fonts::text())) {
                     snprintf(line, sizeof(line), "%s", candidate);
                     word = end;
                     continue;
                 }
 
                 if (line[0] != '\0') {
-                    flush(line); // the word starts the next row
+                    flush(line, false); // the word starts the next row
                     line[0] = '\0';
                     continue;
                 }
 
-                // One word wider than the row (a long network or host name): break it between characters
+                if (end - word < static_cast<int>(sizeof(candidate)) && fits(candidate, fonts::textCompact())) {
+                    flush(candidate, true); // e.g. a title in the narrow top row
+                    word = end;
+                    continue;
+                }
+
+                // One word much wider than the row (a long network or host name): break it between characters
                 const char* cut = word;
 
                 while (cut < end) {
@@ -886,28 +919,74 @@ namespace rd {
                     Font::next(after);
                     snprintf(candidate, sizeof(candidate), "%.*s", static_cast<int>(after - word), word);
 
-                    if (cut != word && !fits(candidate)) {
+                    if (cut != word && !fits(candidate, fonts::text())) {
                         break;
                     }
 
                     cut = after;
                 }
 
+                // Rather after a separator, if that keeps at least half of the row
+                for (const char* q = cut; q > word + (cut - word) / 2; --q) {
+                    if (q[-1] == '-' || q[-1] == '_' || q[-1] == '.' || q[-1] == '/') {
+                        cut = q;
+                        break;
+                    }
+                }
+
                 snprintf(line, sizeof(line), "%.*s", static_cast<int>(cut - word), word);
-                flush(line);
+                flush(line, false);
                 line[0] = '\0';
                 word = cut;
             }
 
-            if (line[0] != '\0' && count < kMaxRows) {
-                flush(line);
+            if (line[0] != '\0') {
+                if (count < kMaxRows) {
+                    flush(line, false);
+                }
+                else {
+                    truncated = true;
+                }
             }
 
+            while (*word == ' ') {
+                ++word;
+            }
+
+            truncated = truncated || *word != '\0';
             return count;
         }
 
-        int layoutRows(Painter& p, const Message& message, const float* widths, MessageRow* rows) {
+        /** Shortens the last row so that "..." fits behind it (text was left over) */
+        void markTruncated(Painter& p, MessageRow& row, const Font* font, const float width) {
+            char shown[64];
+            snprintf(shown, sizeof(shown), "%s...", row.text);
+
+            while (static_cast<float>(p.textWidth(font, shown)) > width && row.text[0] != '\0') {
+                char* space = std::strrchr(row.text, ' ');
+
+                if (space != nullptr) {
+                    *space = '\0'; // drop the last word
+                }
+                else {
+                    size_t n = std::strlen(row.text);
+
+                    do { // drop the last character, also a multi-byte one
+                        --n;
+                    } while (n > 0 && (static_cast<uint8_t>(row.text[n]) & 0xC0) == 0x80);
+
+                    row.text[n] = '\0';
+                }
+
+                snprintf(shown, sizeof(shown), "%s...", row.text);
+            }
+
+            snprintf(row.text, sizeof(row.text), "%s", shown);
+        }
+
+        int layoutRows(Painter& p, const Message& message, const float* widths, MessageRow* rows, bool& truncated) {
             int count = 0;
+            truncated = false;
 
             if (message.title != nullptr && message.title[0] != '\0') {
                 if (onlyCapitals(message.title) && static_cast<float>(p.textWidth(fonts::label(), message.title)) <= widths[0]) {
@@ -915,15 +994,21 @@ namespace rd {
                     snprintf(row.text, sizeof(row.text), "%s", message.title);
                     row.label = true;
                     row.title = true;
+                    row.compact = false;
                 }
                 else {
-                    count = wrapInto(p, message.title, true, widths, rows, count);
+                    count = wrapInto(p, message.title, true, widths, rows, count, truncated);
                 }
             }
 
             for (const char* line : {message.line1, message.line2, message.line3}) {
-                if (line != nullptr && line[0] != '\0' && count < kMaxRows) {
-                    count = wrapInto(p, line, false, widths, rows, count);
+                if (line != nullptr && line[0] != '\0') {
+                    if (count < kMaxRows) {
+                        count = wrapInto(p, line, false, widths, rows, count, truncated);
+                    }
+                    else {
+                        truncated = true;
+                    }
                 }
             }
 
@@ -975,9 +1060,10 @@ namespace rd {
             widths[i] = rowWidth(shortRows[i]);
         }
 
-        int count = layoutRows(p, message_, widths, rows);
+        bool truncated = false;
+        int count = layoutRows(p, message_, widths, rows, truncated);
 
-        if (count <= 3) {
+        if (count <= 3 && !truncated) {
             p.text(fonts::label(), brand_, kCx, 80.0f, kTextDim);
             float y = shortRows[0];
 
@@ -987,7 +1073,7 @@ namespace rd {
                 if (rows[i].label) {
                     font = fonts::label();
                 }
-                else if (static_cast<float>(p.textWidth(font, rows[i].text)) > rowWidth(y) - 12.0f) {
+                else if (rows[i].compact || static_cast<float>(p.textWidth(font, rows[i].text)) > rowWidth(y) - 12.0f) {
                     font = fonts::textCompact(); // would come within a few pixels of the ring
                 }
 
@@ -1006,7 +1092,7 @@ namespace rd {
                 widths[i] = i < n ? rowWidth(centeredBaseline(i, n)) : 0.0f;
             }
 
-            count = layoutRows(p, message_, widths, rows);
+            count = layoutRows(p, message_, widths, rows, truncated);
 
             if (count <= n) {
                 break;
@@ -1015,19 +1101,26 @@ namespace rd {
 
         // Line breaks as measured with the text font, drawn one size smaller: more room to the ring
         n = std::min(n, kMaxRows);
+        count = std::min(count, n);
+        const auto fontOf = [](const MessageRow& row) { return row.label ? fonts::label() : (row.compact ? fonts::textCompact() : fonts::textSmall()); };
+
+        if (truncated && count > 0) {
+            markTruncated(p, rows[count - 1], fontOf(rows[count - 1]), widths[count - 1]); // more text than fits: "..."
+        }
+
         float baselines[kMaxRows];
         opticalBaselines(rows, count, n, baselines);
 
-        for (int i = 0; i < count && i < n; ++i) {
-            p.text(rows[i].label ? fonts::label() : fonts::textSmall(), rows[i].text, kCx, baselines[i], rows[i].title ? kBrew : kText);
+        for (int i = 0; i < count; ++i) {
+            p.text(fontOf(rows[i]), rows[i].text, kCx, baselines[i], rows[i].title ? kBrew : kText);
         }
     }
 
     void RoundUi::drawTemperatureGauge(Painter& p, const bool heating) const {
-        p.setLayer(Layer::Frame); // ring, ticks and markers
+        p.setLayer(Layer::Frame);                                     // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
-        const float deviation = m.temperature - m.setpoint;
+        const float deviation = model_.temperature - model_.setpoint; // the real state, also while the number counts up
 
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
 
@@ -1035,14 +1128,13 @@ namespace rd {
         Color accent;
 
         if (heating) {
-            // Progress from room temperature to the setpoint
-            const float span = std::max(m.setpoint - kAmbient, 1.0f);
-            const float fill = clampf((m.temperature - kAmbient) / span, 0.0f, 1.0f);
-            const float head = kGaugeStart + (kGaugeEnd - kGaugeStart) * fill;
-            const float readyAt = kGaugeStart + (kGaugeEnd - kGaugeStart) * clampf((span - kHeatingThreshold) / span, 0.0f, 1.0f);
+            // Progress from room temperature to the setpoint at the top; the minor tick marks where the
+            // zoomed ready gauge takes over
+            const float head = heatingAngle(m.temperature, m.setpoint);
+            const float readyAt = heatingAngle(m.setpoint - kHeatingThreshold, m.setpoint);
 
             p.tick(kCx, kCy, readyAt, 94.0f, 100.0f, 1.6f, kTickMinor);
-            p.tick(kCx, kCy, kGaugeEnd, 92.0f, 100.0f, 2.4f, kTickMajor);
+            p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
             p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, head, kHeatDark, kHeat);
             drawMarker(p, head, mix(kHeat, kText, 0.35f));
 
@@ -1138,15 +1230,13 @@ namespace rd {
     }
 
     void RoundUi::drawSteam(Painter& p) const {
-        p.setLayer(Layer::Frame); // ring, ticks and markers
+        p.setLayer(Layer::Frame);                                   // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
-        const float span = std::max(m.setpoint - kAmbient, 1.0f);
-        const float fill = clampf((m.temperature - kAmbient) / span, 0.0f, 1.0f);
-        const float head = kGaugeStart + (kGaugeEnd - kGaugeStart) * fill;
+        const float head = heatingAngle(m.temperature, m.setpoint); // steam setpoint at the top
 
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
-        p.tick(kCx, kCy, kGaugeEnd, 92.0f, 100.0f, 2.4f, kTickMajor);
+        p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, head, mix(kSteam, kBackground, 0.7f), kSteam);
         drawMarker(p, head, mix(kSteam, kText, 0.4f));
 
@@ -1194,7 +1284,7 @@ namespace rd {
         // The ring always shows what ends the shot: the weight with brew by weight, otherwise the time
         const Model& m = view_;
         const Strings& s = strings(m.language);
-        const bool done = m.brewPhase == BrewPhase::Finished || (m.mode != Mode::Brew && m.brewPhase == BrewPhase::Idle);
+        const bool done = !shimmering();
         const bool scaleConnected = !m.bleScale || m.bleScaleConnected;
         const bool showWeight = m.scaleEnabled && !m.scaleFault && scaleConnected;
 

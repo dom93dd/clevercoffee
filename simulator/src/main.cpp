@@ -9,6 +9,10 @@
  *   roundsim                       interactive window (keys: see side panel)
  *   roundsim --shot ready out.png  one screen as PNG, no window
  *   roundsim --gallery out.png     all screens on one sheet
+ *   roundsim --spi 27              window at the speed of the ESP32 (SPI 27/40/80 MHz; key X switches)
+ *   roundsim --tempo               pictures per second and loop() blocking at ESP32 speed, without window
+ *   roundsim --bench               drawing time per scenario here (compare: esp32-bench)
+ *   roundsim --inspect DIR         sheets of all screens, animations, sequences and limits to look at
  *   roundsim --review DIR          every screen in German and English plus DIR/index.html to sign them off
  *            [--compare OLD]       marks screens that differ from an earlier review in OLD (copied to DIR/previous)
  *            [--notes FILE]        JSON {"scenario": "what was changed"}, shown on the screens
@@ -21,7 +25,9 @@
 #include <RoundDisplayUi.h>
 
 #include <SDL.h>
+#include <zlib.h>
 
+#include "Esp32Tempo.h"
 #include "FakeMachine.h"
 #include "Png.h"
 #include "ReviewPage.h"
@@ -36,6 +42,7 @@
 #include <ctime>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -330,6 +337,551 @@ namespace {
     }
 
     /**
+     * Drawing time per scenario on this computer, in the format of the ESP32 bench (esp32-bench/), so both
+     * can be compared: BENCH <scenario> us <frame> (fastest of many runs)
+     */
+    int runBench() {
+        lgfx::LGFX_Sprite bands[2];
+
+        for (auto& b : bands) {
+            b.setColorDepth(16);
+            b.createSprite(kDisplay, kBandHeight);
+        }
+
+        for (const auto& sc : scenarios()) {
+            FakeMachine machine;
+            machine.language = rd::Language::German;
+            machine.reset();
+            rd::RoundUi ui;
+            ui.setBrand(gBrand);
+            gSimulatedMs = 0;
+            sc.setup(machine, ui);
+            const uint32_t at = gSimulatedMs > 0 ? gSimulatedMs + sc.atMs : sc.atMs;
+            ui.update(machine.model(), at);
+            double best = 1e9;
+
+            for (int r = 0; r < 200; ++r) {
+                const auto start = std::chrono::steady_clock::now();
+                ui.render(bands, 2, at, [](lgfx::LGFX_Sprite&, int) {});
+                best = std::min(best, std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count());
+            }
+
+            // Checksum of the band buffers as they go to the panel; esp32-bench prints the same on the chip
+            uLong crc = crc32(0L, Z_NULL, 0);
+            ui.render(bands, 2, at, [&crc](lgfx::LGFX_Sprite& band, int) { crc = crc32(crc, static_cast<const Bytef*>(band.getBuffer()), static_cast<uInt>(band.width() * band.height() * 2)); });
+            printf("BENCH %s us %.1f crc %08lx\n", sc.name, best, crc);
+
+            if (getenv("RD_DUMP") != nullptr && std::strcmp(getenv("RD_DUMP"), sc.name) == 0) {
+                ui.render(bands, 2, at, [](lgfx::LGFX_Sprite& band, const int top) {
+                    const auto* px = static_cast<const uint16_t*>(band.getBuffer());
+
+                    for (int y = 0; y < band.height(); ++y) {
+                        printf("DUMP %d ", top + y);
+
+                        for (int x = 0; x < band.width(); ++x) {
+                            printf("%04x", px[y * band.width() + x]);
+                        }
+
+                        printf("\n");
+                    }
+                });
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Smoothness at ESP32 speed without a window: plays power-on (intro, boot messages, iris), the
+     * ready moment, a 25 s shot with shimmer and standby in simulated time, draws every frame the
+     * firmware would draw (Esp32Tempo) and prints per phase how many pictures per second the panel
+     * gets and how long loop() is blocked per picture.
+     */
+    int runTempoReport() {
+        struct Phase {
+                const char* name;
+                int frames = 0;
+                uint32_t first = 0;
+                uint32_t last = 0;
+                float maxBlock = 0.0f;
+                float sumFrame = 0.0f;
+                int sumSent = 0;
+        };
+
+        for (const uint32_t spiHz : {27000000u, 40000000u}) {
+            for (const bool bandwise : {false, true}) {
+                FakeMachine machine;
+                machine.reset(80.0f); // warm, so heating ends and the ready moment comes within the run
+                rd::RoundUi ui;
+                ui.setBrand(gBrand);
+                Esp32Tempo tempo;
+                tempo.setSpiHz(spiHz);
+                tempo.bandwise = bandwise;
+                Phase phases[] = {{"Intro beim Einschalten"}, {"Blende auf"}, {"Bereit-Moment (Wellen)"}, {"Bezug mit Lichtreflex"}, {"Blende zu (Standby)"}, {"übrige Bilder"}};
+                bool brewed = false;
+                bool pulsed = false;
+                uint32_t brewAt = 0;
+
+                ui.showMessage(msgVersion);
+                ui.play(rd::Animation::Intro, 0);
+
+                for (uint32_t now = 0; now <= 240000; ++now) {
+                    if (now == 3200) ui.showMessage(msgWifi);
+                    if (now == 4700) ui.showMessage(msgIp);
+                    if (now == 6200) ui.clearMessage();
+
+                    if (now > 6200) {
+                        machine.step(0.001f);
+                    }
+
+                    // Shot 10 s after the ready moment, standby 20 s after the shot
+                    if (pulsed && brewAt == 0 && ui.ready() && !ui.effectActive(now)) {
+                        brewAt = now + 10000;
+                    }
+
+                    if (brewAt != 0 && now == brewAt) machine.toggleBrewSwitch();
+                    if (brewAt != 0 && now == brewAt + 26000) machine.toggleBrewSwitch();
+                    if (brewAt != 0 && now == brewAt + 46000) machine.toggleStandby();
+                    if (brewAt != 0 && now > brewAt + 48000) break;
+
+                    if (!tempo.busy(now)) {
+                        ui.update(machine.model(), now);
+                    }
+
+                    brewed = brewed || ui.screen() == rd::Screen::Brew;
+
+                    if (!tempo.busy(now) && ui.needsRedraw(now)) {
+                        tempo.render(ui, now);
+                        int p = 5;
+
+                        if (now < 1700)
+                            p = 0;
+                        else if (now >= 6200 && now < 7200)
+                            p = 1;
+                        else if (ui.effectActive(now))
+                            p = 2, pulsed = true;
+                        else if (ui.screen() == rd::Screen::Brew && machine.model().brewPhase == rd::BrewPhase::Running)
+                            p = 3;
+                        else if (brewAt != 0 && now >= brewAt + 46000 && ui.animating(now))
+                            p = 4;
+
+                        Phase& ph = phases[p];
+                        ph.first = ph.frames == 0 ? now : ph.first;
+                        ph.last = now;
+                        ++ph.frames;
+                        ph.maxBlock = std::max(ph.maxBlock, tempo.lastBlockMs);
+                        ph.sumFrame += tempo.lastFrameMs;
+                        ph.sumSent += tempo.lastSentBands;
+                    }
+                }
+
+                printf("\nSPI %u MHz, %s%s\n", spiHz / 1000000, bandwise ? "ein Streifen je loop() (Firmware jetzt)" : "ganzes Bild am Stück (vorher)", brewed && pulsed ? "" : "  (Ablauf unvollständig!)");
+                printf("  %-26s %6s %9s %12s %20s %10s\n", "Phase", "Bilder", "Bilder/s", "Bild Ø ms", "loop() am Stück max", "Streifen");
+
+                for (const Phase& ph : phases) {
+                    const float seconds = ph.frames > 1 ? static_cast<float>(ph.last - ph.first) / 1000.0f : 0.0f;
+                    const float rate = seconds > 0.0f ? static_cast<float>(ph.frames - 1) / seconds : 0.0f;
+                    printf("  %-26s %6d %9.1f %12.0f %17.0f ms %10.1f\n", ph.name, ph.frames, rate, ph.frames > 0 ? ph.sumFrame / static_cast<float>(ph.frames) : 0.0f, ph.maxBlock,
+                           ph.frames > 0 ? static_cast<float>(ph.sumSent) / static_cast<float>(ph.frames) : 0.0f);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Sheets for the visual check (--inspect DIR; the round-display-ui-check skill looks at them)
+
+    struct Tile {
+            std::string caption;
+            Image image;
+    };
+
+    void blitImage(Image& dst, const int ox, const int oy, const Image& src) {
+        for (int y = 0; y < src.h && oy + y < dst.h; ++y) {
+            std::memcpy(dst.at(ox, oy + y), &src.rgb[static_cast<size_t>(y) * src.w * 3], static_cast<size_t>(std::min(src.w, dst.w - ox)) * 3);
+        }
+    }
+
+    class Inspector {
+        public:
+            explicit Inspector(std::string dir) :
+                dir_(std::move(dir)) {
+            }
+
+            /** The UI as it is drawn at this moment, as one tile */
+            void shot(rd::RoundUi& ui, const uint32_t now, const std::string& caption) {
+                Panel panel(40);
+                panel.render(ui, now);
+                Tile t{caption, Image(deviceSize(1), deviceSize(1), 0xC4C4C8)};
+                drawDevice(t.image, 0, 0, panel.screen, 1);
+                tiles_.push_back(std::move(t));
+            }
+
+            /** Writes the tiles collected so far as sheets of 4 x 3: <name>-1.png, <name>-2.png, ... */
+            void sheets(const std::string& name) {
+                constexpr int kCols = 4;
+                constexpr int kPerSheet = 12;
+                constexpr int kCaption = 28;
+                const int tile = deviceSize(1);
+                lgfx::LGFX_Sprite caption;
+                caption.setColorDepth(16);
+                caption.createSprite(tile, kCaption);
+
+                for (size_t start = 0, n = 1; start < tiles_.size(); start += kPerSheet, ++n) {
+                    const size_t count = std::min<size_t>(kPerSheet, tiles_.size() - start);
+                    const int rows = static_cast<int>((count + kCols - 1) / kCols);
+                    Image sheet(kCols * tile, rows * (tile + kCaption), 0xC4C4C8);
+
+                    for (size_t i = 0; i < count; ++i) {
+                        const int x = static_cast<int>(i % kCols) * tile;
+                        const int y = static_cast<int>(i / kCols) * (tile + kCaption);
+                        blitImage(sheet, x, y, tiles_[start + i].image);
+                        caption.fillScreen(rd::rgb(196, 196, 200));
+                        rd::Painter p(caption, 0);
+                        p.text(rd::fonts::textCompact(), tiles_[start + i].caption.c_str(), static_cast<float>(tile) * 0.5f, 20.0f, rd::rgb(30, 30, 34));
+                        blitSprite(sheet, x, y + tile, caption);
+                    }
+
+                    const std::string path = dir_ + "/" + name + "-" + std::to_string(n) + ".png";
+                    png::write(path.c_str(), sheet.w, sheet.h, sheet.rgb.data());
+                    files.push_back(path);
+                }
+
+                tiles_.clear();
+            }
+
+            std::vector<std::string> files;
+
+        private:
+            std::string dir_;
+            std::vector<Tile> tiles_;
+    };
+
+    /** The simulated machine in 50 ms steps, as the firmware looks at it */
+    struct Run {
+            FakeMachine m;
+            rd::RoundUi ui;
+            uint32_t now = 1000;
+
+            explicit Run(const float startTemperature, const rd::Language lang = rd::Language::German) {
+                m.language = lang;
+                m.reset(startTemperature);
+                ui.setBrand(gBrand);
+                ui.update(m.model(), now);
+            }
+
+            void advance(const uint32_t ms) {
+                for (uint32_t t = 0; t < ms; t += 50) {
+                    m.step(0.05f);
+                    now += 50;
+                    ui.update(m.model(), now);
+                }
+            }
+
+            /** Runs until the condition holds (at most maxMs); false if it never did */
+            template <typename Condition>
+            bool until(Condition done, const uint32_t maxMs) {
+                for (uint32_t t = 0; t <= maxMs; t += 50) {
+                    if (done()) {
+                        return true;
+                    }
+
+                    advance(50);
+                }
+
+                return false;
+            }
+    };
+
+    rd::Model normalModel(const float temperature, const float setpoint = 94.0f) {
+        rd::Model m;
+        m.mode = rd::Mode::Normal;
+        m.temperature = temperature;
+        m.setpoint = setpoint;
+        m.heaterPercent = 35.0f;
+        m.wifiConnected = true;
+        return m;
+    }
+
+    int runInspect(const char* dir) {
+        std::error_code error;
+        std::filesystem::create_directories(dir, error);
+        Inspector in(dir);
+        Panel panel(40);
+
+        // 1. Every scenario in both languages
+        for (const auto lang : {rd::Language::German, rd::Language::English}) {
+            for (const auto& sc : scenarios()) {
+                FakeMachine machine;
+                machine.language = lang;
+                machine.reset();
+                rd::RoundUi ui;
+                ui.setBrand(gBrand);
+                gSimulatedMs = 0;
+                sc.setup(machine, ui);
+                const uint32_t at = gSimulatedMs > 0 ? gSimulatedMs + sc.atMs : sc.atMs;
+                ui.update(machine.model(), at);
+                in.shot(ui, at, std::string(sc.name) + (lang == rd::Language::German ? " DE" : " EN"));
+            }
+
+            in.sheets(lang == rd::Language::German ? "screens-de" : "screens-en");
+        }
+
+        // 2. Animations as film strips
+        {
+            rd::RoundUi ui;
+            ui.setBrand(gBrand);
+            ui.showMessage(msgVersion);
+            ui.update(rd::Model(), 0);
+            ui.play(rd::Animation::Intro, 0);
+
+            for (const uint32_t t : {100u, 300u, 500u, 700u, 900u, 1100u, 1300u, 1500u, 1650u, 1700u, 1750u, 2000u}) {
+                ui.update(rd::Model(), t);
+                in.shot(ui, t, "Intro " + std::to_string(t) + " ms");
+            }
+
+            in.sheets("anim-intro");
+        }
+
+        {
+            Run r(40.0f);
+            r.ui.showMessage(msgIp);
+            r.advance(500);
+            r.ui.clearMessage(); // the iris opens as after the boot messages
+            const uint32_t start = r.now;
+
+            for (int i = 0; i < 12; ++i) {
+                r.advance(i == 0 ? 0 : 80);
+                in.shot(r.ui, r.now, "Blende auf +" + std::to_string(r.now - start) + " ms");
+            }
+
+            in.sheets("anim-reveal");
+        }
+
+        {
+            Run r(94.0f);
+            r.m.settle();
+            r.advance(3000);
+            r.m.toggleStandby();
+            const uint32_t start = r.now;
+
+            for (int i = 0; i < 12; ++i) {
+                r.advance(i == 0 ? 0 : 70);
+                in.shot(r.ui, r.now, "Blende zu +" + std::to_string(r.now - start) + " ms");
+            }
+
+            in.sheets("anim-close");
+        }
+
+        {
+            Run r(80.0f);
+            r.until([&] { return r.ui.effectActive(r.now); }, 400000);
+            const uint32_t start = r.now;
+
+            for (int i = 0; i < 12; ++i) {
+                r.advance(i == 0 ? 0 : 130);
+                in.shot(r.ui, r.now, "Bereit-Moment +" + std::to_string(r.now - start) + " ms");
+            }
+
+            in.sheets("anim-ready");
+        }
+
+        {
+            Run r(94.0f);
+            r.m.settle();
+            r.advance(3000);
+            r.m.toggleBrewSwitch();
+            r.advance(9000);
+            const uint32_t start = r.now;
+
+            for (int i = 0; i < 12; ++i) {
+                r.advance(i == 0 ? 0 : 150);
+                in.shot(r.ui, r.now, "Lichtreflex +" + std::to_string(r.now - start) + " ms");
+            }
+
+            in.sheets("anim-shimmer");
+        }
+
+        // 3. Sequences over time
+        {
+            Run r(70.0f);
+            bool switched = false;
+
+            for (const float t : {75.0f, 85.0f, 88.5f}) {
+                r.until([&] { return r.m.model().temperature >= t; }, 600000);
+                char caption[48];
+                snprintf(caption, sizeof(caption), "Aufheizen %.1f °C", static_cast<double>(r.m.model().temperature));
+                in.shot(r.ui, r.now, caption);
+            }
+
+            switched = r.until([&] { return r.ui.screen() == rd::Screen::Ready; }, 600000);
+            in.shot(r.ui, r.now, switched ? "Umschalten auf Bereit-Skala" : "FEHLER: kein Umschalten");
+            r.advance(600);
+            in.shot(r.ui, r.now, "Umschalten +0,6 s");
+            r.until([&] { return r.ui.ready(); }, 600000);
+            in.shot(r.ui, r.now, "BEREIT erreicht");
+            r.advance(2000);
+            in.shot(r.ui, r.now, "BEREIT +2 s");
+            in.sheets("seq-heating");
+        }
+
+        for (const bool scale : {false, true}) {
+            Run r(94.0f, scale ? rd::Language::English : rd::Language::German);
+            r.m.scale = scale;
+            r.m.settle();
+            r.advance(3000);
+            in.shot(r.ui, r.now, scale ? "EN, scale: ready" : "Bereit vor dem Bezug");
+            r.m.toggleBrewSwitch();
+
+            uint32_t elapsed = 0;
+
+            for (const uint32_t t : {500u, 3000u, 8000u, 15000u}) {
+                r.advance(t - elapsed);
+                elapsed = t;
+                char caption[48];
+                snprintf(caption, sizeof(caption), "%s%.1f s nach Start", scale ? "EN, scale: " : "Bezug ", static_cast<double>(t) / 1000.0);
+                in.shot(r.ui, r.now, caption);
+            }
+
+            r.until([&] { return r.m.model().brewPhase == rd::BrewPhase::Finished; }, 60000);
+            in.shot(r.ui, r.now, scale ? "EN, scale: done" : "Bezug fertig");
+            r.m.toggleBrewSwitch();
+            r.advance(1500);
+            in.shot(r.ui, r.now, scale ? "EN, scale: hold" : "Haltezeit");
+            r.advance(4000);
+            in.shot(r.ui, r.now, scale ? "EN, scale: after the shot" : "nach dem Bezug");
+            in.sheets(scale ? "seq-brew-scale" : "seq-brew");
+        }
+
+        {
+            Run r(94.0f);
+            r.m.settle();
+            r.advance(3000);
+            in.shot(r.ui, r.now, "Bereit");
+            r.m.toggleSteam();
+            r.advance(2000);
+            in.shot(r.ui, r.now, "Dampf +2 s");
+            r.advance(30000);
+            in.shot(r.ui, r.now, "Dampf +32 s");
+            r.m.toggleSteam();
+            r.advance(2000);
+            in.shot(r.ui, r.now, "Dampf aus +2 s");
+            r.m.toggleWaterEmpty();
+            r.advance(500);
+            in.shot(r.ui, r.now, "Wassertank leer");
+            r.m.toggleWaterEmpty();
+            r.advance(1000);
+            in.shot(r.ui, r.now, "nachgefüllt");
+            r.m.toggleStandby();
+            r.advance(1500);
+            in.shot(r.ui, r.now, "Standby");
+            r.m.toggleStandby();
+            r.advance(300);
+            in.shot(r.ui, r.now, "aus Standby +0,3 s");
+            r.advance(2000);
+            in.shot(r.ui, r.now, "aus Standby +2,3 s");
+            r.m.toggleSensorError();
+            r.advance(500);
+            in.shot(r.ui, r.now, "Sensorfehler");
+            r.m.toggleSensorError();
+            r.advance(1000);
+            in.shot(r.ui, r.now, "Sensor wieder ok");
+            r.m.triggerOvertemperature();
+            r.advance(500);
+            in.shot(r.ui, r.now, "Übertemperatur");
+            in.sheets("seq-modes");
+        }
+
+        // 4. Limits and broken values
+        {
+            struct Case {
+                    const char* caption;
+                    rd::Model m;
+            };
+            std::vector<Case> cases;
+            const float nan = std::numeric_limits<float>::quiet_NaN();
+            cases.push_back({"Temperatur 150,0", normalModel(150.0f)});
+            cases.push_back({"Temperatur 999,9", normalModel(999.9f)});
+            cases.push_back({"Temperatur 1234", normalModel(1234.0f)});
+            cases.push_back({"Temperatur 10000 (--)", normalModel(10000.0f)});
+            cases.push_back({"Temperatur NaN (--)", normalModel(nan)});
+            cases.push_back({"Temperatur -5,0", normalModel(-5.0f)});
+            cases.push_back({"Soll 0", normalModel(20.0f, 0.0f)});
+            rd::Model hot = normalModel(94.0f);
+            hot.heaterPercent = 100.0f;
+            hot.wifiConnected = false;
+            cases.push_back({"Heizung 100 %, kein WLAN", hot});
+
+            const auto brew = [](const float time, const float target, const float weight, const float targetWeight) {
+                rd::Model m = normalModel(93.0f);
+                m.mode = rd::Mode::Brew;
+                m.brewPhase = rd::BrewPhase::Running;
+                m.brewTimerVisible = true;
+                m.brewTime = time;
+                m.brewTargetTime = target;
+                m.scaleEnabled = targetWeight > 0.0f || weight != 0.0f;
+                m.bleScale = true;
+                m.bleScaleConnected = true;
+                m.brewWeight = weight;
+                m.brewTargetWeight = targetWeight;
+                return m;
+            };
+            cases.push_back({"Bezug 0,0 s", brew(0.0f, 25.0f, 0.0f, 0.0f)});
+            cases.push_back({"Bezug 37,5 s (über Ziel)", brew(37.5f, 25.0f, 0.0f, 0.0f)});
+            cases.push_back({"Bezug 99,9 s ohne Ziel", brew(99.9f, 0.0f, 0.0f, 0.0f)});
+            cases.push_back({"Bezug 600 s", brew(600.0f, 25.0f, 0.0f, 0.0f)});
+            cases.push_back({"Waage -0,4 g", brew(1.0f, 0.0f, -0.4f, 36.0f)});
+            cases.push_back({"Waage 50 g (über Ziel)", brew(30.0f, 0.0f, 50.0f, 36.0f)});
+            cases.push_back({"Waage 1234 g", brew(30.0f, 0.0f, 1234.0f, 36.0f)});
+            cases.push_back({"Waage NaN", brew(10.0f, 0.0f, nan, 36.0f)});
+            cases.push_back({"Waage ohne Ziel, 18 g", brew(12.0f, 25.0f, 18.0f, 0.0f)});
+
+            for (const int cycles : {1, 20}) {
+                rd::Model m = normalModel(94.0f);
+                m.mode = rd::Mode::Backflush;
+                m.backflushPhase = rd::BackflushPhase::Flushing;
+                m.backflushCycle = static_cast<uint8_t>(cycles == 1 ? 1 : 7);
+                m.backflushCycles = static_cast<uint8_t>(cycles);
+                cases.push_back({cycles == 1 ? "Rückspülen 1/1" : "Rückspülen 7/20", m});
+            }
+
+            for (const auto& c : cases) {
+                rd::RoundUi ui;
+                ui.setBrand(gBrand);
+                ui.update(c.m, 5000);
+                ui.update(c.m, 9000); // past the hysteresis start
+                in.shot(ui, 9000, c.caption);
+            }
+
+            // Messages the firmware may send with long names
+            const std::pair<const char*, rd::Message> messages[] = {
+                {"langer WLAN-Name", {"WLAN", "Verbinde mit", "MeinSehrLangesWLAN_Wohnzimmer_5GHz"}},
+                {"langer Hostname", {"IP-ADRESSE", "kaffeemaschine-orione3000.local", "192.168.178.142"}},
+                {"lange Überschrift", {"WLAN-EINRICHTUNGSASSISTENT", "Hotspot: silvia", "192.168.4.1"}},
+                {"vier lange Zeilen", {"KALIBRIERUNG", "Bitte das bekannte Gewicht auflegen", "und zehn Sekunden warten, bis", "die Messung abgeschlossen ist 500.00g"}},
+            };
+
+            for (const auto& [caption, message] : messages) {
+                rd::RoundUi ui;
+                ui.setBrand(gBrand);
+                ui.showMessage(message);
+                ui.update(rd::Model(), 1000);
+                in.shot(ui, 1000, caption);
+            }
+
+            in.sheets("limits");
+        }
+
+        for (const auto& f : in.files) {
+            printf("%s\n", f.c_str());
+        }
+
+        return 0;
+    }
+
+    /**
      * Plays a fixed sequence (cold start, heat up, shot, steam, water tank) without a window and
      * prints every screen change - a quick check of transitions and hysteresis.
      */
@@ -387,12 +939,13 @@ namespace {
         {"Pfeil hoch/runter", "Soll +/- 0,5 °C"},
         {"Pfeil links/rechts", "Temperatur -/+ 1 K"},
         {"T", "Zeitraffer 1x / 5x / 20x"},
+        {"X", "ESP32-Tempo, SPI-Takt"},
         {"R", "Neustart (kalt)"},
         {"C", "Screenshot speichern"},
         {"Q / Esc", "Beenden"},
     };
 
-    void drawSidePanel(lgfx::LGFX_Sprite& s, const FakeMachine& m, const rd::RoundUi& ui, const float speed, const float fps, const float drawMs) {
+    void drawSidePanel(lgfx::LGFX_Sprite& s, const FakeMachine& m, const rd::RoundUi& ui, const float speed, const float fps, const float drawMs, const Esp32Tempo& tempo) {
         s.fillScreen(rd::rgb(24, 24, 27));
         rd::Painter p(s, 0);
         const rd::Color head = rd::rgb(240, 180, 92);
@@ -416,6 +969,19 @@ namespace {
         y += 24;
         snprintf(buf, sizeof(buf), "Zeit %gx  %.1f Bilder/s  %.1f ms/Bild", speed, fps, drawMs);
         p.text(rd::fonts::text(), buf, 18, y, dim, rd::Align::Left);
+        y += 24;
+
+        if (tempo.spiHz() > 0) {
+            snprintf(buf, sizeof(buf), "ESP32-Tempo, SPI %u MHz: %.0f Bilder/s", tempo.spiHz() / 1000000, tempo.fps);
+            p.text(rd::fonts::text(), buf, 18, y, head, rd::Align::Left);
+            y += 24;
+            snprintf(buf, sizeof(buf), "Bild %.0f ms, loop() max %.0f ms, %d/6 neu", tempo.lastFrameMs, tempo.lastBlockMs, tempo.lastSentBands);
+            p.text(rd::fonts::text(), buf, 18, y, head, rd::Align::Left);
+        }
+        else {
+            p.text(rd::fonts::text(), "ESP32-Tempo aus (Taste X)", 18, y, dim, rd::Align::Left);
+        }
+
         y += 40;
 
         p.text(rd::fonts::label(), "TASTEN", 18, y, head, rd::Align::Left);
@@ -428,7 +994,7 @@ namespace {
         }
     }
 
-    int runWindow(const int scale, const rd::Language lang, const int maxFrames, const char* windowPng) {
+    int runWindow(const int scale, const rd::Language lang, const int maxFrames, const char* windowPng, const int spiMhz) {
         if (SDL_Init(SDL_INIT_VIDEO) != 0) {
             fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
             return 1;
@@ -444,6 +1010,15 @@ namespace {
         SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, width, height);
 
         Panel panel;
+        Esp32Tempo tempo;
+        constexpr uint32_t kSpiSteps[] = {0, 27000000, 40000000, 80000000};
+        int spiStep = 0;
+
+        for (int i = 0; i < 4; ++i) {
+            spiStep = kSpiSteps[i] == static_cast<uint32_t>(spiMhz) * 1000000u ? i : spiStep;
+        }
+
+        tempo.setSpiHz(kSpiSteps[spiStep]);
         lgfx::LGFX_Sprite side;
         side.setColorDepth(16);
         side.createSprite(kPanelWidth, height);
@@ -546,6 +1121,11 @@ namespace {
                         case SDLK_t:
                             speedIndex = (speedIndex + 1) % 3;
                             break;
+                        case SDLK_x:
+                            spiStep = (spiStep + 1) % 4;
+                            tempo.setSpiHz(kSpiSteps[spiStep]);
+                            ui.invalidate();
+                            break;
                         case SDLK_r:
                             machine.reset();
                             booting = true;
@@ -606,9 +1186,20 @@ namespace {
             // Same sequence as roundDisplayLoop() in the firmware
             if (power.update(displayOffRequested, ui, now) == rd::PowerSequencer::Action::Sleep) {
                 panel.screen.fillScreen(rd::rgb(0, 0, 0)); // panel asleep: dark
+                tempo.darken();
+                tempo.invalidate();
             }
 
-            if (!power.asleep() && ui.needsRedraw(now)) {
+            if (tempo.spiHz() > 0) {
+                // As on the chip: a new frame only when loop() is free again; bands appear when sent
+                if (!power.asleep() && !tempo.busy(now) && ui.needsRedraw(now)) {
+                    tempo.render(ui, now);
+                    ++frames;
+                }
+
+                tempo.present(now);
+            }
+            else if (!power.asleep() && ui.needsRedraw(now)) {
                 const auto t0 = std::chrono::steady_clock::now();
                 panel.render(ui, now);
                 const auto t1 = std::chrono::steady_clock::now();
@@ -622,8 +1213,8 @@ namespace {
                 fpsStart = now;
             }
 
-            drawDevice(img, 0, (height - device) / 2, panel.screen, scale);
-            drawSidePanel(side, machine, ui, speeds[speedIndex], fps, drawMs);
+            drawDevice(img, 0, (height - device) / 2, tempo.spiHz() > 0 ? tempo.panel() : panel.screen, scale);
+            drawSidePanel(side, machine, ui, speeds[speedIndex], fps, drawMs, tempo);
             blitSprite(img, device, 0, side);
 
             SDL_UpdateTexture(texture, nullptr, img.rgb.data(), img.w * 3);
@@ -657,6 +1248,7 @@ int main(int argc, char** argv) {
     int frames = 0;
     const char* windowPng = nullptr;
     int atMs = -1;
+    int spiMhz = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
@@ -678,6 +1270,9 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--at") == 0 && i + 1 < argc) {
             atMs = std::atoi(argv[++i]);   // with --shot: time in ms inside a transition
         }
+        else if (std::strcmp(argv[i], "--spi") == 0 && i + 1 < argc) {
+            spiMhz = std::atoi(argv[++i]); // window in ESP32 tempo with this SPI clock (27, 40 or 80)
+        }
         else if (std::strcmp(argv[i], "--window-png") == 0 && i + 1 < argc) {
             windowPng = argv[++i];         // save the last window picture when quitting
         }
@@ -693,6 +1288,27 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--notes") == 0 && i + 1 < argc) {
             notes = argv[++i];   // with --review: JSON {"scenario": "what was changed"}
         }
+        else if (std::strcmp(argv[i], "--bench") == 0) {
+            if (!rd::RoundUi::begin()) {
+                return 1;
+            }
+
+            return runBench();
+        }
+        else if (std::strcmp(argv[i], "--inspect") == 0 && i + 1 < argc) {
+            if (!rd::RoundUi::begin()) {
+                return 1;
+            }
+
+            return runInspect(argv[++i]); // sheets for the visual check (skill round-display-ui-check)
+        }
+        else if (std::strcmp(argv[i], "--tempo") == 0) {
+            if (!rd::RoundUi::begin()) {
+                return 1;
+            }
+
+            return runTempoReport();
+        }
         else if (std::strcmp(argv[i], "--trace") == 0) {
             return runTrace();
         }
@@ -703,7 +1319,10 @@ int main(int argc, char** argv) {
             return 0;
         }
         else {
-            fprintf(stderr, "usage: %s [--scale N] [--lang de|en] [--frames N] [--brand NAME] [--shot NAME OUT.png | --gallery OUT.png | --review DIR [--compare OLD] [--notes FILE] | --list]\n", argv[0]);
+            fprintf(stderr,
+                    "usage: %s [--scale N] [--lang de|en] [--frames N] [--brand NAME] [--spi MHZ] [--shot NAME OUT.png | --gallery OUT.png | --review DIR [--compare OLD] [--notes FILE] | --inspect DIR | --tempo | --bench | "
+                    "--list]\n",
+                    argv[0]);
             return 1;
         }
     }
@@ -725,5 +1344,5 @@ int main(int argc, char** argv) {
         return runReview(review, scale, compare, notes);
     }
 
-    return runWindow(scale, lang, frames, windowPng);
+    return runWindow(scale, lang, frames, windowPng, spiMhz);
 }

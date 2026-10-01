@@ -224,4 +224,31 @@ namespace rd {
         return Action::None;
     }
 
+    uint32_t pixelHash(const uint16_t* pixels, const size_t count) {
+        uint32_t h = 2166136261u;
+
+        for (size_t i = 0; i < count; ++i) {
+            h = (h ^ pixels[i]) * 16777619u;
+        }
+
+        return h;
+    }
+
+    bool BandFilter::changed(const int index, const uint16_t* pixels, const size_t count) {
+        if (index < 0 || index >= kMaxBands) {
+            return true;
+        }
+
+        const uint32_t h = pixelHash(pixels, count);
+        const uint32_t bit = 1u << index;
+
+        if ((shown_ & bit) != 0 && hash_[index] == h) {
+            return false;
+        }
+
+        hash_[index] = h;
+        shown_ |= bit;
+        return true;
+    }
+
 } // namespace rd

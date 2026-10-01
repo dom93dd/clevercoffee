@@ -150,8 +150,10 @@ void test_screens_match_the_golden_images() {
         TEST_ASSERT_EQUAL_INT(240, w);
         TEST_ASSERT_EQUAL_INT(240, h);
 
-        // Tiny differences may come from another compiler or libm; real changes touch many pixels
+        // Tiny differences may come from another compiler or libm (edge shades a few steps off);
+        // real changes touch many pixels or change single pixels a lot (e.g. a stray bright line)
         int different = 0;
+        int largest = 0;
 
         for (size_t i = 0; i < actual.size(); i += 3) {
             int d = 0;
@@ -161,13 +163,14 @@ void test_screens_match_the_golden_images() {
             }
 
             different += d > 24 ? 1 : 0;
+            largest = std::max(largest, d);
         }
 
-        if (different > 115) {
+        if (different > 115 || largest > 64) {
             mkdir(failedDir.c_str(), 0755);
             const std::string out = failedDir + "/" + sc.name + ".png";
             png::write(out.c_str(), 240, 240, actual.data());
-            const std::string msg = std::string(sc.name) + ": " + std::to_string(different) + " pixels differ from the golden image, see " + out;
+            const std::string msg = std::string(sc.name) + ": " + std::to_string(different) + " pixels differ from the golden image (largest difference " + std::to_string(largest) + "), see " + out;
             TEST_FAIL_MESSAGE(msg.c_str());
         }
 
@@ -344,6 +347,27 @@ void test_progress_rings_start_at_the_zero_mark() {
     }
 }
 
+void test_heating_ends_at_the_setpoint_at_the_top() {
+    // Room temperature to setpoint over the left half: the setpoint sits at 12 o'clock as on the
+    // ready gauge (before, the bar ran to the end at the bottom right and the point jumped on ready)
+    const Color track = rgb(34, 34, 36);
+    Model m;
+    m.mode = Mode::Normal;
+    m.setpoint = 94.0f;
+    m.temperature = 57.0f; // halfway from 20 to 94 degrees
+    RoundUi ui;
+    ui.update(m, 1000);
+    TEST_ASSERT_TRUE(ui.screen() == Screen::Heating);
+    sim::Panel panel;
+    panel.render(ui, 1000);
+
+    TEST_ASSERT_GREATER_THAN_MESSAGE(40, ts::difference(ts::at(panel.screen, 111.0f, -110.0f), track), "filled up to the head");
+    TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(12, ts::difference(ts::at(panel.screen, 111.0f, -35.0f), track), "empty after the head");
+    TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(12, ts::difference(ts::at(panel.screen, 111.0f, 60.0f), track), "right half stays empty");
+    TEST_ASSERT_GREATER_THAN_MESSAGE(150, ts::channel(ts::at(panel.screen, 95.0f, 0.0f), 8), "setpoint tick at 12 o'clock");
+    TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(12, ts::difference(ts::at(panel.screen, 96.0f, 135.0f), 0), "no tick at the end of the gauge");
+}
+
 void test_hint_font_contains_every_hint() {
     // Texts drawn with the smaller hint font, plus the digits and degree sign of "bis unter 99°"
     for (const Strings* t : {&kGerman, &kEnglish}) {
@@ -429,6 +453,7 @@ int main() {
     RUN_TEST(test_texts_fit_into_the_circle);
     RUN_TEST(test_status_symbols_are_mirrored);
     RUN_TEST(test_progress_rings_start_at_the_zero_mark);
+    RUN_TEST(test_heating_ends_at_the_setpoint_at_the_top);
     RUN_TEST(test_hint_font_contains_every_hint);
     RUN_TEST(test_scale_symbol_always_shows_its_state);
     return UNITY_END();

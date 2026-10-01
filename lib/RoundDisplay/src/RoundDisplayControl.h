@@ -118,4 +118,29 @@ namespace rd {
             bool closing_ = false;
     };
 
+    /** FNV-1a hash of pixel data, to notice whether a band changed */
+    uint32_t pixelHash(const uint16_t* pixels, size_t count);
+
+    /**
+     * @brief Sends only the bands that differ from what the panel already shows. A 240x40 band takes
+     *        5.7 ms over SPI at 27 MHz; when the temperature changes by 0.1 degrees, only the bands
+     *        with the digits and the marker change, the rest of the frame need not be sent again.
+     */
+    class BandFilter {
+        public:
+            static constexpr int kMaxBands = 16;
+
+            /** True if the band must be sent (then it counts as shown) */
+            bool changed(int index, const uint16_t* pixels, size_t count);
+
+            /** The panel content is unknown (start, after sleep): send every band next time */
+            void invalidate() {
+                shown_ = 0;
+            }
+
+        private:
+            uint32_t hash_[kMaxBands] = {};
+            uint32_t shown_ = 0; // bit per band
+    };
+
 } // namespace rd

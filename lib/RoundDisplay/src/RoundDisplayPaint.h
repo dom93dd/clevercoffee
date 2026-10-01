@@ -111,7 +111,8 @@ namespace rd {
             static float py(float cy, float radius, float angle);
 
         private:
-            template <typename Shade>
+            /** Ring segment; Gradient: shade() gets the position 0..1 along the arc (costs an angle per pixel) */
+            template <bool Gradient, typename Shade>
             void shadeArc(float cx, float cy, float radius, float width, float a0, float a1, bool roundCaps, Shade shade);
 
             template <typename Distance>

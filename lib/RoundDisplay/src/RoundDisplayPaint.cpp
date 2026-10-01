@@ -45,16 +45,29 @@ namespace rd {
             return static_cast<int>(std::ceil(std::max(-16384.0f, std::min(16384.0f, v))));
         }
 
-        float segmentDistance(const float x, const float y, const float x0, const float y0, const float x1, const float y1) {
-            const float vx = x1 - x0;
-            const float vy = y1 - y0;
-            const float wx = x - x0;
-            const float wy = y - y0;
-            const float len2 = vx * vx + vy * vy;
-            const float t = len2 > 0.0f ? clamp01((wx * vx + wy * vy) / len2) : 0.0f;
-            const float dx = wx - vx * t;
-            const float dy = wy - vy * t;
-            return std::sqrt(dx * dx + dy * dy);
+        /** atan2 in degrees, max. error about 0.001 degrees; much cheaper than std::atan2 on the ESP32 */
+        float fastAtan2Deg(const float y, const float x) {
+            const float ax = std::fabs(x);
+            const float ay = std::fabs(y);
+            const float big = std::max(ax, ay);
+
+            if (big == 0.0f) {
+                return 0.0f;
+            }
+
+            const float a = std::min(ax, ay) / big;
+            const float s = a * a;
+            float r = ((-0.0464964749f * s + 0.15931422f) * s - 0.327622764f) * s * a + a;
+
+            if (ay > ax) {
+                r = 1.57079637f - r;
+            }
+
+            if (x < 0.0f) {
+                r = 3.14159274f - r;
+            }
+
+            return (y < 0.0f ? -r : r) * kRadToDeg;
         }
     } // namespace
 
@@ -118,7 +131,7 @@ namespace rd {
         pixel = static_cast<uint16_t>(out >> 8 | out << 8);
     }
 
-    template <typename Shade>
+    template <bool Gradient, typename Shade>
     void Painter::shadeArc(const float cx, const float cy, const float radius, const float width, const float a0, const float a1, const bool roundCaps, Shade shade) {
         const float sweep = a1 - a0;
 
@@ -127,18 +140,68 @@ namespace rd {
             return;
         }
 
+        // Per pixel this avoids atan2 and fmod (on the ESP32 about 190 and 100 instructions): whether a
+        // pixel lies within the sweep follows from its angle to the middle of the arc, a dot product.
         const float half = width * 0.5f;
         const float rOut = radius + half + 1.0f;
         const float rIn = std::max(0.0f, radius - half - 1.0f);
         const bool closed = sweep >= 360.0f;
+        const float start0 = a0 - 360.0f * std::floor(a0 / 360.0f); // 0..360
+        const float sx = std::sin(a0 * kDegToRad);
+        const float sy = -std::cos(a0 * kDegToRad);
+        const float ex = std::sin(a1 * kDegToRad);
+        const float ey = -std::cos(a1 * kDegToRad);
+        const float mid = (a0 + a1) * 0.5f * kDegToRad;
+        const float mx = std::sin(mid);
+        const float my = -std::cos(mid);
+        const float cosHalfSweep = std::cos(std::min(sweep, 360.0f) * 0.5f * kDegToRad);
+        const float cap0x = cx + radius * sx;
+        const float cap0y = cy + radius * sy;
+        const float cap1x = cx + radius * ex;
+        const float cap1y = cy + radius * ey;
+        const float capReach2 = (half + 0.5f) * (half + 0.5f);
 
-        const float cap0x = px(cx, radius, a0);
-        const float cap0y = py(cy, radius, a0);
-        const float cap1x = px(cx, radius, a1);
-        const float cap1y = py(cy, radius, a1);
+        // Bounding box: the whole ring, or for a part of it its ends and the outermost points it passes
+        float bx0 = cx - rOut;
+        float bx1 = cx + rOut;
+        float by0 = cy - rOut;
+        float by1 = cy + rOut;
 
-        const int yStart = std::max(top_, pixelFloor(cy - rOut));
-        const int yEnd = std::min(top_ + height_ - 1, pixelCeil(cy + rOut));
+        if (!closed) {
+            bx0 = by0 = 1e9f;
+            bx1 = by1 = -1e9f;
+            const auto add = [&](const float x, const float y) {
+                bx0 = std::min(bx0, x);
+                bx1 = std::max(bx1, x);
+                by0 = std::min(by0, y);
+                by1 = std::max(by1, y);
+            };
+
+            for (const float r : {rIn, rOut}) {
+                add(cx + r * sx, cy + r * sy);
+                add(cx + r * ex, cy + r * ey);
+            }
+
+            for (int k = 0; k < 4; ++k) {
+                float rel = static_cast<float>(k) * 90.0f - start0;
+                rel += rel < 0.0f ? 360.0f : 0.0f;
+
+                if (rel <= sweep) {
+                    add(cx + rOut * static_cast<float>(k == 1) - rOut * static_cast<float>(k == 3), cy - rOut * static_cast<float>(k == 0) + rOut * static_cast<float>(k == 2));
+                }
+            }
+
+            const float margin = half + 1.0f; // round caps reach past the ends
+            bx0 -= margin;
+            bx1 += margin;
+            by0 -= margin;
+            by1 += margin;
+        }
+
+        const int yStart = std::max(top_, pixelFloor(by0));
+        const int yEnd = std::min(top_ + height_ - 1, pixelCeil(by1));
+        const int boxLeft = std::max(0, pixelFloor(bx0));
+        const int boxRight = std::min(width_ - 1, pixelCeil(bx1));
 
         for (int y = yStart; y <= yEnd; ++y) {
             const float dy = static_cast<float>(y) + 0.5f - cy;
@@ -158,8 +221,8 @@ namespace rd {
             for (int s = 0; s < spans; ++s) {
                 const float from = s == 0 ? cx - xo : cx + xi;
                 const float to = spans == 1 ? cx + xo : (s == 0 ? cx - xi : cx + xo);
-                const int xStart = std::max(0, pixelFloor(from));
-                const int xEnd = std::min(width_ - 1, pixelCeil(to));
+                const int xStart = std::max(boxLeft, pixelFloor(from));
+                const int xEnd = std::min(boxRight, pixelCeil(to));
 
                 for (int x = xStart; x <= xEnd; ++x) {
                     const float dx = static_cast<float>(x) + 0.5f - cx;
@@ -171,30 +234,49 @@ namespace rd {
                         continue;
                     }
 
-                    const float rel = std::fmod(std::atan2(dx, -dy) * kRadToDeg - a0 + 720.0f, 360.0f);
-                    float d;
-                    float t;
+                    float d = radial;
+                    float t = 0.0f;
 
-                    if (closed) {
-                        d = radial;
-                        t = rel / 360.0f;
+                    if (closed || dx * mx + dy * my >= r * cosHalfSweep) {
+                        if (Gradient) {
+                            float rel = fastAtan2Deg(dx, -dy) - start0;
+                            rel += rel < 0.0f ? 360.0f : 0.0f;
+                            rel += rel < 0.0f ? 360.0f : 0.0f;
+                            if (closed) {
+                                t = rel / 360.0f;
+                            }
+                            else if (rel <= sweep) {
+                                t = sweep > 0.0f ? rel / sweep : 0.0f;
+                            }
+                            else {
+                                t = rel - sweep < 360.0f - rel ? 1.0f : 0.0f; // right on an end, rounded past it
+                            }
+                        }
+                    }
+                    else if (roundCaps) {
+                        const float d0x = dx + cx - cap0x;
+                        const float d0y = dy + cy - cap0y;
+                        const float d1x = dx + cx - cap1x;
+                        const float d1y = dy + cy - cap1y;
+                        const float q0 = d0x * d0x + d0y * d0y;
+                        const float q1 = d1x * d1x + d1y * d1y;
+
+                        if (std::min(q0, q1) >= capReach2) {
+                            continue; // too far from both caps
+                        }
+
+                        d = std::sqrt(std::min(q0, q1)) - half;
+                        t = q0 < q1 ? 0.0f : 1.0f;
                     }
                     else {
-                        if (rel <= sweep) {
-                            d = radial;
-                            t = sweep > 0.0f ? rel / sweep : 0.0f;
-                        }
-                        else if (roundCaps) {
-                            const float d0 = std::hypot(dx + cx - cap0x, dy + cy - cap0y);
-                            const float d1 = std::hypot(dx + cx - cap1x, dy + cy - cap1y);
-                            d = std::min(d0, d1) - half;
-                            t = d0 < d1 ? 0.0f : 1.0f;
-                        }
-                        else {
-                            const float past = std::min(rel - sweep, 360.0f - rel);
-                            d = std::max(radial, r * std::sin(std::min(past, 90.0f) * kDegToRad));
-                            t = 360.0f - rel < rel - sweep ? 0.0f : 1.0f;
-                        }
+                        // Flat ends: distance to the line through the end, as long as the pixel is less than
+                        // 90 degrees past it (r * sin of the angle past the end)
+                        const float before = sx * dy - sy * dx; // r * sin(angle - a0), negative before the start
+                        const float after = ex * dy - ey * dx;  // r * sin(angle - a1), positive past the end
+                        const float pastStart = before <= 0.0f && sx * dx + sy * dy > 0.0f ? -before : r;
+                        const float pastEnd = after >= 0.0f && ex * dx + ey * dy > 0.0f ? after : r;
+                        d = std::max(radial, std::min(pastStart, pastEnd));
+                        t = pastStart < pastEnd ? 0.0f : 1.0f;
                     }
 
                     const float a = coverage(d);
@@ -230,11 +312,11 @@ namespace rd {
     }
 
     void Painter::arc(const float cx, const float cy, const float radius, const float width, const float a0, const float a1, const Color c, const bool roundCaps) {
-        shadeArc(cx, cy, radius, width, a0, a1, roundCaps, [c](float) { return c; });
+        shadeArc<false>(cx, cy, radius, width, a0, a1, roundCaps, [c](float) { return c; });
     }
 
     void Painter::arcGradient(const float cx, const float cy, const float radius, const float width, const float a0, const float a1, const Color c0, const Color c1, const bool roundCaps) {
-        shadeArc(cx, cy, radius, width, a0, a1, roundCaps, [c0, c1](const float t) { return mix(c0, c1, t); });
+        shadeArc<true>(cx, cy, radius, width, a0, a1, roundCaps, [c0, c1](const float t) { return mix(c0, c1, t); });
     }
 
     void Painter::circle(const float cx, const float cy, const float radius, const float width, const Color c) {
@@ -246,7 +328,7 @@ namespace rd {
             return;
         }
 
-        fillShape(cx - radius, cy - radius, cx + radius, cy + radius, c, [=](const float x, const float y) { return std::hypot(x - cx, y - cy) - radius; });
+        fillShape(cx - radius, cy - radius, cx + radius, cy + radius, c, [=](const float x, const float y) { return std::sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) - radius; });
     }
 
     void Painter::line(const float x0, const float y0, const float x1, const float y1, const float width, const Color c) {
@@ -256,7 +338,19 @@ namespace rd {
             return;
         }
 
-        fillShape(std::min(x0, x1) - half, std::min(y0, y1) - half, std::max(x0, x1) + half, std::max(y0, y1) + half, c, [=](const float x, const float y) { return segmentDistance(x, y, x0, y0, x1, y1) - half; });
+        const float vx = x1 - x0;
+        const float vy = y1 - y0;
+        const float len2 = vx * vx + vy * vy;
+        const float inv = len2 > 0.0f ? 1.0f / len2 : 0.0f;
+
+        fillShape(std::min(x0, x1) - half, std::min(y0, y1) - half, std::max(x0, x1) + half, std::max(y0, y1) + half, c, [=](const float x, const float y) {
+            const float wx = x - x0;
+            const float wy = y - y0;
+            const float t = clamp01((wx * vx + wy * vy) * inv);
+            const float dx = wx - vx * t;
+            const float dy = wy - vy * t;
+            return std::sqrt(dx * dx + dy * dy) - half;
+        });
     }
 
     void Painter::tick(const float cx, const float cy, const float angle, const float r0, const float r1, const float width, const Color c) {
@@ -268,11 +362,32 @@ namespace rd {
             return;
         }
 
+        // Per row: inside the circle nothing happens, beyond radius + feather the pixels turn black,
+        // only the pixels in between need their distance (a square root each)
+        const float outer = radius + std::max(feather, 0.0f);
+
         for (int y = top_; y < top_ + height_; ++y) {
             const float dy = static_cast<float>(y) + 0.5f - cy;
+            uint16_t* row = buffer_ + (y - top_) * width_;
+            const float in2 = radius * radius - dy * dy;
+            const float out2 = outer * outer - dy * dy;
+            // Pixel centres x + 0.5 with |x + 0.5 - cx| < reach lie within that distance of the centre
+            const float inReach = radius > 0.0f && in2 > 0.0f ? std::sqrt(in2) : -1.0f;
+            const float outReach = outer > 0.0f && out2 > 0.0f ? std::sqrt(out2) : -1.0f;
 
             for (int x = 0; x < width_; ++x) {
-                const float dx = static_cast<float>(x) + 0.5f - cx;
+                const float dx = std::fabs(static_cast<float>(x) + 0.5f - cx);
+
+                if (dx < inReach) {
+                    x = std::max(x, pixelFloor(cx + inReach - 0.5f) - 1); // skip the inside of the circle
+                    continue;
+                }
+
+                if (dx >= outReach) {
+                    row[x] = 0; // black (also with swapped bytes)
+                    continue;
+                }
+
                 const float d = std::sqrt(dx * dx + dy * dy) - radius;
 
                 if (d > 0.0f) {

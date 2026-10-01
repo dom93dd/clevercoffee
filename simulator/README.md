@@ -55,6 +55,18 @@ Vorher einmal `pio run` (baut das Programm, `./run.sh` macht das automatisch).
 ```
 Die PNGs sind unkomprimiert (einige MB); `sips -s format png a.png --out b.png` macht sie klein.
 
+## ESP32-Tempo: ruckelt es auf dem Chip?
+```sh
+./run.sh --spi 27                       # Fenster im Tempo des ESP32 (SPI 27/40/80 MHz), Taste X schaltet um
+.pio/build/sim/program --tempo          # Bilder/s und Blockade von loop() je Phase, ohne Fenster
+.pio/build/sim/program --bench          # Zeichenzeit und Prüfsumme je Szenario auf diesem Rechner
+.pio/build/sim/program --inspect DIR    # 19 Bildbögen zur Sichtprüfung: alle Bildschirme DE/EN, Animationen, Abläufe, Grenzwerte
+esp32-bench/run_qemu.sh                 # dieselben Szenarien als ESP32-Programm im Emulator (QEMU)
+```
+Im ESP32-Tempo wird jedes Bild hier gezeichnet, die Zeit pro Streifen gemessen und auf den ESP32 hochgerechnet (`kEsp32UsPerHostUs` in `src/Esp32Tempo.h`, aus `esp32-bench` im Emulator ermittelt). Dann läuft der Ablauf der Firmware in Echtzeit nach: ein Streifen pro `loop()`-Durchlauf, nur geänderte Streifen gehen per SPI raus, ein Streifen erscheint erst, wenn er übertragen ist. Das Seitenfeld zeigt Bilder pro Sekunde, Dauer eines Bildes und die längste Blockade von `loop()`.
+
+`esp32-bench/` ist ein eigenes PlatformIO-Projekt mit denselben Einstellungen wie die Firmware (`-Os`). Ohne Hardware läuft es im Espressif-QEMU (`run_qemu.sh`; QEMU von https://github.com/espressif/qemu/releases nach `~/.espressif/tools/qemu-xtensa/<Version>/`, braucht `brew install libgcrypt`). Auf dem echten Dev Kit: `pio run -e bench -t upload -t monitor`, Auswertung mit `report.py --real`. Die Prüfsummen zeigen, ob der ESP32 dasselbe Bild zeichnet wie der Simulator (Pixel einer Szene vergleichen: `BENCH_FLAGS='-D BENCH_DUMP=\"ready\"' ./run_qemu.sh` und `RD_DUMP=ready .pio/build/sim/program --bench`).
+
 ## Tests
 ```sh
 pio test -e test                        # alle Tests (etwa 15 s)
@@ -66,6 +78,7 @@ RD_LAYOUT_BOXES=1 pio test -e test -f test_layout -v   # Abstands-Check mit Posi
 ```
 | Suite | Prüft |
 |---|---|
+| `test_ui` (Ergänzung) | ein Streifen pro Aufruf ergibt dasselbe Bild wie ein ganzer Durchlauf und zeigt einen einzigen Zeitpunkt; nur geänderte Streifen werden gesendet (0,1 °C ändern höchstens 3 von 6); Lichtreflex im Animationstakt während des Bezugs |
 | `test_paint` | Kantenglättung, Winkel (0° = 12 Uhr, im Uhrzeigersinn), runde und gerade Enden, Clipping an Streifen- und Bildrändern, Maske, Text; Schriftformat: UTF-8, Glyphensuche in allen acht Schriften, Breite, Tintenhöhe, Mischfarben an den Kanten |
 | `test_control` | Schutz gegen hängende `loop()` (Grenzen, Überlauf von `millis()`, OTA), Zuordnung der Firmware-Zustände, Bezugstimer mit Haltezeit, Meldungen (Aufteilung, Großschreibung mit Umlauten, UTF-8-sicheres Kürzen), Zahlenformat DE/EN, Display-aus-Ablauf |
 | `test_ui` | Bildschirmwahl (Alarme vor allem anderen), Hysterese Aufheizen/Bereit, Neuzeichnen nur bei sichtbaren Änderungen, Animationen |
@@ -73,7 +86,7 @@ RD_LAYOUT_BOXES=1 pio test -e test -f test_layout -v   # Abstands-Check mit Posi
 | `test_fuzz` | 3000 zufällige Zustände mit NaN, unendlich, riesigen und negativen Werten, kaputtem UTF-8 und Zeitsprüngen: kein Absturz, jedes Bild unter 250 ms (eine aus kaputten Werten abgeleitete Schleife würde den ESP32 hängen lassen), nichts außerhalb des Glases; Fehlerbild landet in `test/fuzz-failure.png` |
 | `test_layout` | Abstände auf allen Szenarien in DE und EN, gemessen an den gezeichneten Pixeln: Inhalt ≥ 8 px zu Ring, Strichen, Markern, Statussymbolen und Glasrand; Ziffern der großen Zahl ≥ 12 px zur nächsten Zeile (Komma ≥ 7 px); Texte übereinander ≥ 7 px, Zeilen eines Absatzes ≥ 3 px. Rahmen und Inhalt trennt der Painter über Ebenen (`Layer::Frame`/`Layer::Content`). Dazu das Feedback vom 01.10.2026: Schriftgröße je Zeilenart (Soll/Ziel 19 px, zweite Zahl 32 px, zu breite Meldungszeile 18 px), gleiche Zeilenumbrüche der Kalibriermeldung, gleichmäßiger Abstand bis zu den Punkten „....“ |
 
-Weicht ein Bild von der Referenz ab, legt der Test das neue Bild unter `test/golden/failed/` ab. `check_firmware.sh` baut `esp32_usb`, `esp32_round_usb` und `esp32_round_ota`, verlangt mindestens 16 KB freien Flash für die Rund-Builds und vergleicht die Größe der normalen Firmware mit einem Build von `upstream/master` (muss gleich sein).
+Weicht ein Bild von der Referenz ab, legt der Test das neue Bild unter `test/golden/failed/` ab. `check_firmware.sh` baut `esp32_usb`, `esp32_round_usb` und `esp32_round_ota`, verlangt mindestens 16 KB freien Flash für die Rund-Builds, misst die Zeichenzeit im ESP32-Emulator (Budget: Streifen ≤ 12 ms, Bild ≤ 50 ms; übersprungen ohne QEMU) und vergleicht die Größe der normalen Firmware mit einem Build von `upstream/master` (muss gleich sein).
 
 ## Hinweis zu Xcode
 Passt ein installiertes Xcode (z. B. eine Beta) nicht zur macOS-Version, funktionieren `/usr/bin/clang++` und `xcrun` nicht. `sim_flags.py` erkennt das und nimmt automatisch die Command Line Tools sowie ein zur macOS-Version passendes SDK (z. B. 26.x statt 27.0). Dauerhaft beheben lässt es sich mit `sudo xcode-select -s /Library/Developer/CommandLineTools` oder mit einem zum System passenden Xcode.

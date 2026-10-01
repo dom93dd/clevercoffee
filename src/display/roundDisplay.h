@@ -6,7 +6,8 @@
  *
  * Collects the machine state from the globals into an rd::Model and draws the UI
  * band by band (2 x 240x40 pixel, 19 KB each) with DMA, so the ESP32 needs no
- * frame buffer. Also provides the display functions the rest of the firmware calls
+ * frame buffer. In loop() one band per iteration, so loop() never waits for a whole frame;
+ * bands the panel already shows are not sent again. Also provides the display functions the rest of the firmware calls
  * (displayLogo, displayWrappedMessage, displayScaleFailed, shouldDisplayBrewTimer).
  * Everything that works without hardware lives in RoundDisplayControl and is tested
  * in simulator/test (pio test -e test).
@@ -45,6 +46,7 @@ inline rd::RoundUi roundUi;
 inline rd::BrewTimer roundBrewTimer;
 inline rd::PowerSequencer roundPower;
 inline rd::MessageText roundMessageText;
+inline rd::BandFilter roundBandFilter; // bands the panel already shows are not sent again
 
 /**
  * @brief determines if brew timer should be visible; postBrewTimerDuration defines how long the timer after the brew is shown
@@ -99,15 +101,48 @@ inline rd::Model roundDisplayModel() {
     return m;
 }
 
+inline bool roundFrameSending = false; // SPI transaction stays open while a frame is drawn band by band
+
+inline void roundPushBand(lgfx::LGFX_Sprite& band, const int top) {
+    if (!roundBandFilter.changed(top / band.height(), static_cast<const uint16_t*>(band.getBuffer()), band.width() * band.height())) {
+        // Unchanged: nothing to send, but the other buffer may still be on its way and is drawn into next
+        roundTft->waitDMA();
+        return;
+    }
+
+    // Waits for the previous band, then sends this one while the CPU draws the next
+    roundTft->pushImageDMA(0, top, band.width(), band.height(), static_cast<lgfx::swap565_t*>(band.getBuffer()));
+}
+
+/**
+ * @brief Draws a whole frame at once (boot messages and intro, while setup() may block anyway)
+ */
 inline void roundDisplayRender() {
-    const uint32_t now = millis();
+    if (roundFrameSending) { // a frame drawn band by band is dropped, this one replaces it
+        roundTft->endWrite();
+        roundFrameSending = false;
+    }
 
     roundTft->startWrite();
-    roundUi.render(roundBands, 2, now, [](lgfx::LGFX_Sprite& band, const int top) {
-        // Waits for the previous band, then sends this one while the CPU draws the next
-        roundTft->pushImageDMA(0, top, band.width(), band.height(), static_cast<lgfx::swap565_t*>(band.getBuffer()));
-    });
+    roundUi.render(roundBands, 2, millis(), roundPushBand);
     roundTft->endWrite();
+}
+
+/**
+ * @brief Draws the next band of the current frame (opens a frame if none is open). One band per
+ *        loop() keeps loop() short (a few ms) while a frame takes a few loop iterations; the DMA
+ *        transfer of a band runs on while loop() does its other work.
+ */
+inline void roundDisplayStep(const uint32_t now) {
+    if (!roundFrameSending) {
+        roundTft->startWrite();
+        roundFrameSending = true;
+    }
+
+    if (roundUi.renderBand(roundBands, 2, roundPushBand, now)) {
+        roundTft->endWrite(); // waits for the last transfer
+        roundFrameSending = false;
+    }
 }
 
 /**
@@ -120,6 +155,7 @@ inline void roundDisplayMessage(const String& text) {
 
     if (roundPower.asleep()) {
         roundTft->wakeup();
+        roundBandFilter.invalidate();
     }
 
     rd::splitMessage(text.c_str(), roundMessageText);
@@ -209,6 +245,12 @@ inline void roundDisplayLoop() {
 
     const unsigned long now = millis();
 
+    // A frame in progress: only its next band, no new machine state, so the picture shows one moment
+    if (roundUi.frameOpen()) {
+        roundDisplayStep(now);
+        return;
+    }
+
     // Look at the machine every 50 ms; during transitions as often as frames are due
     if (!roundUi.animating(now) && !roundPower.closing() && now - lastModel < kRoundModelInterval) {
         return;
@@ -241,9 +283,11 @@ inline void roundDisplayLoop() {
     switch (roundPower.update(u8g2->sleepRequested(), roundUi, now)) {
         case rd::PowerSequencer::Action::Sleep:
             roundTft->sleep();
+            roundBandFilter.invalidate();
             return;
         case rd::PowerSequencer::Action::Wake:
             roundTft->wakeup();
+            roundBandFilter.invalidate();
             break;
         default:
             break;
@@ -260,7 +304,7 @@ inline void roundDisplayLoop() {
 
     if (roundUi.needsRedraw(now) && (!busy || now - lastDisplayUpdate > 500)) {
         displayUpdateRunning = true;
-        roundDisplayRender();
+        roundDisplayStep(now); // first band, the others in the next loop iterations
         lastDisplayUpdate = now;
     }
 }
