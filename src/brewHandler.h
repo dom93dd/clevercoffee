@@ -259,6 +259,9 @@ inline bool brew() {
                 currBrewWeight = 0; // reset currBrewWeight for new brew
 
                 LOG(INFO, "Brew started");
+#ifdef CC_ORIONE
+                shot_history::brewStarted();
+#endif
 
                 if (!preinfusionEnabled) {
                     LOG(INFO, "Brew running");

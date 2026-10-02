@@ -76,8 +76,13 @@ body.reboot .toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 .rebootbar{position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));max-width:608px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 8px 8px 14px;font-size:14px;z-index:6;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .rebootbar .btn{padding:9px 12px;font-size:14px;flex:none}
 .ver{color:var(--faint);font-size:12px;margin-top:14px}
-.shot{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:baseline;padding:11px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.shot{display:grid;grid-template-columns:1fr 1fr auto 12px;gap:8px;align-items:baseline;padding:11px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;cursor:pointer}
 .shot:first-child{border-top:0}
+.shot i{font-style:normal;color:var(--faint);transition:transform .2s}
+.shot.open i{transform:rotate(90deg)}
+.curve{padding:0 0 12px}
+.curve canvas{height:170px;margin-top:0}
+.bars{height:120px;margin:6px 0 2px}
 .shot small{color:var(--mute);font-size:13px}
 .empty{color:var(--mute);margin:10px 0 4px}
 .chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 6px}
@@ -119,7 +124,7 @@ const T = {
     standby: "Standby", overtemp: "Übertemperatur", sensor: "Sensorfehler", offline: "Keine Verbindung",
     sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
     sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush",
-    sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
+    sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
     stopHint: "Gewicht: erst Waage einschalten",
     "brew.mode": "Bezugsart", "brew.modeHint": "Automatisch: Zeit oder Gewicht beendet den Bezug",
     "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
@@ -155,7 +160,7 @@ const T = {
     standby: "Standby", overtemp: "Overtemperature", sensor: "Sensor error", offline: "No connection",
     sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
     sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush",
-    sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
+    sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
     stopHint: "Weight: switch the scale on first",
     "brew.mode": "Brew mode", "brew.modeHint": "Automatic: time or weight ends the shot",
     "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
@@ -511,16 +516,106 @@ function shotsCard() {
   paintShots(c.lastChild);
   return c;
 }
+// The list with a bar chart of the five above it; a tap on a shot opens its curve (GET /shot?i=)
+const curves = {};     // curve per shot, by "time,seconds"
+let openShot = null;   // key of the shot whose curve is open
+const shotKey = x => x.at + "," + x.s;
 function paintShots(box = $("#shotList")) {
   if (!box) return;
   box.innerHTML = "";
   if (!shots) { box.append(el("p", "empty", "…")); return; }
   if (!shots.length) { box.append(el("p", "empty", t("noShots"))); return; }
-  for (const x of shots) {
-    const r = el("div", "shot");
-    r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), el("small", null, whenText(x.at)));
-    box.append(r);
+  const hasW = shots.some(x => x.g != null);
+  box.append(el("canvas", "bars"), el("div", "legend", `<span><i style="background:var(--heat)"></i>${t("shotTime")}</span>` + (hasW ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "")));
+  shots.forEach((x, i) => {
+    const r = el("div", "shot" + (shotKey(x) === openShot ? " open" : "")), cv = el("div", "curve");
+    r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), el("small", null, whenText(x.at)), el("i", null, "›"));
+    cv.hidden = shotKey(x) !== openShot;
+    r.onclick = () => toggleCurve(x, i);
+    box.append(r, cv);
+  });
+  drawShotCharts();
+}
+async function toggleCurve(x, i) {
+  openShot = openShot === shotKey(x) ? null : shotKey(x);
+  if (openShot && !curves[openShot]) {
+    try { const r = await call("/shot?i=" + i); curves[shotKey(x)] = r.ok ? await r.json() : "none"; } catch (e) { curves[shotKey(x)] = "none"; }
   }
+  paintShots();
+}
+function drawShotCharts() {
+  const box = $("#shotList");
+  if (!box || !shots?.length) return;
+  drawShotBars(box.querySelector(".bars"));
+  const k = shots.findIndex(x => shotKey(x) === openShot), cv = k < 0 ? null : box.querySelectorAll(".curve")[k];
+  if (cv && curves[openShot]) {
+    if (curves[openShot] === "none") cv.innerHTML = `<p class="empty">${t("noCurve")}</p>`;
+    else {
+      if (!cv.querySelector("canvas")) cv.innerHTML = `<canvas></canvas><div class="legend">${curves[openShot].w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : ""}<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span></div>`;
+      drawCurve(cv.querySelector("canvas"), curves[openShot]);
+    }
+  }
+}
+function canvas2d(c) { // sharp on high-density screens; null while hidden
+  if (!c || !c.clientWidth) return null;
+  const dpr = devicePixelRatio || 1;
+  c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr);
+  g.font = "11px -apple-system,sans-serif";
+  return g;
+}
+// time and weight of the last shots side by side, oldest on the left: how even were they?
+function drawShotBars(c) {
+  const g = canvas2d(c);
+  if (!g) return;
+  const list = shots.slice().reverse(), hasW = list.some(x => x.g != null), w = c.clientWidth, h = c.clientHeight;
+  const maxS = Math.max(...list.map(x => x.s)), maxG = Math.max(1, ...list.map(x => x.g ?? 0));
+  const slot = w / 5, x0 = (w - slot * list.length) / 2, base = h - 18, top = 16, bw = Math.min(22, slot / 3.2);
+  const bar = (x, v, max, col, label) => {
+    const bh = Math.max(2, v / max * (base - top));
+    g.fillStyle = col; g.beginPath(); g.roundRect ? g.roundRect(x - bw / 2, base - bh, bw, bh, [4, 4, 0, 0]) : g.rect(x - bw / 2, base - bh, bw, bh); g.fill();
+    g.fillText(label, x, base - bh - 4);
+  };
+  g.textAlign = "center";
+  list.forEach((x, i) => {
+    const cx = x0 + slot * (i + .5), dx = hasW ? bw / 2 + 2 : 0;
+    bar(cx - dx, x.s, maxS, "#ff9226", fmt(Math.round(x.s * 10) / 10));
+    if (hasW && x.g != null) bar(cx + dx, x.g, maxG, "#ece2d0", fmt(Math.round(x.g * 10) / 10));
+    g.fillStyle = "#56565c";
+    g.fillText(x.at ? new Date(x.at * 1000).toLocaleTimeString(lang === "de" ? "de-DE" : "en-GB", {hour: "2-digit", minute: "2-digit"}) : "", cx, h - 3);
+  });
+}
+// one shot: weight (left scale) and brew temperature (right scale) over the seconds, dashed line where the pump stopped
+function drawCurve(c, d) {
+  const g = canvas2d(c);
+  if (!g) return;
+  const w = c.clientWidth, h = c.clientHeight, n = d.t.length, dt = d.dt / 1000, L = 30, R = w - 34, T = 10, B = h - 20;
+  const x = k => L + (n > 1 ? k / (n - 1) : 0) * (R - L);
+  if (n < 2) return;
+  const temps = d.t.filter(v => v != null).map(v => v / 10), wts = (d.w || []).filter(v => v != null).map(v => v / 10);
+  let tLo = temps.length ? Math.min(...temps) : 90, tHi = temps.length ? Math.max(...temps) : 94;
+  if (tHi - tLo < 4) { const m = (tHi + tLo) / 2; tLo = m - 2; tHi = m + 2; }
+  const gHi = Math.max(10, ...wts) * 1.1, yG = v => B - v / gHi * (B - T), yT = v => B - (v - tLo) / (tHi - tLo) * (B - T);
+  g.strokeStyle = "#26262a"; g.lineWidth = 1; g.fillStyle = "#56565c";
+  const total = (n - 1) * dt, step = total > 40 ? 20 : total > 16 ? 10 : 5;
+  g.textAlign = "center";
+  for (let s = 0; s <= total + .01; s += step) { const px = L + s / total * (R - L); g.beginPath(); g.moveTo(px, T); g.lineTo(px, B); g.stroke(); g.fillText(s + " s", px, h - 4); }
+  g.textAlign = "right";
+  if (wts.length) for (const f of [0, .5, 1]) g.fillText(Math.round(gHi / 1.1 * f) + " g", L - 4, yG(gHi / 1.1 * f) + 4);
+  g.textAlign = "left";
+  g.fillText(num(tHi, 1) + "°", R + 4, T + 8); g.fillText(num(tLo, 1) + "°", R + 4, B);
+  if (d.stop >= 0 && d.stop < n) { g.setLineDash([4, 4]); g.strokeStyle = "#56565c"; g.beginPath(); g.moveTo(x(d.stop), T); g.lineTo(x(d.stop), B); g.stroke(); g.setLineDash([]); }
+  const line = (vals, y, col) => {
+    g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); let on = false;
+    vals.forEach((v, k) => { if (v == null) { on = false; return; } on ? g.lineTo(x(k), y(v / 10)) : g.moveTo(x(k), y(v / 10)); on = true; });
+    g.stroke();
+  };
+  if (d.w) { // weight with a soft fill under it
+    g.fillStyle = "rgba(236,226,208,.10)"; g.beginPath(); g.moveTo(x(0), B);
+    d.w.forEach((v, k) => g.lineTo(x(k), yG((v ?? 0) / 10))); g.lineTo(x(n - 1), B); g.fill();
+    line(d.w, yG, "#ece2d0");
+  }
+  line(d.t, yT, "#ff9226");
 }
 
 function stateText() {
@@ -653,9 +748,10 @@ async function render() {
   shown = def.id;
   scrollTo(0, scrollAt[def.id] || 0);
   if (def.id === "status") paintLive();
+  if (def.shot) drawShotCharts(); // canvases have no size while their tab is hidden
 }
 addEventListener("hashchange", () => { tab = location.hash.slice(1); render(); });
-addEventListener("resize", drawChart);
+addEventListener("resize", () => { drawChart(); drawShotCharts(); });
 (async () => {
   try { await load(TABS[0].names); } catch (e) {}
   setLang();

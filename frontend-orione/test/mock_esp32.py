@@ -152,6 +152,21 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/shots":
             with S.lock:
                 return self.send(200, json.dumps({"now": int(time.time()), "shots": S.shots[:5]}), "application/json")
+        if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
+            i = int(q.get("i", ["0"])[0])
+            with S.lock:
+                shot = S.shots[i] if 0 <= i < min(5, len(S.shots)) else None
+            if not shot or shot.get("nocurve"):
+                return self.send(404, "no curve")
+            n = int((shot["s"] + 4) / 0.5) + 1
+            stop = int(shot["s"] / 0.5) + 1
+            def grams(k):
+                t = k * 0.5
+                if t < 6: return 0
+                return round(min(t - 6, shot["s"] - 6) / (shot["s"] - 6) * shot["g"] * 10 + (4 if t > shot["s"] else 0))
+            w = None if shot.get("g") is None else [grams(k) for k in range(n)]
+            temp = [round((93.5 - 1.6 * (1 if 4 < k * 0.5 < shot["s"] else 0) * min(1, (k * 0.5 - 4) / 6)) * 10) for k in range(n)]
+            return self.send(200, json.dumps({"dt": 500, "stop": stop, "w": w, "t": temp}), "application/json")
         if url.path == "/version":
             return self.send(200, "4.0.4+mock")
         if url.path == "/download/config":

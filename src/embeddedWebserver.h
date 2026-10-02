@@ -444,6 +444,19 @@ inline void serverSetup() {
         request->send(response);
     }));
 
+    server.on("/shot", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+        const int i = request->hasParam("i") ? request->getParam("i")->value().toInt() : 0;
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+
+        if (!shot_history::writeCurveJson(i, *response)) {
+            delete response;
+            request->send(404, "text/plain", "no curve");
+            return;
+        }
+
+        request->send(response);
+    }));
+
 #endif
     server.on("/timeseries", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         // Chunked, so a response never needs more memory than the server's send buffer

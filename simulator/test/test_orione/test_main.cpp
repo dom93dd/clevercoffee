@@ -228,6 +228,134 @@ void test_shots_reject_foreign_data() {
     TEST_ASSERT_EQUAL_INT(0, log.count());
 }
 
+void test_shots_numbered_for_their_curves() {
+    orione::ShotLog log;
+    log.record(25.0f, 36.0f, 0, 0);
+    log.record(26.0f, 37.0f, 0, 0);
+    TEST_ASSERT_EQUAL_UINT16(1, log.at(0).seq);
+    TEST_ASSERT_EQUAL_UINT16(0, log.at(1).seq);
+    const auto saved = log.stored();
+    orione::ShotLog back;
+    back.restore(&saved, sizeof(saved));
+    back.record(24.0f, 35.0f, 0, 0);
+    TEST_ASSERT_EQUAL_UINT16(2, back.at(0).seq); // goes on after a restart
+
+    for (int i = 0; i < 6; ++i) {
+        back.record(24.0f, 35.0f, 0, 0);
+    }
+
+    std::set<int> slots; // the five kept shots have five different curve slots
+
+    for (int i = 0; i < back.count(); ++i) {
+        slots.insert(back.at(i).seq % orione::ShotLog::kSize);
+    }
+
+    TEST_ASSERT_EQUAL_INT(5, static_cast<int>(slots.size()));
+}
+
+void test_curve_point_every_half_second() {
+    orione::ShotCurve c;
+    c.begin(1000);
+
+    for (uint32_t ms = 1000; ms <= 3000; ms += 50) { // loop() runs far more often than points are due
+        c.sample(ms, (ms - 1000) / 100.0f, 93.46f);
+    }
+
+    TEST_ASSERT_EQUAL_INT(5, c.count()); // 0, 0.5, 1, 1.5, 2 s
+    TEST_ASSERT_EQUAL_INT(500, c.intervalMs());
+    TEST_ASSERT_EQUAL_INT(0, c.at(0).grams);
+    TEST_ASSERT_EQUAL_INT(50, c.at(1).grams); // 5.0 g in tenths
+    TEST_ASSERT_EQUAL_INT(935, c.at(4).celsius);
+}
+
+void test_curve_long_shot_keeps_its_length() {
+    orione::ShotCurve c;
+    c.begin(0);
+
+    for (uint32_t ms = 0; ms <= 80000; ms += 10) {
+        c.sample(ms, ms / 1000.0f, 93.0f);
+    }
+
+    // 80 s: 160 points at 0.5 s do not fit, 80 at 1 s do
+    TEST_ASSERT_EQUAL_INT(1000, c.intervalMs());
+    TEST_ASSERT_EQUAL_INT(81, c.count());
+
+    for (int i = 0; i < c.count(); ++i) { // each point still sits at i * interval
+        TEST_ASSERT_EQUAL_INT(i * 10, c.at(i).grams);
+    }
+}
+
+void test_curve_marks_the_stop_and_keeps_the_drops() {
+    orione::ShotCurve c;
+    c.begin(0);
+
+    for (uint32_t ms = 0; ms <= 25000; ms += 100) {
+        c.sample(ms, ms / 700.0f, 93.0f);
+    }
+
+    c.stopped();
+
+    for (uint32_t ms = 25100; ms <= 29000; ms += 100) {
+        c.sample(ms, 36.0f, 92.0f);
+    }
+
+    c.end();
+    TEST_ASSERT_EQUAL_INT(51, c.stop()); // first point after 25 s
+    TEST_ASSERT_EQUAL_INT(59, c.count());
+    c.sample(40000, 40.0f, 92.0f); // ended: nothing more
+    TEST_ASSERT_EQUAL_INT(59, c.count());
+}
+
+void test_curve_stop_survives_halving() {
+    orione::ShotCurve c;
+    c.begin(0);
+
+    for (uint32_t ms = 0; ms <= 30000; ms += 100) {
+        c.sample(ms, 1.0f, 93.0f);
+    }
+
+    c.stopped(); // at point 61 (30.5 s)
+
+    for (uint32_t ms = 30100; ms <= 60000; ms += 100) {
+        c.sample(ms, 1.0f, 93.0f);
+    }
+
+    TEST_ASSERT_EQUAL_INT(1000, c.intervalMs());
+    TEST_ASSERT_EQUAL_INT(31, c.stop()); // 31 s, the first point after 30.5 s
+}
+
+void test_curve_without_scale_or_sensor() {
+    orione::ShotCurve c;
+    c.begin(0);
+    c.sample(0, -1.0f, 0.0f / 0.0f);
+    TEST_ASSERT_EQUAL_INT(orione::ShotCurve::kNone, c.at(0).grams);
+    TEST_ASSERT_EQUAL_INT(orione::ShotCurve::kNone, c.at(0).celsius);
+}
+
+void test_curve_survives_save_and_restore() {
+    orione::ShotCurve c;
+    c.begin(0);
+
+    for (uint32_t ms = 0; ms <= 2000; ms += 500) {
+        c.sample(ms, ms / 100.0f, 93.0f);
+    }
+
+    c.stopped();
+    c.end();
+    auto saved = c.stored();
+    orione::ShotCurve back;
+    TEST_ASSERT_TRUE(back.restore(&saved, sizeof(saved)));
+    TEST_ASSERT_EQUAL_INT(5, back.count());
+    TEST_ASSERT_EQUAL_INT(5, back.stop());
+    TEST_ASSERT_EQUAL_INT(200, back.at(4).grams);
+    saved.count = orione::ShotCurve::kMaxPoints + 1;
+    TEST_ASSERT_FALSE(back.restore(&saved, sizeof(saved)));
+    saved = c.stored();
+    saved.intervalMs = 0;
+    TEST_ASSERT_FALSE(back.restore(&saved, sizeof(saved)));
+    TEST_ASSERT_FALSE(back.restore(&saved, sizeof(saved) - 2));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -252,5 +380,12 @@ int main() {
     RUN_TEST(test_shots_settle_across_millis_wrap);
     RUN_TEST(test_shots_survive_save_and_restore);
     RUN_TEST(test_shots_reject_foreign_data);
+    RUN_TEST(test_shots_numbered_for_their_curves);
+    RUN_TEST(test_curve_point_every_half_second);
+    RUN_TEST(test_curve_long_shot_keeps_its_length);
+    RUN_TEST(test_curve_marks_the_stop_and_keeps_the_drops);
+    RUN_TEST(test_curve_stop_survives_halving);
+    RUN_TEST(test_curve_without_scale_or_sensor);
+    RUN_TEST(test_curve_survives_save_and_restore);
     return UNITY_END();
 }

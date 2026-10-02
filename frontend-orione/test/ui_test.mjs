@@ -303,7 +303,7 @@ test("Letzte Bezüge: Zeit, Gewicht, wann; neuer Bezug erscheint von selbst", as
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   const list = view(page).locator("#shotList .shot");
   await list.first().waitFor();
-  const rows = await list.evaluateAll(rs => rs.map(r => [...r.children].map(c => c.textContent)));
+  const rows = await list.evaluateAll(rs => rs.map(r => [...r.children].slice(0, 3).map(c => c.textContent)));
   // a day and a minute ago is "gestern", except around a change of daylight saving time
   const day = new Date((now - 86460) * 1000), older = day.toDateString() === new Date(Date.now() - 864e5).toDateString() ? "gestern" : day.toLocaleDateString("de-DE", {day: "2-digit", month: "2-digit"});
   assert.deepEqual(rows, [["25,3 s", "36,1 g", "heute " + hm(now - 600)], ["24,8 s", "–", older + " " + hm(now - 86460)]]);
@@ -365,6 +365,47 @@ test("Schnellwahl: Werte ändern und behalten", async ({browser}) => {
   await settle(page);
   await tab(page, "Einstellungen");
   assert.deepEqual(await row(page, "Espresso").locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,0 s", "36,5 g"]);
+  await ctx.close();
+});
+
+test("Letzte Bezüge: Balken-Übersicht und Kurve je Bezug", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 31.0, g: null, at: now - 7200, nocurve: true});
+  await mock(BASE, "/__shot", {s: 24.8, g: null, at: now - 3600});
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const painted = sel => page.evaluate(s => { // canvas has something drawn on it
+    const c = document.querySelector(s); if (!c || !c.width) return 0;
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0;
+    for (let i = 3; i < d.length; i += 4) n += d[i] > 0; return n;
+  }, sel);
+  await view(page).locator("#shotList canvas.bars").waitFor();
+  assert.ok(await painted("#shotList canvas.bars") > 500, "bar chart drawn");
+  assert.deepEqual(await view(page).locator("#shotList > .legend span").allTextContents(), ["Zeit", "Gewicht"]);
+
+  const rows = view(page).locator("#shotList .shot"), curves = view(page).locator("#shotList .curve");
+  await rows.nth(0).click();
+  await curves.nth(0).locator("canvas").waitFor();
+  assert.ok(await painted("#shotList .curve:not([hidden]) canvas") > 1000, "curve drawn");
+  assert.deepEqual(await curves.nth(0).locator(".legend span").allTextContents(), ["Gewicht", "Temperatur", "Pumpe aus"]);
+  assert.match(await rows.nth(0).getAttribute("class"), /open/);
+  await page.screenshot({path: OUT + "brew-curve.png", fullPage: true});
+
+  await rows.nth(1).click(); // the next one: the first closes, no scale means no weight line
+  await curves.nth(1).locator("canvas").waitFor();
+  assert.equal(await curves.nth(0).isHidden(), true);
+  assert.deepEqual(await curves.nth(1).locator(".legend span").allTextContents(), ["Temperatur", "Pumpe aus"]);
+  await rows.nth(1).click();
+  assert.equal(await curves.nth(1).isHidden(), true);
+
+  await rows.nth(2).click();
+  await curves.nth(2).locator(".empty", {hasText: "keine Kurve"}).waitFor();
+  const gets = (await page.evaluate(() => performance.getEntriesByType("resource").map(e => e.name))).filter(u => u.includes("/shot?"));
+  assert.equal(gets.length, 3, "each curve fetched once: " + gets);
+  await rows.nth(0).click(); // again: from the cache
+  await curves.nth(0).locator("canvas").waitFor();
+  assert.equal((await page.evaluate(() => performance.getEntriesByType("resource").map(e => e.name))).filter(u => u.includes("/shot?")).length, 3);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 

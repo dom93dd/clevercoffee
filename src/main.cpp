@@ -1507,8 +1507,8 @@ void loopPid() {
     }
 
 #ifdef CC_ORIONE
-    // drops after the last shot (the brew weight stays frozen once the brew is over)
-    shot_history::loop(scale && scale->isConnected() ? currReadingWeight - preBrewWeight : -1.0f);
+    // curve of the running shot and the drops after it (the brew weight stays frozen once the brew is over)
+    shot_history::loop(!(scale && scale->isConnected()) ? -1.0f : checkBrewActive() ? currBrewWeight : currReadingWeight - preBrewWeight, temperature);
 #endif
 
     if (config.get<bool>("hardware.sensors.pressure.enabled")) {
