@@ -9,6 +9,7 @@
  *   roundsim                       interactive window (keys: see side panel)
  *   roundsim --shot ready out.png  one screen as PNG, no window
  *   roundsim --gallery out.png     all screens on one sheet
+ *   roundsim --display auto        also drive the round display on an ESP32 over USB (esp32-bench env remote)
  *   roundsim --spi 27              window at the speed of the ESP32 (SPI 27/40/80 MHz; key X switches)
  *   roundsim --tempo               pictures per second and loop() blocking at ESP32 speed, without window
  *   roundsim --bench               drawing time per scenario here (compare: esp32-bench)
@@ -30,7 +31,9 @@
 #include "Esp32Tempo.h"
 #include "FakeMachine.h"
 #include "Png.h"
+#include "RemoteLink.h"
 #include "ReviewPage.h"
+#include "SerialPort.h"
 #include "SimSupport.h"
 
 #include <algorithm>
@@ -717,11 +720,13 @@ namespace {
             }
 
             switched = r.until([&] { return r.ui.screen() == rd::Screen::Ready; }, 600000);
-            in.shot(r.ui, r.now, switched ? "Umschalten auf Bereit-Skala" : "FEHLER: kein Umschalten");
+            in.shot(r.ui, r.now, switched ? "HEIZT AUF -> HEIZT (gleiche Skala)" : "FEHLER: kein Wechsel");
 
-            for (int i = 0; i < 4; ++i) { // the point glides to the zoomed scale
-                r.advance(100);
-                in.shot(r.ui, r.now, "Gleiten +" + std::to_string((i + 1) * 100) + " ms");
+            for (const float t : {90.5f, 92.0f, 93.2f}) { // same scale: the point slows down near the setpoint
+                r.until([&] { return r.m.model().temperature >= t; }, 600000);
+                char caption[48];
+                snprintf(caption, sizeof(caption), "%.1f °C", static_cast<double>(r.m.model().temperature));
+                in.shot(r.ui, r.now, caption);
             }
             r.until([&] { return r.ui.ready(); }, 600000);
             in.shot(r.ui, r.now, "BEREIT erreicht");
@@ -948,7 +953,90 @@ namespace {
         {"Q / Esc", "Beenden"},
     };
 
-    void drawSidePanel(lgfx::LGFX_Sprite& s, const FakeMachine& m, const rd::RoundUi& ui, const float speed, const float fps, const float drawMs, const Esp32Tempo& tempo) {
+    /** Sends the simulated machine to the round display on an ESP32 over USB (--display; esp32-bench env remote) */
+    class Mirror {
+        public:
+            bool open(const char* port) {
+                const std::string path = std::strcmp(port, "auto") == 0 ? SerialPort::find() : std::string(port);
+
+                if (path.empty() || !port_.open(path, link::kBaud)) {
+                    status = "Display: kein ESP32 gefunden";
+                    return false;
+                }
+
+                status = "Display: " + path + ", warte auf Antwort";
+                return true;
+            }
+
+            void update(const rd::Model& m, const rd::Message* message, const bool displayOff, const uint32_t now) {
+                if (!port_.isOpen()) {
+                    return;
+                }
+
+                // Changes right away, everything again now and then: the ESP32 may just have restarted
+                const auto model = link::encodeModel(m);
+
+                if (model != lastModel_ || now - modelMs_ >= 250) {
+                    port_.write(link::frame(link::Model, model));
+                    lastModel_ = model;
+                    modelMs_ = now;
+                }
+
+                link::TextMessage text;
+
+                if (message != nullptr) {
+                    text = {message->title ? message->title : "", message->line1 ? message->line1 : "", message->line2 ? message->line2 : "", message->line3 ? message->line3 : ""};
+                }
+
+                if (!(text == lastText_) || now - textMs_ >= 1000) {
+                    port_.write(link::frame(link::Text, link::encodeText(text)));
+                    lastText_ = text;
+                    textMs_ = now;
+                }
+
+                if (displayOff != lastOff_ || now - powerMs_ >= 1000) {
+                    port_.write(link::frame(link::Power, {static_cast<uint8_t>(displayOff)}));
+                    lastOff_ = displayOff;
+                    powerMs_ = now;
+                }
+
+                for (const auto& line : port_.lines()) {
+                    unsigned frames = 0;
+                    unsigned models = 0;
+                    unsigned bad = 0;
+                    unsigned ms = 0;
+
+                    if (std::sscanf(line.c_str(), "STATUS %u %u %u %u", &frames, &models, &bad, &ms) == 4) {
+                        char buf[96];
+                        snprintf(buf, sizeof(buf), "Display: %u Bilder/s, max %u ms am Stück%s", frames, ms, bad > 0 ? ", Übertragungsfehler" : "");
+                        status = buf;
+                        statusMs_ = now;
+                    }
+                }
+
+                if (statusMs_ != 0 && now - statusMs_ > 3000) {
+                    status = "Display: keine Antwort vom ESP32";
+                }
+            }
+
+            void play(const rd::Animation animation) {
+                port_.write(link::frame(link::Play, {static_cast<uint8_t>(animation)}));
+            }
+
+            std::string status;
+
+        private:
+            SerialPort port_;
+            std::vector<uint8_t> lastModel_;
+            link::TextMessage lastText_;
+            bool lastOff_ = false;
+            uint32_t modelMs_ = 0;
+            uint32_t textMs_ = 0;
+            uint32_t powerMs_ = 0;
+            uint32_t statusMs_ = 0;
+    };
+
+    void drawSidePanel(lgfx::LGFX_Sprite& s, const FakeMachine& m, const rd::RoundUi& ui, const float speed, const float fps, const float drawMs, const Esp32Tempo& tempo, const std::string& display) {
         s.fillScreen(rd::rgb(24, 24, 27));
         rd::Painter p(s, 0);
         const rd::Color head = rd::rgb(240, 180, 92);
@@ -985,6 +1073,11 @@ namespace {
             p.text(rd::fonts::text(), "ESP32-Tempo aus (Taste X)", 18, y, dim, rd::Align::Left);
         }
 
+        if (!display.empty()) {
+            y += 24;
+            p.text(rd::fonts::text(), display.c_str(), 18, y, rd::rgb(52, 211, 153), rd::Align::Left);
+        }
+
         y += 40;
 
         p.text(rd::fonts::label(), "TASTEN", 18, y, head, rd::Align::Left);
@@ -997,7 +1090,7 @@ namespace {
         }
     }
 
-    int runWindow(const int scale, const rd::Language lang, const int maxFrames, const char* windowPng, const int spiMhz) {
+    int runWindow(const int scale, const rd::Language lang, const int maxFrames, const char* windowPng, const int spiMhz, const char* displayPort) {
         if (SDL_Init(SDL_INIT_VIDEO) != 0) {
             fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
             return 1;
@@ -1038,8 +1131,15 @@ namespace {
         int wifiStep = 0;
         bool booting = true;
         uint32_t bootStart = SDL_GetTicks();
-        bool displayOffRequested = false; // like u8g2->setPowerSave(1) in the firmware
+        bool displayOffRequested = false;          // like u8g2->setPowerSave(1) in the firmware
         rd::PowerSequencer power;
+        const rd::Message* onScreen = &msgVersion; // the message on screen, for the mirror
+        Mirror mirror;
+
+        if (displayPort != nullptr) {
+            mirror.open(displayPort);
+        }
+
         ui.showMessage(msgVersion);
         ui.play(rd::Animation::Intro, bootStart);
         uint32_t last = SDL_GetTicks();
@@ -1135,6 +1235,8 @@ namespace {
                             bootStart = SDL_GetTicks();
                             ui.showMessage(msgVersion);
                             ui.play(rd::Animation::Intro, bootStart);
+                            onScreen = &msgVersion;
+                            mirror.play(rd::Animation::Intro);
                             break;
                         case SDLK_d:
                             displayOffRequested = !displayOffRequested;
@@ -1166,15 +1268,19 @@ namespace {
 
                 if (since < 3200) {
                     ui.showMessage(msgVersion);
+                    onScreen = &msgVersion;
                 }
                 else if (since < 4700) {
                     ui.showMessage(msgWifi);
+                    onScreen = &msgWifi;
                 }
                 else if (since < 6200) {
                     ui.showMessage(msgIp);
+                    onScreen = &msgIp;
                 }
                 else {
                     ui.clearMessage();
+                    onScreen = nullptr;
                     booting = false;
                 }
             }
@@ -1185,6 +1291,7 @@ namespace {
             }
 
             ui.update(machine.model(), now);
+            mirror.update(machine.model(), onScreen, displayOffRequested, now);
 
             // Same sequence as roundDisplayLoop() in the firmware
             if (power.update(displayOffRequested, ui, now) == rd::PowerSequencer::Action::Sleep) {
@@ -1217,7 +1324,7 @@ namespace {
             }
 
             drawDevice(img, 0, (height - device) / 2, tempo.spiHz() > 0 ? tempo.panel() : panel.screen, scale);
-            drawSidePanel(side, machine, ui, speeds[speedIndex], fps, drawMs, tempo);
+            drawSidePanel(side, machine, ui, speeds[speedIndex], fps, drawMs, tempo, mirror.status);
             blitSprite(img, device, 0, side);
 
             SDL_UpdateTexture(texture, nullptr, img.rgb.data(), img.w * 3);
@@ -1252,6 +1359,7 @@ int main(int argc, char** argv) {
     const char* windowPng = nullptr;
     int atMs = -1;
     int spiMhz = 0;
+    const char* displayPort = nullptr;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
@@ -1272,6 +1380,9 @@ int main(int argc, char** argv) {
         }
         else if (std::strcmp(argv[i], "--at") == 0 && i + 1 < argc) {
             atMs = std::atoi(argv[++i]);   // with --shot: time in ms inside a transition
+        }
+        else if (std::strcmp(argv[i], "--display") == 0 && i + 1 < argc) {
+            displayPort = argv[++i];       // drive the round display on an ESP32 over USB: port or "auto"
         }
         else if (std::strcmp(argv[i], "--spi") == 0 && i + 1 < argc) {
             spiMhz = std::atoi(argv[++i]); // window in ESP32 tempo with this SPI clock (27, 40 or 80)
@@ -1323,7 +1434,8 @@ int main(int argc, char** argv) {
         }
         else {
             fprintf(stderr,
-                    "usage: %s [--scale N] [--lang de|en] [--frames N] [--brand NAME] [--spi MHZ] [--shot NAME OUT.png | --gallery OUT.png | --review DIR [--compare OLD] [--notes FILE] | --inspect DIR | --tempo | --bench | "
+                    "usage: %s [--scale N] [--lang de|en] [--frames N] [--brand NAME] [--display PORT|auto] [--spi MHZ] [--shot NAME OUT.png | --gallery OUT.png | --review DIR [--compare OLD] [--notes FILE] | --inspect DIR "
+                    "| --tempo | --bench | "
                     "--list]\n",
                     argv[0]);
             return 1;
@@ -1347,5 +1459,5 @@ int main(int argc, char** argv) {
         return runReview(review, scale, compare, notes);
     }
 
-    return runWindow(scale, lang, frames, windowPng, spiMhz);
+    return runWindow(scale, lang, frames, windowPng, spiMhz, displayPort);
 }

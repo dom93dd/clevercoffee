@@ -22,7 +22,9 @@ namespace rd {
     namespace {
 
         constexpr float kAmbient = 20.0f;           // start of the heating gauge
-        constexpr float kReadyScale = 5.0f;         // the ready gauge shows setpoint +- 5 K
+        constexpr float kFineRange = 5.0f;          // the last kelvin below and above the setpoint ...
+        constexpr float kFineAngle = 60.0f;         // ... get this much of the gauge on each side, a tick per kelvin
+        constexpr float kAboveRange = 25.0f;        // beyond that: up to setpoint + 30 K at the right end
         constexpr float kHeatingThreshold = 5.0f;   // below setpoint - 5 K the heating screen is shown (as the OLED heating logo)
         constexpr float kRecoveryThreshold = 15.0f; // once warm, only a drop this large switches back to the heating screen
         constexpr float kHysteresis = 0.3f;
@@ -36,7 +38,6 @@ namespace rd {
         constexpr uint32_t kRevealMs = 900;
         constexpr uint32_t kCloseMs = 800;
         constexpr uint32_t kReadyPulseMs = 1400;
-        constexpr uint32_t kGlideMs = 400; // heating screen <-> ready gauge
         constexpr float kIrisMax = 132.0f; // radius that uncovers the whole round screen incl. the soft edge
 
         uint32_t animationLength(const Animation a) {
@@ -75,17 +76,39 @@ namespace rd {
             return static_cast<int32_t>(std::lround(v / step));
         }
 
-        float readyAngle(const float temperature, const float setpoint) {
-            return clampf((temperature - setpoint) / kReadyScale, -1.0f, 1.0f) * kGaugeEnd;
+        /**
+         * One scale from switching on to ready (Dominik's choice of 01.10.2026, draft A): setpoint at 12
+         * o'clock, room temperature at the left end. The last kFineRange kelvin below and above the setpoint
+         * get kFineAngle degrees each, so the point slows down near the target instead of jumping to a
+         * zoomed scale, and the swing around the setpoint stays visible.
+         */
+        float gaugeAngle(const float temperature, const float setpoint) {
+            const float d = temperature - setpoint;
+
+            if (std::fabs(d) <= kFineRange) {
+                return d / kFineRange * kFineAngle;
+            }
+
+            if (d < 0.0f) {
+                const float coarse = std::max(setpoint - kFineRange - kAmbient, 1.0f);
+                return -kFineAngle - clampf((-kFineRange - d) / coarse, 0.0f, 1.0f) * (kGaugeEnd - kFineAngle);
+            }
+
+            return kFineAngle + clampf((d - kFineRange) / kAboveRange, 0.0f, 1.0f) * (kGaugeEnd - kFineAngle);
         }
 
-        /**
-         * Heating up (and steam): room temperature to setpoint over the left half of the gauge, so the
-         * setpoint sits at 12 o'clock as on the ready gauge
-         */
-        float heatingAngle(const float temperature, const float setpoint) {
-            const float span = std::max(setpoint - kAmbient, 1.0f);
-            return kGaugeStart + (0.0f - kGaugeStart) * clampf((temperature - kAmbient) / span, 0.0f, 1.0f);
+        /** Major tick at the setpoint, minor ticks every kelvin within the fine range */
+        void drawScaleTicks(Painter& p, const float setpoint) {
+            for (int k = -static_cast<int>(kFineRange); k <= static_cast<int>(kFineRange); ++k) {
+                const float a = gaugeAngle(setpoint + static_cast<float>(k), setpoint);
+
+                if (k == 0) {
+                    p.tick(kCx, kCy, a, 90.0f, 100.0f, 2.6f, kTickMajor);
+                }
+                else {
+                    p.tick(kCx, kCy, a, 96.0f, 100.0f, 1.6f, kTickMinor); // short: 12 degrees apart, close to wide labels
+                }
+            }
         }
 
         void drawMarker(Painter& p, const float angle, const Color c) {
@@ -287,16 +310,6 @@ namespace rd {
         const Screen previous = screen_;
         screen_ = selectScreen(model_);
 
-        // Heating screen <-> ready gauge: the scale zooms in (or out), so the point glides from where it
-        // was to its place on the new scale instead of jumping
-        const bool gauges = (previous == Screen::Heating && screen_ == Screen::Ready) || (previous == Screen::Ready && screen_ == Screen::Heating);
-
-        if (drawnOnce_ && gauges && !animating(nowMs)) {
-            glide_ = true;
-            glideStart_ = nowMs;
-            glideFrom_ = previous == Screen::Heating ? heatingAngle(model_.temperature, model_.setpoint) : readyAngle(model_.temperature, model_.setpoint);
-        }
-
         if (isAlarm(screen_)) {
             animation_ = Animation::None; // alarms show up at once
         }
@@ -339,10 +352,6 @@ namespace rd {
         const Model& m = model_;
         const bool done = m.brewPhase == BrewPhase::Finished || (m.mode != Mode::Brew && m.brewPhase == BrewPhase::Idle);
         return screen_ == Screen::Brew && !done;
-    }
-
-    bool RoundUi::gliding(const uint32_t nowMs) const {
-        return glide_ && nowMs - glideStart_ < kGlideMs;
     }
 
     bool RoundUi::effectActive(const uint32_t nowMs) const {
@@ -493,10 +502,6 @@ namespace rd {
             h = hashAdd(h, static_cast<int32_t>(nowMs / animationFrameIntervalMs));
         }
 
-        if (gliding(nowMs)) {
-            h = hashAdd(h, static_cast<int32_t>((nowMs - glideStart_) / animationFrameIntervalMs));
-        }
-
         h = hashAdd(h, ready_);
 
         if (screen_ == Screen::Message) {
@@ -542,7 +547,7 @@ namespace rd {
 
         const uint32_t since = nowMs - lastDrawMs_;
 
-        if (since < (animating(nowMs) || effectActive(nowMs) || shimmering() || gliding(nowMs) ? animationFrameIntervalMs : minFrameIntervalMs)) {
+        if (since < (animating(nowMs) || effectActive(nowMs) || shimmering() ? animationFrameIntervalMs : minFrameIntervalMs)) {
             return false;
         }
 
@@ -1147,64 +1152,45 @@ namespace rd {
         Color accent;
 
         if (heating) {
-            // Progress from room temperature to the setpoint at the top; the minor tick marks where the
-            // zoomed ready gauge takes over
-            const float head = glidingAngle(heatingAngle(m.temperature, m.setpoint));
-            const float readyAt = heatingAngle(m.setpoint - kHeatingThreshold, m.setpoint);
-
-            p.tick(kCx, kCy, readyAt, 94.0f, 100.0f, 1.6f, kTickMinor);
-            p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
-            p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, head, kHeatDark, kHeat);
-            drawMarker(p, head, mix(kHeat, kText, 0.35f));
-
             label = s.heatingUp;
             accent = kHeat;
         }
+        else if (ready_) {
+            label = s.ready;
+            accent = kReady;
+        }
         else {
-            // Zoomed scale: setpoint +- 5 K, setpoint at 12 o'clock
-            for (int k = -5; k <= 5; ++k) {
-                const float a = static_cast<float>(k) * kGaugeEnd / kReadyScale;
+            label = deviation < 0 ? s.heating : s.cooling;
+            accent = deviation < 0 ? kHeat : kCool;
+        }
 
-                if (k == 0) {
-                    p.tick(kCx, kCy, a, 90.0f, 100.0f, 2.6f, kTickMajor);
+        // Filled from room temperature up to the point; green once ready. Above the setpoint the left half
+        // stays full and the part beyond the top shows how far above it is.
+        drawScaleTicks(p, m.setpoint);
+        const float a = gaugeAngle(m.temperature, m.setpoint);
+        const Color fill = accent == kCool ? kHeat : accent;
+        p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, std::min(a, 0.0f), mix(fill, kBackground, 0.65f), mix(fill, kBackground, 0.1f));
+
+        if (a > 0.0f) {
+            p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, a, mix(accent == kReady ? kReady : kCool, kBackground, 0.3f), false);
+        }
+
+        drawMarker(p, a, heating ? mix(kHeat, kText, 0.35f) : accent);
+
+        if (effectActive(drawNow_)) {
+            // Two rings spreading out from the marker, like a drop on water
+            const float x = Painter::px(kCx, kRingRadius, a);
+            const float y = Painter::py(kCy, kRingRadius, a);
+
+            for (int k = 0; k < 2; ++k) {
+                const float t = phase(static_cast<float>(drawNow_ - readyPulseStart_), 450.0f * static_cast<float>(k), 450.0f * static_cast<float>(k) + 900.0f);
+
+                if (t > 0.0f && t < 1.0f) {
+                    p.circle(x, y, 8.0f + 12.0f * easeOutCubic(t), 2.6f - 1.6f * t, mix(kBackground, kReady, 0.9f * (1.0f - t)));
                 }
-                else {
-                    p.tick(kCx, kCy, a, 95.0f, 100.0f, 1.6f, kTickMinor);
-                }
             }
 
-            if (ready_) {
-                label = s.ready;
-                accent = kReady;
-            }
-            else if (deviation < 0) {
-                label = s.heating;
-                accent = kHeat;
-            }
-            else {
-                label = s.cooling;
-                accent = kCool;
-            }
-
-            const float a = glidingAngle(readyAngle(m.temperature, m.setpoint));
-            p.arc(kCx, kCy, kRingRadius, kRingWidth, std::min(0.0f, a), std::max(0.0f, a), mix(accent, kBackground, 0.45f));
-            drawMarker(p, a, accent);
-
-            if (effectActive(drawNow_)) {
-                // Two rings spreading out from the marker, like a drop on water
-                const float x = Painter::px(kCx, kRingRadius, a);
-                const float y = Painter::py(kCy, kRingRadius, a);
-
-                for (int k = 0; k < 2; ++k) {
-                    const float t = phase(static_cast<float>(drawNow_ - readyPulseStart_), 450.0f * static_cast<float>(k), 450.0f * static_cast<float>(k) + 900.0f);
-
-                    if (t > 0.0f && t < 1.0f) {
-                        p.circle(x, y, 8.0f + 12.0f * easeOutCubic(t), 2.6f - 1.6f * t, mix(kBackground, kReady, 0.9f * (1.0f - t)));
-                    }
-                }
-
-                p.mask(kCx, kCy, 118.5f, 1.0f); // the waves around the marker reach past the glass
-            }
+            p.mask(kCx, kCy, 118.5f, 1.0f); // the waves around the marker reach past the glass
         }
 
         p.setLayer(Layer::Content);
@@ -1248,23 +1234,14 @@ namespace rd {
         drawScaleStatus(p);
     }
 
-    float RoundUi::glidingAngle(const float target) const {
-        if (!gliding(drawNow_)) {
-            return target;
-        }
-
-        const float t = easeInOutCubic(phase(static_cast<float>(drawNow_ - glideStart_), 0.0f, static_cast<float>(kGlideMs)));
-        return glideFrom_ + (target - glideFrom_) * t;
-    }
-
     void RoundUi::drawSteam(Painter& p) const {
-        p.setLayer(Layer::Frame);                                   // ring, ticks and markers
+        p.setLayer(Layer::Frame);                                                 // ring, ticks and markers
         const Model& m = view_;
         const Strings& s = strings(m.language);
-        const float head = heatingAngle(m.temperature, m.setpoint); // steam setpoint at the top
+        const float head = std::min(gaugeAngle(m.temperature, m.setpoint), 0.0f); // same scale as heating up, steam setpoint at the top
 
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
-        p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
+        drawScaleTicks(p, m.setpoint);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, head, mix(kSteam, kBackground, 0.7f), kSteam);
         drawMarker(p, head, mix(kSteam, kText, 0.4f));
 

@@ -55,6 +55,16 @@ Vorher einmal `pio run` (baut das Programm, `./run.sh` macht das automatisch).
 ```
 Die PNGs sind unkomprimiert (einige MB); `sips -s format png a.png --out b.png` macht sie klein.
 
+## Echtes Display am Mac (ESP32 + GC9A01 per USB)
+Nur ESP32 DevKitC und Display, Strom über USB. Verdrahtung: VCC → 3V3, GND → GND, SCL → IO14, SDA → IO13, DC → IO4, CS → IO15, RST → IO5 (wie `src/display/roundDisplayDevice.h`).
+```sh
+cd esp32-bench
+pio run -e demo -t upload -t monitor    # Farb-Testbild, dann alle Szenarien je 4 s; seriell die echte Zeichenzeit
+pio run -e remote -t upload             # Display wird vom Simulator gesteuert:
+cd .. && ./run.sh --display auto        # Tasten im Fenster wirken auf das echte Display
+```
+Im Modus `--display` schickt der Simulator nur den Maschinenzustand (Modell, Meldung, Display aus, Intro; `src/RemoteLink.h`, 921600 Baud, Rahmen mit Prüfsumme), der ESP32 zeichnet mit dem Code und Tempo der Firmware (ein Streifen pro Durchlauf, nur geänderte Streifen). Er meldet jede Sekunde Bilder pro Sekunde und die längste Blockade zurück, das Seitenfeld zeigt sie an.
+
 ## ESP32-Tempo: ruckelt es auf dem Chip?
 ```sh
 ./run.sh --spi 27                       # Fenster im Tempo des ESP32 (SPI 27/40/80 MHz), Taste X schaltet um

@@ -648,63 +648,49 @@ void test_title_in_a_narrow_row_stays_whole_and_cut_text_ends_with_dots() {
     TEST_ASSERT_TRUE_MESSAGE(last.size() > 3 && last.compare(last.size() - 3, 3, "...") == 0, last.c_str());
 }
 
-// --- the point glides when the scale changes ---------------------------------------------
+// --- one scale from switching on to ready (draft A, 01.10.2026) ---------------------------
 
 namespace {
-    /** Red channel of the ring at this angle (the point is bright amber, the arc and track darker) */
-    int ringRedAt(RoundUi& ui, const uint32_t now, const float angle) {
+    /** The ring at this angle in a full frame */
+    Color ringAt(RoundUi& ui, const uint32_t now, const float angle) {
         Collector c;
         ui.render(bands, 2, now, [&](lgfx::LGFX_Sprite& band, const int top) { c(band, top); });
-        return ts::channel(ts::at(c.screen, 111.0f, angle), 16);
+        return ts::at(c.screen, 111.0f, angle);
     }
 } // namespace
 
-void test_point_glides_from_the_heating_scale_to_the_ready_scale() {
-    // 89.3 degrees with setpoint 94: on the heating scale near the top (-8.6 degrees), on the zoomed
-    // ready scale near the left end (-126.9 degrees); the point must not jump there
+void test_point_does_not_jump_when_heating_turns_into_ready() {
+    // 89.0 degrees is still the heating screen, at 89.5 the ready screen has taken over (setpoint 94,
+    // hysteresis): both on the same scale, -60 and -54 degrees, the point moves on by 6 degrees only
     RoundUi ui;
-    ui.update(normal(85.0f), 1000);
-    render(ui, 1000);
+    ui.update(normal(89.0f), 1000);
     TEST_ASSERT_TRUE(ui.screen() == Screen::Heating);
-    ui.update(normal(89.3f), 2000);
+    TEST_ASSERT_GREATER_THAN(200, ts::channel(ringAt(ui, 1000, -60.0f), 16)); // the point
+    ui.update(normal(89.5f), 2000);
     TEST_ASSERT_TRUE(ui.screen() == Screen::Ready);
-    TEST_ASSERT_TRUE(ui.gliding(2000));
-
-    TEST_ASSERT_GREATER_THAN(200, ringRedAt(ui, 2000, -8.6f));   // starts where it was
-    TEST_ASSERT_LESS_THAN(180, ringRedAt(ui, 2000, -126.9f));
-    TEST_ASSERT_GREATER_THAN(200, ringRedAt(ui, 2200, -67.8f));  // halfway at half time (ease in and out)
-    TEST_ASSERT_GREATER_THAN(200, ringRedAt(ui, 2400, -126.9f)); // and arrives
-
-    TEST_ASSERT_FALSE(ui.gliding(2400));
+    TEST_ASSERT_GREATER_THAN(200, ts::channel(ringAt(ui, 2000, -54.0f), 16));
+    const int farLeft = ts::channel(ringAt(ui, 2000, -125.0f), 16);
+    TEST_ASSERT_LESS_THAN(200, farLeft);   // no point at the far left (the zoomed scale put it there)
+    TEST_ASSERT_GREATER_THAN(60, farLeft); // but the bar, filled from room temperature
 }
 
-void test_glide_is_drawn_at_animation_pace() {
-    RoundUi ui;
-    ui.update(normal(85.0f), 1000);
-    render(ui, 1000);
-    ui.update(normal(89.3f), 2000);
-    render(ui, 2000);
-    ui.update(normal(89.3f), 2000 + ui.animationFrameIntervalMs);
-    TEST_ASSERT_TRUE(ui.needsRedraw(2000 + ui.animationFrameIntervalMs));
-
-    // After the glide nothing changes any more
-    ui.update(normal(89.3f), 2500);
-    render(ui, 2500);
-    ui.update(normal(89.3f), 2500 + ui.minFrameIntervalMs);
-    TEST_ASSERT_FALSE(ui.needsRedraw(2500 + ui.minFrameIntervalMs));
-}
-
-void test_point_glides_back_when_the_heating_screen_returns() {
-    // Warm machine drops by more than 15 K: back to the heating scale, the point glides from the
-    // left end of the ready scale up to its place on the heating scale (-34.7 degrees at 75)
+void test_ready_fills_the_left_half_green() {
     RoundUi ui;
     ui.update(normal(94.0f), 1000);
-    render(ui, 1000);
-    ui.update(normal(75.0f), 2000);
-    TEST_ASSERT_TRUE(ui.screen() == Screen::Heating);
-    TEST_ASSERT_TRUE(ui.gliding(2000));
-    TEST_ASSERT_GREATER_THAN(200, ringRedAt(ui, 2000, -133.0f));
-    TEST_ASSERT_GREATER_THAN(200, ringRedAt(ui, 2400, -34.7f));
+    TEST_ASSERT_TRUE(ui.ready());
+    const Color left = ringAt(ui, 1000, -110.0f);
+    TEST_ASSERT_TRUE_MESSAGE(ts::channel(left, 8) > ts::channel(left, 16) + 30, "green, not amber");
+}
+
+void test_above_the_setpoint_the_bar_runs_past_the_top() {
+    // 96.5 degrees: 2.5 K above, 30 degrees right of the top in blue, the left half stays full
+    RoundUi ui;
+    ui.update(normal(96.5f), 1000);
+    const Color right = ringAt(ui, 1000, 15.0f);
+    const Color left = ringAt(ui, 1000, -100.0f);
+    TEST_ASSERT_TRUE_MESSAGE(ts::channel(right, 0) > ts::channel(right, 16) + 30, "blue right of the top");
+    TEST_ASSERT_TRUE_MESSAGE(ts::channel(left, 16) > ts::channel(left, 0) + 30, "left half still amber");
+    TEST_ASSERT_LESS_OR_EQUAL(40, ts::channel(ringAt(ui, 1000, 45.0f), 16)); // beyond the point: empty track
 }
 
 int main() {
@@ -727,9 +713,9 @@ int main() {
     RUN_TEST(test_label_shows_the_real_state_while_the_number_counts_up);
     RUN_TEST(test_long_host_name_breaks_after_a_separator);
     RUN_TEST(test_title_in_a_narrow_row_stays_whole_and_cut_text_ends_with_dots);
-    RUN_TEST(test_point_glides_from_the_heating_scale_to_the_ready_scale);
-    RUN_TEST(test_glide_is_drawn_at_animation_pace);
-    RUN_TEST(test_point_glides_back_when_the_heating_screen_returns);
+    RUN_TEST(test_point_does_not_jump_when_heating_turns_into_ready);
+    RUN_TEST(test_ready_fills_the_left_half_green);
+    RUN_TEST(test_above_the_setpoint_the_bar_runs_past_the_top);
     RUN_TEST(test_small_changes_send_few_bands);
     RUN_TEST(test_modes_select_their_screens);
     RUN_TEST(test_alarms_win_over_brew_timer_and_messages);

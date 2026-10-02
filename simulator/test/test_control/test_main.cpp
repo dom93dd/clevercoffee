@@ -11,6 +11,8 @@
 #include <RoundDisplayFormat.h>
 #include <RoundDisplayGuard.h>
 
+#include "../../src/RemoteLink.h"
+
 #include <cstring>
 
 using namespace rd;
@@ -304,6 +306,88 @@ void test_guard_limits_above_the_intended_pauses() {
     TEST_ASSERT_LESS_THAN_UINT32(rd::kGuardRestartMs, rd::kGuardHoldMs);
 }
 
+// Link simulator -> ESP32 (simulator --display, esp32-bench env remote)
+
+void test_link_model_survives_the_trip() {
+    Model m;
+    m.mode = Mode::Brew;
+    m.language = Language::English;
+    m.temperature = 93.25f;
+    m.setpoint = 94.5f;
+    m.heaterPercent = 37.0f;
+    m.readyBand = 0.4f;
+    m.emergencyResetTemp = 99.0f;
+    m.brewTimerVisible = true;
+    m.brewPhase = BrewPhase::Running;
+    m.brewTime = 12.3f;
+    m.brewTargetTime = 25.0f;
+    m.lastBrewTime = 24.8f;
+    m.flushTime = 1.5f;
+    m.hotWaterTime = 2.5f;
+    m.scaleEnabled = true;
+    m.scaleFault = false;
+    m.bleScale = true;
+    m.bleScaleConnected = true;
+    m.brewWeight = 18.2f;
+    m.brewTargetWeight = 36.0f;
+    m.backflushPhase = BackflushPhase::Flushing;
+    m.backflushCycle = 3;
+    m.backflushCycles = 5;
+    m.offlineMode = true;
+    m.wifiConnected = false;
+    m.wifiBars = 2;
+    m.mqttEnabled = true;
+    m.mqttConnected = true;
+
+    const auto bytes = sim::link::encodeModel(m);
+    Model out;
+    TEST_ASSERT_TRUE(sim::link::decodeModel(bytes.data(), bytes.size(), out));
+    TEST_ASSERT_EQUAL_MEMORY(sim::link::encodeModel(m).data(), sim::link::encodeModel(out).data(), bytes.size());
+    TEST_ASSERT_TRUE(out.mode == Mode::Brew && out.brewPhase == BrewPhase::Running && out.backflushPhase == BackflushPhase::Flushing);
+    TEST_ASSERT_EQUAL_FLOAT(18.2f, out.brewWeight);
+    TEST_ASSERT_FALSE(sim::link::decodeModel(bytes.data(), bytes.size() - 1, out)); // cut short
+}
+
+void test_link_rejects_unknown_states() {
+    auto bytes = sim::link::encodeModel(Model());
+    bytes[0] = 200; // no such mode
+    Model out;
+    out.temperature = 42.0f;
+    TEST_ASSERT_FALSE(sim::link::decodeModel(bytes.data(), bytes.size(), out));
+    TEST_ASSERT_EQUAL_FLOAT(42.0f, out.temperature); // left as it was
+}
+
+void test_link_message_with_umlauts() {
+    sim::link::TextMessage t{"WLAN-EINRICHTUNG", "Hotspot: Küche", "", "192.168.4.1"};
+    const auto bytes = sim::link::encodeText(t);
+    sim::link::TextMessage out;
+    TEST_ASSERT_TRUE(sim::link::decodeText(bytes.data(), bytes.size(), out));
+    TEST_ASSERT_TRUE(out == t);
+    TEST_ASSERT_TRUE(sim::link::TextMessage().empty());
+}
+
+void test_link_frames_resync_and_check_the_sum() {
+    sim::link::Parser parser;
+    std::vector<uint8_t> stream = {0x00, 0xA5, 0x13, 0x5A, 0xFF}; // noise, a false start
+    const auto good = sim::link::frame(sim::link::Model, sim::link::encodeModel(Model()));
+    auto broken = good;
+    broken[10] ^= 0x40;
+    stream.insert(stream.end(), broken.begin(), broken.end());
+    stream.insert(stream.end(), good.begin(), good.end());
+    int frames = 0;
+
+    for (const uint8_t b : stream) {
+        if (parser.push(b)) {
+            ++frames;
+            TEST_ASSERT_EQUAL_UINT8(sim::link::Model, parser.type());
+            TEST_ASSERT_EQUAL_size_t(good.size() - 6, parser.payload().size());
+        }
+    }
+
+    TEST_ASSERT_EQUAL_INT(1, frames);        // only the good one
+    TEST_ASSERT_EQUAL_UINT32(1, parser.bad); // the broken one counted
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_machine_states_map_to_modes);
@@ -332,5 +416,9 @@ int main() {
     RUN_TEST(test_guard_stays_out_while_the_heater_timer_is_off);
     RUN_TEST(test_guard_across_the_millis_overflow);
     RUN_TEST(test_guard_limits_above_the_intended_pauses);
+    RUN_TEST(test_link_model_survives_the_trip);
+    RUN_TEST(test_link_rejects_unknown_states);
+    RUN_TEST(test_link_message_with_umlauts);
+    RUN_TEST(test_link_frames_resync_and_check_the_sum);
     return UNITY_END();
 }
