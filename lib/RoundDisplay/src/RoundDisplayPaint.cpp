@@ -331,6 +331,35 @@ namespace rd {
         fillShape(cx - radius, cy - radius, cx + radius, cy + radius, c, [=](const float x, const float y) { return std::sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) - radius; });
     }
 
+    void Painter::roundRect(const float x0, const float y0, const float x1, const float y1, const float radius, const Color c) {
+        if (!visible(y0 - 1.0f, y1 + 1.0f)) {
+            return;
+        }
+
+        const float cx = (x0 + x1) * 0.5f;
+        const float cy = (y0 + y1) * 0.5f;
+        const float hx = (x1 - x0) * 0.5f - radius;
+        const float hy = (y1 - y0) * 0.5f - radius;
+
+        fillShape(x0, y0, x1, y1, c, [=](const float x, const float y) {
+            const float qx = std::max(std::fabs(x - cx) - hx, 0.0f);
+            const float qy = std::max(std::fabs(y - cy) - hy, 0.0f);
+            return std::sqrt(qx * qx + qy * qy) - radius;
+        });
+    }
+
+    void Painter::block(const int x0, const int y0, const int x1, const int y1, const Color c) {
+        if (!drawing()) {
+            return;
+        }
+
+        for (int y = std::max(y0, top_); y < std::min(y1, top_ + height_); ++y) {
+            for (int x = std::max(x0, 0); x < std::min(x1, width_); ++x) {
+                blendFixed(x, y, c, 256);
+            }
+        }
+    }
+
     void Painter::line(const float x0, const float y0, const float x1, const float y1, const float width, const Color c) {
         const float half = width * 0.5f;
 

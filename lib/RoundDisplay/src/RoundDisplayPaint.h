@@ -91,6 +91,12 @@ namespace rd {
 
             void circle(float cx, float cy, float radius, float width, Color c);
             void disc(float cx, float cy, float radius, Color c);
+
+            /** Rectangle with rounded corners (anti-aliased edges) */
+            void roundRect(float x0, float y0, float x1, float y1, float radius, Color c);
+
+            /** Whole pixels x0..x1-1, y0..y1-1 without anti-aliasing (QR modules) */
+            void block(int x0, int y0, int x1, int y1, Color c);
             void line(float x0, float y0, float x1, float y1, float width, Color c);
 
             /** Radial line from r0 to r1 at the given angle. */

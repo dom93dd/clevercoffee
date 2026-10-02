@@ -7,9 +7,47 @@
 #include "Logger.h"
 #include <Arduino.h>
 
+#ifdef CC_ORIONE
+namespace {
+    /** Takes the scale lock for the scope, waiting at most `wait` ticks */
+    class ScaleLock {
+        public:
+            ScaleLock(SemaphoreHandle_t lock, const TickType_t wait) :
+                lock_(lock), held_(lock != nullptr && xSemaphoreTake(lock, wait) == pdTRUE) {
+            }
+
+            ~ScaleLock() {
+                if (held_) {
+                    xSemaphoreGive(lock_);
+                }
+            }
+
+            explicit operator bool() const {
+                return held_;
+            }
+
+        private:
+            SemaphoreHandle_t lock_;
+            bool held_;
+    };
+}
+
+// Leaves the function (with `onBusy`) if the connection task holds the scale longer than `wait`
+#define SCALE_LOCK(wait, onBusy)              \
+    const ScaleLock scaleLock(lock_, (wait)); \
+    if (!scaleLock) {                         \
+        onBusy;                               \
+    }
+#else
+#define SCALE_LOCK(wait, onBusy)
+#endif
+
 BluetoothScale::BluetoothScale(bool debug) :
     currentWeight(0.0), lastUpdateTime(0), connected(false), bleInitialized(false), lastConnectionAttempt(0), connectionAttemptInterval(5000), isUpdatingConnection(false), maxConnectionAttemptInterval(30000) {
     bleScale = new AcaiaArduinoBLE(debug);
+#ifdef CC_ORIONE
+    lock_ = xSemaphoreCreateMutex();
+#endif
 }
 
 BluetoothScale::~BluetoothScale() {
@@ -38,6 +76,8 @@ void BluetoothScale::updateConnection() {
     if (!bleInitialized) {
         return;
     }
+
+    SCALE_LOCK(portMAX_DELAY, return);
 
     const unsigned long currentTime = millis();
 
@@ -91,6 +131,8 @@ bool BluetoothScale::update() {
         return false;
     }
 
+    SCALE_LOCK(0, return false);
+
     if (connected) {
         if (bleScale->heartbeatRequired()) {
             bleScale->heartbeat();
@@ -113,24 +155,32 @@ float BluetoothScale::getWeight() const {
 }
 
 void BluetoothScale::tare() {
+    SCALE_LOCK(pdMS_TO_TICKS(50), return);
+
     if (connected) {
         bleScale->tare();
     }
 }
 
 void BluetoothScale::startTimer() const {
+    SCALE_LOCK(pdMS_TO_TICKS(50), return);
+
     if (connected) {
         return bleScale->startTimer();
     }
 }
 
 void BluetoothScale::stopTimer() const {
+    SCALE_LOCK(pdMS_TO_TICKS(50), return);
+
     if (connected) {
         return bleScale->stopTimer();
     }
 }
 
 void BluetoothScale::resetTimer() const {
+    SCALE_LOCK(pdMS_TO_TICKS(50), return);
+
     if (connected) {
         return bleScale->resetTimer();
     }
@@ -143,3 +193,16 @@ void BluetoothScale::setSamples(int samples) {
 bool BluetoothScale::isConnected() const {
     return connected;
 }
+
+#ifdef CC_ORIONE
+void BluetoothScale::startConnectionTask() {
+    xTaskCreatePinnedToCore(connectionTask, "scale", 4096, this, 1, nullptr, 0);
+}
+
+void BluetoothScale::connectionTask(void* self) {
+    for (;;) {
+        static_cast<BluetoothScale*>(self)->updateConnection();
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+}
+#endif

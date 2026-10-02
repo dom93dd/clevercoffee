@@ -39,8 +39,9 @@ inline void loopGuardTask(void*) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(200));
 
-        const uint32_t now = millis();
+        // The beat first, then the clock: now is never older than the beat it is compared with
         const uint32_t beat = loopGuardLastBeat;
+        const uint32_t now = millis();
 
         switch (rd::loopGuardAction(now, beat, isTimer1Enabled())) {
             case rd::GuardAction::Restart:

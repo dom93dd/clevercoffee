@@ -192,6 +192,7 @@ namespace rd {
 
             void drawBoot(Painter& p) const;
             void drawMessage(Painter& p) const;
+            void drawQrMessage(Painter& p) const;
             void drawTemperatureGauge(Painter& p, bool heating) const;
             void drawSteam(Painter& p) const;
             void drawBrew(Painter& p) const;
@@ -218,6 +219,10 @@ namespace rd {
             mutable Model view_; // model as drawn; differs from model_ while values count up
             Message message_;
             bool hasMessage_ = false;
+            // QR code of message_.qr, encoded once in showMessage() (versions 1 to 4)
+            static constexpr int kQrMaxBytes = (33 * 33 + 7) / 8;
+            uint8_t qrModules_[kQrMaxBytes] = {};
+            uint8_t qrSize_ = 0; // modules per side, 0 = no code
             Screen screen_ = Screen::Boot;
             bool heating_ = true;   // hysteresis for Heating <-> Ready
             bool warmedUp_ = false; // reached the setpoint since the last cold start

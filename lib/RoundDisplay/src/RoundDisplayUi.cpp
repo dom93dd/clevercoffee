@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <lgfx/utility/lgfx_qrcode.h>
 
 namespace rd {
 
@@ -258,6 +259,17 @@ namespace rd {
     void RoundUi::showMessage(const Message& message) {
         message_ = message;
         hasMessage_ = true;
+        qrSize_ = 0;
+
+        // smallest version that holds the text; medium error correction against reflections on the glass
+        for (uint8_t version = 1; message.qr != nullptr && version <= 4 && qrSize_ == 0; ++version) {
+            QRCode code;
+
+            if (lgfx_qrcode_initText(&code, qrModules_, version, ECC_MEDIUM, message.qr) == 0) {
+                qrSize_ = code.size;
+            }
+        }
+
         screen_ = Screen::Message;
         signature_ = computeSignature(lastDrawMs_);
     }
@@ -506,7 +518,7 @@ namespace rd {
 
         if (screen_ == Screen::Message) {
             // The firmware reuses its text buffers, so hash the text, not the pointers
-            for (const char* text : {message_.title, message_.line1, message_.line2, message_.line3}) {
+            for (const char* text : {message_.title, message_.line1, message_.line2, message_.line3, qrSize_ > 0 ? message_.qr : nullptr}) {
                 for (const char* c = text; c != nullptr && *c != '\0'; ++c) {
                     h = hashAdd(h, *c);
                 }
@@ -1067,7 +1079,78 @@ namespace rd {
         }
     } // namespace
 
+    void RoundUi::drawQrMessage(Painter& p) const {
+        // No ring here: the code and two lines need the room up to the edge of the panel
+        constexpr float kEdge = 116.0f; // the panel shows the circle up to radius 120
+        const auto widthAt = [](const float baseline) {
+            const float dy = std::max(std::fabs(baseline - 14.0f - kCy), std::fabs(baseline + 4.0f - kCy));
+            return dy >= kEdge ? 0.0f : 2.0f * std::sqrt(kEdge * kEdge - dy * dy) - 6.0f;
+        };
+
+        // Light plate with dark modules (phone cameras expect dark on light), two modules of quiet
+        // zone. 3 px modules: version 3 (29 modules, a WiFi login) is 99 px, about 13 mm on the panel.
+        p.setLayer(Layer::Content);
+        const int module = qrSize_ <= 25 ? 4 : 3;
+        const int quiet = 2 * module;
+        const int side = qrSize_ * module + 2 * quiet;
+        const int x0 = static_cast<int>(kCx) - side / 2;
+        const int y0 = 104 - side / 2;
+        p.roundRect(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0 + side), static_cast<float>(y0 + side), 6.0f, kText);
+
+        QRCode code{};
+        code.size = qrSize_;
+        code.modules = const_cast<uint8_t*>(qrModules_);
+
+        for (int y = 0; y < qrSize_; ++y) {
+            const int top = y0 + quiet + y * module;
+
+            if (!p.visible(static_cast<float>(top), static_cast<float>(top + module))) {
+                continue;
+            }
+
+            for (int x = 0; x < qrSize_; ++x) {
+                if (lgfx_qrcode_getModule(&code, x, y)) {
+                    const int left = x0 + quiet + x * module;
+                    p.block(left, top, left + module, top + module, kBackground);
+                }
+            }
+        }
+
+        // Text that is too wide (a long WiFi or device name) loses its end
+        const auto drawCut = [&](const Font* font, const char* text, const float y, const Color c) {
+            char cut[64];
+            std::snprintf(cut, sizeof(cut), "%s", text);
+
+            for (size_t n = std::strlen(cut); n > 4 && static_cast<float>(p.textWidth(font, cut)) > widthAt(y); --n) {
+                std::snprintf(cut + n - 4, 4, "...");
+            }
+
+            p.text(font, cut, kCx, y, c);
+        };
+
+        // Title in the capitals font if it is all capitals and fits, else in the small font
+        if (message_.title != nullptr) {
+            const float baseline = static_cast<float>(y0 - 10);
+            const bool label = onlyCapitals(message_.title) && static_cast<float>(p.textWidth(fonts::label(), message_.title)) <= widthAt(baseline);
+            drawCut(label ? fonts::label() : fonts::hint(), message_.title, baseline, kBrew);
+        }
+
+        float y = static_cast<float>(y0 + side + 21);
+
+        for (const char* line : {message_.line1, message_.line2}) {
+            if (line != nullptr) {
+                drawCut(fonts::hint(), line, y, line == message_.line1 ? kText : kTextDim);
+                y += 19.0f;
+            }
+        }
+    }
+
     void RoundUi::drawMessage(Painter& p) const {
+        if (qrSize_ > 0) {
+            drawQrMessage(p);
+            return;
+        }
+
         p.setLayer(Layer::Frame); // ring, ticks and markers
         p.arc(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, kGaugeEnd, kTrack);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, kGaugeStart, -30.0f, kBrewDark, kBrew);

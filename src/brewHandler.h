@@ -351,6 +351,9 @@ inline bool brew() {
                 brewSwitchWasOff = false;
                 LOG(INFO, "Brew finished");
                 LOGF(INFO, "Shot time: %4.1f s", currBrewTime / 1000);
+#ifdef CC_ORIONE
+                shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? currBrewWeight : -1.0f);
+#endif
                 LOG(INFO, "Brew idle");
                 currBrewState = kBrewIdle;
 

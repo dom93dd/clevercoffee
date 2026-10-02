@@ -79,7 +79,11 @@ inline rd::Model roundDisplayModel() {
 
     if (m.scaleEnabled) {
         m.scaleFault = scaleFailure;
+#ifdef CC_ORIONE
+        m.bleScale = true; // the Orione build has the Bluetooth scale only
+#else
         m.bleScale = config.get<int>("hardware.sensors.scale.type") == 2;
+#endif
         m.bleScaleConnected = scale->isConnected();
         m.brewWeight = currBrewWeight;
 
@@ -134,14 +138,18 @@ inline void roundDisplayRender() {
  *        transfer of a band runs on while loop() does its other work.
  */
 inline void roundDisplayStep(const uint32_t now) {
+    ROUND_TIME(Band);
+
     if (!roundFrameSending) {
         roundTft->startWrite();
         roundFrameSending = true;
+        ROUND_TIMING_DO(round_timing::frameBegin());
     }
 
     if (roundUi.renderBand(roundBands, 2, roundPushBand, now)) {
         roundTft->endWrite(); // waits for the last transfer
         roundFrameSending = false;
+        ROUND_TIMING_DO(round_timing::frameEnd());
     }
 }
 
@@ -160,6 +168,68 @@ inline void roundDisplayMessage(const String& text) {
 
     rd::splitMessage(text.c_str(), roundMessageText);
     roundUi.showMessage(roundMessageText.message());
+    roundUi.update(roundDisplayModel(), millis());
+    roundDisplayRender();
+}
+
+/**
+ * @brief WiFi setup screen while the setup portal is open: "WLAN EINRICHTEN", a QR code that joins
+ *        the setup WiFi from the phone camera, below it on the first setup name and password of
+ *        the setup WiFi (for typing by hand), with a saved WiFi out of reach (router off?) that
+ *        it is not found and when the machine goes on without WiFi.
+ * @param savedSsid the saved home WiFi, nullptr or "" on the first setup
+ */
+inline void roundDisplayWifiSetup(const char* ssid, const char* password, const char* savedSsid = nullptr, const unsigned long offlineAfterS = 60) {
+    if (roundTft == nullptr) {
+        return;
+    }
+
+    if (roundPower.asleep()) {
+        roundTft->wakeup();
+        roundBandFilter.invalidate();
+    }
+
+    // WIFI: URI as phone cameras read it; \ ; , : " in name or password need a backslash
+    static char qr[160];
+    static char line1[64];
+    static char line2[64];
+    size_t n = static_cast<size_t>(snprintf(qr, sizeof(qr), "WIFI:T:WPA;S:"));
+
+    for (const char* part : {ssid, ";P:", password, ";;"}) {
+        const bool escape = part == ssid || part == password;
+
+        for (const char* c = part; *c != '\0' && n + 3 < sizeof(qr); ++c) {
+            if (escape && std::strchr("\\;,:\"", *c) != nullptr) {
+                qr[n++] = '\\';
+            }
+
+            qr[n++] = *c;
+        }
+    }
+
+    qr[n] = '\0';
+
+    const bool german = config.get<int>("display.language") == 0;
+    static char title[64];
+    const unsigned long minutes = (offlineAfterS + 59) / 60;
+
+    snprintf(title, sizeof(title), "%s", german ? "WLAN EINRICHTEN" : "WIFI SETUP");
+
+    if (savedSsid == nullptr || *savedSsid == '\0') {
+        snprintf(line1, sizeof(line1), "%s %s", german ? "WLAN:" : "WiFi:", ssid);
+        snprintf(line2, sizeof(line2), "%s %s", german ? "Passwort:" : "Password:", password);
+    }
+    else {
+        snprintf(line1, sizeof(line1), "%s %s", savedSsid, german ? "nicht erreichbar" : "not found");
+        snprintf(line2, sizeof(line2), german ? "Sonst in %lu Min. ohne WLAN" : "Else offline in %lu min", minutes);
+    }
+
+    rd::Message m;
+    m.title = title;
+    m.line1 = line1;
+    m.line2 = line2;
+    m.qr = qr;
+    roundUi.showMessage(m);
     roundUi.update(roundDisplayModel(), millis());
     roundDisplayRender();
 }
@@ -199,6 +269,7 @@ inline void roundDisplayPlayIntro() {
 }
 
 inline bool roundDisplayInit() {
+    ROUND_TIMING_DO(Serial.printf("TIMING heap before display %u\n", static_cast<unsigned>(ESP.getFreeHeap())));
     roundUi.setBrand(ROUND_DISPLAY_BRAND);
 
     if (!rd::RoundUi::begin()) {
@@ -214,6 +285,7 @@ inline bool roundDisplayInit() {
     }
 
     roundTft->fillScreen(TFT_BLACK);
+    ROUND_TIMING_DO(Serial.printf("TIMING heap after panel init %u\n", static_cast<unsigned>(ESP.getFreeHeap())));
     roundBands = new lgfx::LGFX_Sprite[2];
 
     for (int i = 0; i < 2; ++i) {
@@ -297,7 +369,10 @@ inline void roundDisplayLoop() {
         return;
     }
 
-    roundUi.update(roundDisplayModel(), now);
+    {
+        ROUND_TIME(Model);
+        roundUi.update(roundDisplayModel(), now);
+    }
 
     // Like the OLED: skip loops where other slow work runs, but never wait longer than 500 ms
     const bool busy = websiteUpdateRunning || mqttUpdateRunning || hassioUpdateRunning || temperatureUpdateRunning;

@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "Browser test of frontend-orione/index.html against mock_esp32.py (run.sh)",
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

@@ -8,6 +8,11 @@
 #include "Scale.h"
 #include <AcaiaArduinoBLE.h>
 
+#ifdef CC_ORIONE
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#endif
+
 /**
  * @brief Bluetooth scale implementation for Acaia and compatible scales
  */
@@ -30,6 +35,16 @@ class BluetoothScale : public Scale {
         void updateConnection();
         [[nodiscard]] bool isConnecting() const;
 
+#ifdef CC_ORIONE
+        /**
+         * @brief Orione build: scanning, connecting and cleanup (with delay() and blocking BLE calls, up
+         *        to ~1 s measured) run in their own task on core 0, so loop() and the display never wait.
+         *        update(), tare() and the timer commands only try the lock: while the task is busy the
+         *        scale is not connected anyway, and loop() skips the round.
+         */
+        void startConnectionTask();
+#endif
+
     private:
         AcaiaArduinoBLE* bleScale;
         float currentWeight;
@@ -43,4 +58,9 @@ class BluetoothScale : public Scale {
 
         bool isUpdatingConnection;
         unsigned long maxConnectionAttemptInterval;
+
+#ifdef CC_ORIONE
+        static void connectionTask(void* self);
+        SemaphoreHandle_t lock_ = nullptr;
+#endif
 };

@@ -35,6 +35,9 @@
 #include "hardware/pinmapping.h"
 #include "hardware/tempsensors/TempSensorDallas.h"
 #include "hardware/tempsensors/TempSensorTSIC.h"
+#ifdef CC_FAKE_TEMP_SENSOR
+#include "hardware/tempsensors/TempSensorFake.h" // bench build only (esp32_round_bench)
+#endif
 
 // User configuration & defaults
 #include "defaults.h"
@@ -95,6 +98,7 @@ inline bool systemInitialized = false;
 #else
 U8G2* u8g2 = nullptr;
 #endif
+#include "display/roundTiming.h" // measurement build only (ROUND_TIMING); empty macros otherwise
 
 bool featureFullscreenBrewTimer = false;
 bool featureFullscreenManualFlushTimer = false;
@@ -106,7 +110,7 @@ bool featureHeatingLogo = false;
 WiFiManager wm;
 constexpr unsigned long wifiConnectionDelay = WIFICONNECTIONDELAY;
 constexpr unsigned int maxWifiReconnects = MAXWIFIRECONNECTS;
-String hostname = "silvia";
+String hostname = HOSTNAME;
 auto pass = WM_PASS;
 unsigned long lastWifiConnectionAttempt = millis();
 uint8_t wifiReconnects = 0; // actual number of reconnects
@@ -207,7 +211,11 @@ double aggbKd = aggbTv * aggbKp;
 double aggKi = (aggTn == 0) ? 0 : aggKp / aggTn;
 double aggKd = aggTv * aggKp;
 
+#ifdef CC_ORIONE
+double brewPidDelay = 0; // Orione: no PID pause during the shot (orione-full-build.md chap. 8); the setting is left out
+#else
 double brewPidDelay = BREW_PID_DELAY; // Time PID will be disabled after brew started
+#endif
 
 bool standbyModeOn = false;
 double standbyModeTime = STANDBY_MODE_TIME;
@@ -221,6 +229,9 @@ bool steamFirstON = false;
 
 PID bPID(&temperature, &pidOutput, &setpoint, aggKp, aggKi, aggKd, 1, DIRECT);
 
+#ifdef CC_ORIONE
+#include "shotHistory.h"
+#endif
 #include "brewHandler.h"
 #include "hotWaterHandler.h"
 
@@ -297,6 +308,9 @@ int getSignalStrength() {
 
 #ifdef ROUND_DISPLAY
 #include "display/roundDisplay.h"
+#ifdef CC_ORIONE
+#include "orioneWifiPortal.h"
+#endif
 #else
 bool shouldDisplayBrewTimer();
 void u8g2_prepare();
@@ -809,19 +823,38 @@ void wiFiSetup() {
         LOG(INFO, "Connecting to WiFi");
     }
 
+#if defined(CC_ORIONE) && defined(ROUND_DISPLAY)
+    // Set after autoConnect(): before the WiFi is started, WiFiManager reads the saved name from
+    // uninitialized memory and reports a saved WiFi when there is none
+    static bool firstSetup = true;
+    static String savedSsid;
+    orione_portal::configure(wm, hostname.c_str(), config.get<int>("display.language") != 0, [](WiFiManager*) {
+        roundDisplayWifiSetup(hostname.c_str(), pass, firstSetup ? nullptr : savedSsid.c_str(), orione_portal::timeoutSeconds(firstSetup));
+    });
+#endif
+
     wm.setHostname(hostname.c_str());
     wm.setEnableConfigPortal(false); // doesnt start config portal within autoconnect
     wm.setDisableConfigPortal(true); // disables config portal on wifi save
     bool wifiConnected = wm.autoConnect(hostname.c_str(), pass);
 
     if (!wifiConnected) {
+#if defined(CC_ORIONE) && defined(ROUND_DISPLAY)
+        firstSetup = !wm.getWiFiIsSaved();
+        savedSsid = wm.getWiFiSSID(true);
+        LOGF(INFO, "WiFi setup portal (%s)", firstSetup ? "first setup" : "saved WiFi out of reach");
+#endif
         wm.setConfigPortalTimeout(1);  // prompt config portal to update password
         wifiConnected = wm.startConfigPortal(hostname.c_str(), pass);
+#if defined(CC_ORIONE) && defined(ROUND_DISPLAY)
+        wm.setConfigPortalTimeout(orione_portal::timeoutSeconds(firstSetup)); // the display shows the QR code (AP callback)
+#else
         wm.setConfigPortalTimeout(60); // sec timeout for captive portal
 
         if (u8g2 != nullptr) {
             displayLogo(String(langstring_portalAP) + "\n" + hostname);
         }
+#endif
 
         wifiConnected = wm.startConfigPortal(hostname.c_str(), pass);
 
@@ -854,10 +887,19 @@ void wiFiSetup() {
                 snprintf(ipStr, sizeof(ipStr), "%u\n%u\n%u\n%u", ip[0], ip[1], ip[2], ip[3]);
             }
 
+#ifdef CC_ORIONE
+            displayLogo(String(langstring_connectip) + '\n' + hostname + ".local\n" + String(ipStr)); // name for the browser, IP as fallback
+#else
             displayLogo(String(langstring_connectip) + '\n' + String(ipStr));
+#endif
         }
 
         if (restartAfterAP) {
+#if defined(CC_ORIONE) && defined(ROUND_DISPLAY)
+            // where to find the machine from now on, before it restarts into the home WiFi
+            displayLogo(String(config.get<int>("display.language") == 0 ? "VERBUNDEN" : "CONNECTED") + '\n' + hostname + ".local\n" + ipStr);
+            delay(4000);
+#endif
             LOG(INFO, "Restarting after successful Wifi configuration");
             delay(1000);
             ESP.restart();
@@ -910,6 +952,7 @@ extern const char sysVersion[] = STR(AUTO_VERSION);
 void setup() {
     // Start serial console
     Serial.begin(115200);
+    ROUND_TIMING_DO(round_timing::heapMark("start"));
 
     // Initialize the logger
     Logger::init(23);
@@ -917,6 +960,12 @@ void setup() {
     if (!config.begin()) {
         LOG(ERROR, "Failed to load config from filesystem!");
     }
+    ROUND_TIMING_DO(round_timing::heapMark("config"));
+    ROUND_TIMING_DO(Serial.printf("TIMING fixed: relays heater %d valve %d pump %d (1 = high), brew switch %d type %d mode %d, scale type %d, offline %d, pid delay %.1f, auth %d\n",
+                                  config.get<int>("hardware.relays.heater.trigger_type"), config.get<int>("hardware.relays.valve.trigger_type"),
+                                  config.get<int>("hardware.relays.pump.trigger_type"), config.get<bool>("hardware.switches.brew.enabled"),
+                                  config.get<int>("hardware.switches.brew.type"), config.get<int>("hardware.switches.brew.mode"), config.get<int>("hardware.sensors.scale.type"),
+                                  config.get<bool>("system.offline_mode"), brewPidDelay, config.get<bool>("system.auth.enabled")));
 
     if (config.get<bool>("hardware.leds.steam.enabled")) {
         LOG(WARNING, "Steam LED interferes with USB console communication");
@@ -925,6 +974,7 @@ void setup() {
     hostname = config.get<String>("system.hostname");
 
     ParameterRegistry::getInstance().initialize(config);
+    ROUND_TIMING_DO(round_timing::heapMark("registry"));
 
     if (!ParameterRegistry::getInstance().isReady()) {
         LOG(ERROR, "Failed to initialize ParameterRegistry!");
@@ -1063,19 +1113,49 @@ void setup() {
         waterTankSensor = new IOSwitch(PIN_WATERTANKSENSOR, (mode == Switch::NORMALLY_OPEN ? GPIOPin::IN_PULLDOWN : GPIOPin::IN_PULLUP), Switch::TOGGLE, mode, !mode);
     }
 
+#ifdef CC_ORIONE
+    shot_history::begin();
+#endif
+
+    ROUND_TIMING_DO(round_timing::heapMark("before wifi"));
     if (!config.get<bool>("system.offline_mode")) { // WiFi Mode
         wiFiSetup();
+        ROUND_TIMING_DO(round_timing::heapMark("wifi connected"));
         serverSetup();
 
+        ROUND_TIMING_DO(round_timing::heapMark("web server"));
         // OTA Updates
         if (WiFi.status() == WL_CONNECTED) {
             otaPass = config.get<String>("system.ota_password");
             ArduinoOTA.setHostname(hostname.c_str()); //  Device name for OTA
             ArduinoOTA.setPassword(otaPass.c_str());  //  Password for OTA
             ArduinoOTA.begin();
+        ROUND_TIMING_DO(round_timing::heapMark("ota"));
+#ifdef CC_ORIONE
+            shot_history::startClock(); // time of day for the last shots
+#endif
         }
 
+#ifdef ORIONE_PORTAL_PREVIEW
+#ifndef ROUND_TIMING
+#error "ORIONE_PORTAL_PREVIEW is for the bench build only"
+#endif
+        // Bench only: the setup portal's pages on port 8080 in the home WiFi. A POST to /wifisave
+        // is sent on as a GET without data, which WiFiManager answers without touching the WiFi.
+        wm.setWebServerCallback([] {
+            wm.server->on("/wifisave", HTTP_POST, [] {
+                wm.server->sendHeader("Location", "/wifisave");
+                wm.server->send(303);
+            });
+        });
+        wm.setHttpPort(8080);
+        wm.startWebPortal();
+        roundDisplayWifiSetup(hostname.c_str(), pass);
+        delay(3000);
+#endif
+
         setupMqtt();
+        ROUND_TIMING_DO(round_timing::heapMark("mqtt"));
 
         if (mqtt_enabled) {
             // Editable values reported to MQTT
@@ -1160,6 +1240,7 @@ void setup() {
         serverSetup();
     }
 
+    ROUND_TIMING_DO(round_timing::heapMark("after wifi"));
     // Start the logger
     Logger::begin();
     int level = ParameterRegistry::getInstance().getParameterById("system.log_level")->getValueAs<int>();
@@ -1174,9 +1255,16 @@ void setup() {
 
     const int tempSensorType = config.get<int>("hardware.sensors.temperature.type");
 
+#ifdef CC_FAKE_TEMP_SENSOR
+    if (true) {
+        tempSensor = new TempSensorFake(); // bench build only: simulated thermoblock, see TempSensorFake.h
+        (void)tempSensorType;
+    }
+#else
     if (tempSensorType == 0) {
         tempSensor = new TempSensorTSIC(PIN_TEMPSENSOR);
     }
+#endif
     else if (tempSensorType == 1) {
         tempSensor = new TempSensorDallas(PIN_TEMPSENSOR);
     }
@@ -1195,6 +1283,7 @@ void setup() {
     lastMQTTConnectionAttempt = currentTime;
     previousMillisTimer = currentTime;
 
+    ROUND_TIMING_DO(round_timing::heapMark("before scale"));
     // Init Scale
     if (config.get<bool>("hardware.sensors.scale.enabled")) {
         initScale();
@@ -1211,6 +1300,7 @@ void setup() {
     }
 
     setupDone = true;
+    ROUND_TIMING_DO(round_timing::heapMark("end of setup"));
 
     enableTimer1();
 
@@ -1246,24 +1336,45 @@ void loop() {
 #ifdef ROUND_DISPLAY
     loopGuardBeat();
 #endif
+#ifdef ORIONE_PORTAL_PREVIEW
+    wm.process();
+#endif
+    ROUND_TIMING_DO(round_timing::loopBegin());
 
     // Accept potential connections for remote logging
-    Logger::update();
+    {
+        ROUND_TIME(Logger);
+        Logger::update();
+    }
 
     // Update water tank sensor
-    loopWaterTank();
+    {
+        ROUND_TIME(Water);
+        loopWaterTank();
+    }
 
     // Update PID settings & machine state
     loopPid();
 
     // Update LED output based on machine state
-    loopLED();
+    {
+        ROUND_TIME(Led);
+        loopLED();
+    }
 
     // print timing related data to check what is causing stutters
-    debugTimingLoop();
+    {
+        ROUND_TIME(Debug);
+        debugTimingLoop();
+    }
 
     // Handle automatic config save
-    ParameterRegistry::getInstance().processPeriodicSave();
+    {
+        ROUND_TIME(Save);
+        ParameterRegistry::getInstance().processPeriodicSave();
+    }
+
+    ROUND_TIMING_DO(round_timing::loopEnd());
 }
 
 void loopPid() {
@@ -1272,6 +1383,7 @@ void loopPid() {
     temperatureUpdateRunning = false;
 
     if (tempSensor != nullptr) {
+        ROUND_TIME(Sensor);
         temperature = tempSensor->getCurrentTemperature();
 
         if (machineState != kSteam) {
@@ -1283,6 +1395,7 @@ void loopPid() {
 
     // Only do Wifi stuff, if Wifi is connected
     if (WiFi.status() == WL_CONNECTED && !offlineMode) {
+        ROUND_TIME(Wifi);
 
         if (wifiWasConnected == false) {
             LOG(INFO, "WiFi Connected");
@@ -1323,6 +1436,7 @@ void loopPid() {
             }
         }
 
+        ROUND_TIME(Ota); // from here to the end of this block
         ArduinoOTA.handle(); // For OTA
 
         // Disable interrupt if OTA is starting, otherwise it will not work
@@ -1343,14 +1457,18 @@ void loopPid() {
         checkWifi();
     }
 
-    testEmergencyStop(); // test if temp is too high
-    bPID.Compute();      // the variable pidOutput now has new values from PID (will be written to heater pin in ISR.cpp)
+    {
+        ROUND_TIME(Pid);
+        testEmergencyStop(); // test if temp is too high
+        bPID.Compute();      // the variable pidOutput now has new values from PID (will be written to heater pin in ISR.cpp)
+    }
 
     websiteUpdateRunning = false;
 
     // refresh website if loop does not have anoth long running process already
     if (((millis() - lastTempEvent) > tempEventInterval) && (!mqttUpdateRunning && !hassioUpdateRunning && !displayBufferReady && !temperatureUpdateRunning)) {
         websiteUpdateRunning = true;
+        ROUND_TIME(Event);
 
         // send temperatures to website endpoint
         sendTempEvent(temperature, brewSetpoint, pidOutput / 10); // pidOutput is promill, so /10 to get percent value
@@ -1381,10 +1499,17 @@ void loopPid() {
         }
     }
 
+    ROUND_TIMING_DO(const uint32_t switchesStartUs = micros());
+
     if (scale) {
         checkWeight();    // Check Weight Scale in the loop
         shotTimerScale(); // Calculation of weight of shot while brew is running
     }
+
+#ifdef CC_ORIONE
+    // drops after the last shot (the brew weight stays frozen once the brew is over)
+    shot_history::loop(scale && scale->isConnected() ? currReadingWeight - preBrewWeight : -1.0f);
+#endif
 
     if (config.get<bool>("hardware.sensors.pressure.enabled")) {
         if (const unsigned long currentMillisPressure = millis(); currentMillisPressure - previousMillisPressure >= intervalPressure) {
@@ -1418,6 +1543,7 @@ void loopPid() {
     displayUpdateRunning = false;
 
 #ifdef ROUND_DISPLAY
+    ROUND_TIMING_DO(round_timing::maxUs[round_timing::Switches] = std::max<uint32_t>(round_timing::maxUs[round_timing::Switches], micros() - switchesStartUs));
     roundDisplayLoop();
 #else
     if (u8g2 != nullptr) {

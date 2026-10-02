@@ -1,0 +1,7 @@
+{
+  "name": "Orione",
+  "version": "1.0.0",
+  "description": "Pure logic of the slim Orione build (CC_ORIONE): web request gate decisions and fixed settings. No Arduino dependencies, unit-tested in simulator/test/test_orione.",
+  "frameworks": "*",
+  "platforms": "*"
+}

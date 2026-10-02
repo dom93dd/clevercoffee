@@ -12,7 +12,15 @@
 #define STR(x)        STR_HELPER(x)
 
 // default parameters
+#ifdef CC_ORIONE
+#define HOSTNAME                 "orione"          // default hostname: setup WiFi, orione.local, OTA (Orione build)
+#else
 #define HOSTNAME                 "silvia"          // default hostname
+#endif
+#ifdef CC_ORIONE
+#define BREW_PRESETS             "25,36;30,45;45,80" // quick choice Espresso/Doppio/Lungo of the web page: seconds,grams
+#define BREW_PRESETS_MAX_LENGTH  48
+#endif
 #define OTAPASS                  "otapass"         // default password for over-the-air updates
 #define WM_PASS                  "CleverCoffee"    // default password for WiFiManager
 #define SETPOINT                 95.0              // brew temperature setpoint

@@ -39,13 +39,20 @@ namespace rd {
             return GuardAction::None;
         }
 
-        const uint32_t stalled = nowMs - lastBeatMs; // also right across the millis() overflow
+        // Signed: a beat a few ms newer than nowMs (loop() beat on core 1 while the watcher was
+        // preempted between its two reads) is no stall, not one of 49 days. Right across the
+        // millis() overflow as long as the difference is below 24 days.
+        const int32_t stalled = static_cast<int32_t>(nowMs - lastBeatMs);
 
-        if (stalled >= kGuardRestartMs) {
+        if (stalled < 0) {
+            return GuardAction::None;
+        }
+
+        if (static_cast<uint32_t>(stalled) >= kGuardRestartMs) {
             return GuardAction::Restart;
         }
 
-        return stalled >= kGuardHoldMs ? GuardAction::HoldHeater : GuardAction::None;
+        return static_cast<uint32_t>(stalled) >= kGuardHoldMs ? GuardAction::HoldHeater : GuardAction::None;
     }
 
 } // namespace rd

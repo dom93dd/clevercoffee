@@ -7,6 +7,9 @@
 
 #pragma once
 
+#ifdef CC_ORIONE
+#include <OrioneFixed.h>
+#endif
 #include "ConfigDef.h"
 #include "Logger.h"
 #include "defaults.h"
@@ -25,6 +28,10 @@ class Config {
          * @return true if successful, false otherwise
          */
         bool begin() {
+#ifdef CC_ORIONE
+            const DefsReleaser releaseDefs{this}; // on every return: ~5 KB heap back, rebuilt only for a config upload
+#endif
+
             if (!LittleFS.begin(true)) {
                 LOG(ERROR, "Failed to initialize LittleFS");
                 return false;
@@ -49,6 +56,9 @@ class Config {
             }
 
             initializeConfigDefs();
+#ifdef CC_ORIONE
+            pruneUnknownKeys();
+#endif
 
             return true;
         }
@@ -127,6 +137,60 @@ class Config {
             return true;
         }
 
+#ifdef CC_ORIONE
+        /**
+         * @brief get() without heap: the path is walked in place (JsonString keys point into it).
+         *        The String version allocated a temporary path and one String per segment, several
+         *        times per loop(); that churn on core 1, next to the web server and Bluetooth on core 0,
+         *        broke the heap into pieces (measured: 27 KB free, largest block 4 KB).
+         */
+        /** Fixed settings of the Orione build: lib/Orione/src/OrioneFixed.h (unit-tested) */
+        static const double* fixedValue(const char* path) {
+            static_assert(orione::kHighTrigger == Relay::HIGH_TRIGGER, "OrioneFixed.h: relay trigger value");
+            static_assert(orione::kToggle == Switch::TOGGLE, "OrioneFixed.h: switch type value");
+            static_assert(orione::kNormallyOpen == Switch::NORMALLY_OPEN, "OrioneFixed.h: switch mode value");
+            return orione::fixedValue(path);
+        }
+
+        template <typename T>
+        T get(const char* path) const {
+            if constexpr (std::is_arithmetic_v<T>) {
+                if (const double* value = fixedValue(path)) {
+                    return static_cast<T>(*value);
+                }
+            }
+
+            JsonVariantConst current = _doc.as<JsonVariantConst>();
+            const char* segment = path;
+
+            for (const char* dot; (dot = strchr(segment, '.')) != nullptr; segment = dot + 1) {
+                current = current[JsonString(segment, static_cast<size_t>(dot - segment))];
+
+                if (current.isNull()) {
+                    return T{};
+                }
+            }
+
+            if (*segment == '\0' || current.isNull()) {
+                return T{};
+            }
+
+            const JsonVariantConst leaf = current[JsonString(segment, strlen(segment))];
+
+            if constexpr (std::is_same_v<T, String>) {
+                return leaf.as<String>();
+            }
+            else {
+                static_assert(std::is_arithmetic_v<T>, "Type must be arithmetic or String");
+                return leaf.as<T>();
+            }
+        }
+
+        template <typename T>
+        T get(const String& path) const {
+            return get<T>(path.c_str());
+        }
+#else
         template <typename T>
         T get(const String& path) const {
             return navigatePath(path, [](JsonVariantConst parent, const String& leafKey) -> T {
@@ -160,6 +224,7 @@ class Config {
                 }
             });
         }
+#endif
 
         template <typename T>
         void set(const String& path, const T& value) {
@@ -225,6 +290,57 @@ class Config {
             return navigatePath(_doc.as<JsonVariant>(), path, std::forward<Func>(leafHandler), createMissing);
         }
 
+#ifdef CC_ORIONE
+        /** The definitions are only needed for defaults and uploads; a cleared map gives its heap back */
+        void freeConfigDefs() {
+            std::map<std::string, ConfigDef>().swap(_configDefs);
+        }
+
+        struct DefsReleaser {
+                Config* config;
+
+                ~DefsReleaser() {
+                    config->freeConfigDefs();
+                }
+        };
+
+        /**
+         * @brief Drops settings this build does not define (features left out of the Orione build).
+         *        get() reads the JSON directly, so a value left over in an older config.json, e.g.
+         *        pre-infusion switched on, would still act without showing in the web interface.
+         */
+        void pruneUnknownKeys() {
+            std::vector<String> unknown;
+            collectUnknownKeys(_doc.as<JsonObjectConst>(), "", unknown);
+
+            for (const auto& path : unknown) {
+                navigatePath(path, [](JsonVariant parent, const String& leafKey) {
+                    if (!leafKey.isEmpty() && !parent.isNull()) {
+                        parent.as<JsonObject>().remove(leafKey);
+                    }
+                });
+                LOGF(INFO, "Dropped setting %s (not used in this build)", path.c_str());
+            }
+
+            if (!unknown.empty() && !save()) {
+                LOG(ERROR, "Failed to save config after dropping unused settings");
+            }
+        }
+
+        void collectUnknownKeys(JsonObjectConst object, const String& prefix, std::vector<String>& unknown) const {
+            for (JsonPairConst pair : object) {
+                const String path = prefix.isEmpty() ? String(pair.key().c_str()) : prefix + "." + pair.key().c_str();
+
+                if (pair.value().is<JsonObjectConst>()) {
+                    collectUnknownKeys(pair.value().as<JsonObjectConst>(), path, unknown);
+                }
+                else if (_configDefs.find(path.c_str()) == _configDefs.end()) {
+                    unknown.push_back(path);
+                }
+            }
+        }
+#endif
+
         inline static auto CONFIG_FILE = "/config.json";
 
         JsonDocument _doc;
@@ -246,32 +362,55 @@ class Config {
             _configDefs.emplace("pid.regular.i_max", ConfigDef::forDouble(AGGIMAX, PID_I_MAX_REGULAR_MIN, PID_I_MAX_REGULAR_MAX));
 
             // PID brew detection
+#ifndef CC_ORIONE
             _configDefs.emplace("pid.bd.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("pid.bd.kp", ConfigDef::forDouble(AGGBKP, PID_KP_BD_MIN, PID_KP_BD_MAX));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("pid.bd.tn", ConfigDef::forDouble(AGGBTN, PID_TN_BD_MIN, PID_TN_BD_MAX));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("pid.bd.tv", ConfigDef::forDouble(AGGBTV, PID_TV_BD_MIN, PID_TV_BD_MAX));
+#endif
 
             // PID steam
+#ifndef CC_ORIONE
             _configDefs.emplace("pid.steam.kp", ConfigDef::forDouble(STEAMKP, PID_KP_STEAM_MIN, PID_KP_STEAM_MAX));
+#endif
 
             // Brew settings
             _configDefs.emplace("brew.setpoint", ConfigDef::forDouble(SETPOINT, BREW_SETPOINT_MIN, BREW_SETPOINT_MAX));
             _configDefs.emplace("brew.temp_offset", ConfigDef::forDouble(TEMPOFFSET, BREW_TEMP_OFFSET_MIN, BREW_TEMP_OFFSET_MAX));
+#ifndef CC_ORIONE
             _configDefs.emplace("brew.pid_delay", ConfigDef::forDouble(BREW_PID_DELAY, BREW_PID_DELAY_MIN, BREW_PID_DELAY_MAX));
+#endif
             _configDefs.emplace("brew.mode", ConfigDef::forInt(0, 0, 2));
             _configDefs.emplace("brew.by_time.enabled", ConfigDef::forBool(false));
             _configDefs.emplace("brew.by_time.target_time", ConfigDef::forDouble(TARGET_BREW_TIME, TARGET_BREW_TIME_MIN, TARGET_BREW_TIME_MAX));
             _configDefs.emplace("brew.by_weight.enabled", ConfigDef::forBool(false));
             _configDefs.emplace("brew.by_weight.target_weight", ConfigDef::forDouble(TARGET_BREW_WEIGHT, TARGET_BREW_WEIGHT_MIN, TARGET_BREW_WEIGHT_MAX));
             _configDefs.emplace("brew.by_weight.auto_tare", ConfigDef::forBool(false));
+#ifdef CC_ORIONE
+            _configDefs.emplace("brew.presets", ConfigDef::forString(BREW_PRESETS, BREW_PRESETS_MAX_LENGTH)); // only the web page reads it
+#endif
 
             // Pre-infusion
+#ifndef CC_ORIONE
             _configDefs.emplace("brew.pre_infusion.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("brew.pre_infusion.time", ConfigDef::forDouble(PRE_INFUSION_TIME, PRE_INFUSION_TIME_MIN, PRE_INFUSION_TIME_MAX));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("brew.pre_infusion.pause", ConfigDef::forDouble(PRE_INFUSION_PAUSE_TIME, PRE_INFUSION_PAUSE_MIN, PRE_INFUSION_PAUSE_MAX));
+#endif
 
             // Steam
+#ifndef CC_ORIONE
             _configDefs.emplace("steam.setpoint", ConfigDef::forDouble(STEAMSETPOINT, STEAM_SETPOINT_MIN, STEAM_SETPOINT_MAX));
+#endif
 
             // Backflushing
             _configDefs.emplace("backflush.cycles", ConfigDef::forInt(BACKFLUSH_CYCLES, BACKFLUSH_CYCLES_MIN, BACKFLUSH_CYCLES_MAX));
@@ -283,86 +422,188 @@ class Config {
             _configDefs.emplace("standby.time", ConfigDef::forDouble(STANDBY_MODE_TIME, STANDBY_MODE_TIME_MIN, STANDBY_MODE_TIME_MAX));
 
             // MQTT
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.broker", ConfigDef::forString("", MQTT_BROKER_MAX_LENGTH));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.port", ConfigDef::forInt(1883, 1, 65535));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.username", ConfigDef::forString(MQTT_USERNAME, USERNAME_MAX_LENGTH));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.password", ConfigDef::forString(MQTT_PASSWORD, PASSWORD_MAX_LENGTH));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.topic", ConfigDef::forString(MQTT_TOPIC, MQTT_TOPIC_MAX_LENGTH));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.hassio.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("mqtt.hassio.prefix", ConfigDef::forString(MQTT_HASSIO_PREFIX, MQTT_HASSIO_PREFIX_MAX_LENGTH));
+#endif
 
             // System
             _configDefs.emplace("system.hostname", ConfigDef::forString(HOSTNAME, HOSTNAME_MAX_LENGTH));
             _configDefs.emplace("system.ota_password", ConfigDef::forString(OTAPASS, PASSWORD_MAX_LENGTH));
+#ifndef CC_ORIONE
             _configDefs.emplace("system.offline_mode", ConfigDef::forBool(false));
+#endif
             _configDefs.emplace("system.log_level", ConfigDef::forInt(static_cast<int>(Logger::Level::INFO), 0, 5));
+#ifndef CC_ORIONE
             _configDefs.emplace("system.auth.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("system.auth.username", ConfigDef::forString(AUTH_USERNAME, USERNAME_MAX_LENGTH));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("system.auth.password", ConfigDef::forString(AUTH_PASSWORD, PASSWORD_MAX_LENGTH));
+#endif
 
             // Debugging
+#ifndef CC_ORIONE
             _configDefs.emplace("system.timing_debug.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("system.showdisplay.enabled", ConfigDef::forBool(true));
+#endif
 
             // Display
+#ifndef CC_ORIONE
             _configDefs.emplace("display.template", ConfigDef::forInt(0, 0, 4));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("display.inverted", ConfigDef::forBool(false));
+#endif
             _configDefs.emplace("display.language", ConfigDef::forInt(1, 0, 2));
+#ifndef CC_ORIONE
             _configDefs.emplace("display.fullscreen_brew_timer", ConfigDef::forBool(false));
+#endif
             _configDefs.emplace("display.blescale_brew_timer", ConfigDef::forBool(false));
+#ifndef CC_ORIONE
             _configDefs.emplace("display.fullscreen_manual_flush_timer", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("display.fullscreen_hot_water_timer", ConfigDef::forBool(false));
+#endif
             _configDefs.emplace("display.post_brew_timer_duration", ConfigDef::forDouble(POST_BREW_TIMER_DURATION, POST_BREW_TIMER_DURATION_MIN, POST_BREW_TIMER_DURATION_MAX));
+#ifndef CC_ORIONE
             _configDefs.emplace("display.heating_logo", ConfigDef::forBool(true));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("display.blinking.mode", ConfigDef::forInt(1, 0, 2));
+#endif
             _configDefs.emplace("display.blinking.delta", ConfigDef::forDouble(BLINKING_DELTA, BLINKING_DELTA_MIN, BLINKING_DELTA_MAX));
 
             // Hardware - OLED
             _configDefs.emplace("hardware.oled.enabled", ConfigDef::forBool(true));
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.oled.type", ConfigDef::forInt(0, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.oled.address", ConfigDef::forInt(0, 0, 1));
+#endif
 
             // Hardware - Relays
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.relays.heater.trigger_type", ConfigDef::forInt(Relay::HIGH_TRIGGER, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.relays.valve.trigger_type", ConfigDef::forInt(Relay::HIGH_TRIGGER, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.relays.pump.trigger_type", ConfigDef::forInt(Relay::HIGH_TRIGGER, 0, 1));
+#endif
 
             // Hardware - Switches
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.brew.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.brew.type", ConfigDef::forInt(Switch::TOGGLE, 0, 2));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.brew.mode", ConfigDef::forInt(Switch::NORMALLY_OPEN, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.steam.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.steam.type", ConfigDef::forInt(Switch::TOGGLE, 0, 2));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.steam.mode", ConfigDef::forInt(Switch::NORMALLY_OPEN, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.power.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.power.type", ConfigDef::forInt(Switch::TOGGLE, 0, 2));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.power.mode", ConfigDef::forInt(Switch::NORMALLY_OPEN, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.hot_water.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.hot_water.type", ConfigDef::forInt(Switch::TOGGLE, 0, 2));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.switches.hot_water.mode", ConfigDef::forInt(Switch::NORMALLY_OPEN, 0, 1));
+#endif
 
             // Hardware - LEDs
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.leds.status.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.leds.status.inverted", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.leds.brew.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.leds.brew.inverted", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.leds.steam.enabled", ConfigDef::forBool(false));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.leds.steam.inverted", ConfigDef::forBool(false));
+#endif
 
             // Hardware - Sensors
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.temperature.type", ConfigDef::forInt(0, 0, 1));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.pressure.enabled", ConfigDef::forBool(false));
+#endif
             _configDefs.emplace("hardware.sensors.watertank.enabled", ConfigDef::forBool(false));
             _configDefs.emplace("hardware.sensors.watertank.mode", ConfigDef::forInt(Switch::NORMALLY_CLOSED, 0, 1));
 
             // Scale
             _configDefs.emplace("hardware.sensors.scale.enabled", ConfigDef::forBool(false));
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.scale.samples", ConfigDef::forInt(SCALE_SAMPLES, 1, 20));
+#endif
+#ifndef CC_ORIONE // Orione: fixed in Config::get()
             _configDefs.emplace("hardware.sensors.scale.type", ConfigDef::forInt(0, 0, 5));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.scale.calibration", ConfigDef::forDouble(SCALE_CALIBRATION_FACTOR, SCALE_CALIBRATION_MIN, SCALE_CALIBRATION_MAX));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.scale.calibration2", ConfigDef::forDouble(SCALE_CALIBRATION_FACTOR, SCALE_CALIBRATION_MIN, SCALE_CALIBRATION_MAX));
+#endif
+#ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.scale.known_weight", ConfigDef::forDouble(SCALE_KNOWN_WEIGHT, SCALE_KNOWN_WEIGHT_MIN, SCALE_KNOWN_WEIGHT_MAX));
+#endif
         }
 
         /**
@@ -454,6 +695,10 @@ class Config {
         }
 
         bool validateAndApplyConfig(const JsonDocument& doc) {
+#ifdef CC_ORIONE
+            initializeConfigDefs(); // freed after begin()
+            const DefsReleaser releaseDefs{this};
+#endif
             LOGF(INFO, "Validating and applying configuration with %d parameters", _configDefs.size());
 
             // Helper function to recursively extract all paths from JSON

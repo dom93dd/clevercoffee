@@ -52,7 +52,9 @@ inline void checkBluetoothScaleConnection() {
 
     // Check connection status periodically for logging/fallback logic
     if (const unsigned long currentTime = millis(); currentTime - lastScaleConnectionCheck > SCALE_CONNECTION_CHECK_INTERVAL) {
+#ifndef CC_ORIONE // Orione: the scale's own task keeps the connection (BluetoothScale::startConnectionTask)
         static_cast<BluetoothScale*>(scale)->updateConnection();
+#endif
 
         lastScaleConnectionCheck = currentTime;
 
@@ -241,7 +243,13 @@ inline void initScale() {
         scale = nullptr;
     }
 
+#ifdef CC_ORIONE
+    if (true) { // Orione build: Bluetooth only, the HX711 parameters are left out
+        (void)scaleType;
+        (void)scaleSamples;
+#else
     if (scaleType == 2) { // Bluetooth scale
+#endif
 
         const bool bleDebug = config.get<int>("system.log_level") == static_cast<int>(Logger::Level::TRACE);
         scale = new BluetoothScale(bleDebug);
@@ -251,6 +259,9 @@ inline void initScale() {
         LOG(INFO, "Initializing Bluetooth scale");
 
         scale->init();
+#ifdef CC_ORIONE
+        static_cast<BluetoothScale*>(scale)->startConnectionTask();
+#endif
     }
     else {
         // HX711 scale types

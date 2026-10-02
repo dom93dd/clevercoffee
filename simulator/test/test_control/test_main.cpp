@@ -297,6 +297,16 @@ void test_guard_across_the_millis_overflow() {
     TEST_ASSERT_TRUE(rd::loopGuardAction(beat + rd::kGuardHoldMs, beat, true) == rd::GuardAction::HoldHeater);
 }
 
+void test_guard_ignores_a_beat_newer_than_the_watchers_clock() {
+    // Watcher reads the time, is preempted on core 0 (web server), loop() beats meanwhile on core 1:
+    // the beat is then a few ms "in the future". Found on the real ESP32 on 02.10.2026: it read as
+    // a stall of 49 days and restarted the machine.
+    const uint32_t now = 100000;
+    TEST_ASSERT_TRUE(rd::loopGuardAction(now, now + 1, true) == rd::GuardAction::None);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(now, now + 150, true) == rd::GuardAction::None);
+    TEST_ASSERT_TRUE(rd::loopGuardAction(0xFFFFFFF0u, 0x10u, true) == rd::GuardAction::None); // across the overflow
+}
+
 void test_guard_limits_above_the_intended_pauses() {
     // Places where loop() stops on purpose (see RoundDisplayGuard.h) must not trigger the guard
     constexpr uint32_t bluetoothConnect = 5000 + 2 * 500;                          // connect timeout plus delays and service discovery
@@ -415,6 +425,7 @@ int main() {
     RUN_TEST(test_guard_holds_the_heater_then_restarts);
     RUN_TEST(test_guard_stays_out_while_the_heater_timer_is_off);
     RUN_TEST(test_guard_across_the_millis_overflow);
+    RUN_TEST(test_guard_ignores_a_beat_newer_than_the_watchers_clock);
     RUN_TEST(test_guard_limits_above_the_intended_pauses);
     RUN_TEST(test_link_model_survives_the_trip);
     RUN_TEST(test_link_rejects_unknown_states);

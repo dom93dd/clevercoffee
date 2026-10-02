@@ -19,6 +19,7 @@
 #include <ESPAsyncWebServer.h>
 
 #include "LittleFS.h"
+#include "webRequestGate.h"
 
 inline AsyncWebServer server(80);
 inline AsyncEventSource events("/events");
@@ -71,6 +72,10 @@ inline String getTempString() {
     doc["currentTemp"] = curTemp;
     doc["targetTemp"] = tTemp;
     doc["heaterPower"] = hPower;
+#ifdef CC_ORIONE
+    doc["state"] = static_cast<int>(machineState); // the Orione web page shows heating/ready/shot/standby/errors
+    doc["brewTime"] = round(currBrewTime / 100.0) / 10.0;
+#endif
 
     String jsonTemps;
     serializeJson(doc, jsonTemps);
@@ -152,6 +157,7 @@ inline void paramToJson(const String& name, const std::shared_ptr<Parameter>& pa
 }
 
 inline void serverSetup() {
+#ifndef CC_ORIONE // no firmware steam mode / no HX711 calibration on the Orione
     server.on("/toggleSteam", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
@@ -164,6 +170,7 @@ inline void serverSetup() {
 
         request->redirect("/");
     });
+#endif
 
     server.on("/togglePid", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
@@ -207,6 +214,7 @@ inline void serverSetup() {
             request->redirect("/");
         });
 
+#ifndef CC_ORIONE // no firmware steam mode / no HX711 calibration on the Orione
         server.on("/toggleScaleCalibration", HTTP_POST, [](AsyncWebServerRequest* request) {
             if (!authenticate(request)) {
                 return request->requestAuthentication();
@@ -218,9 +226,10 @@ inline void serverSetup() {
 
             request->redirect("/");
         });
+#endif
     }
 
-    server.on("/parameters", [](AsyncWebServerRequest* request) {
+    server.on("/parameters", WEB_GATED([](AsyncWebServerRequest* request) {
         if (!request->client() || !request->client()->connected()) {
             return;
         }
@@ -381,7 +390,7 @@ inline void serverSetup() {
             response->addHeader("Connection", "close");
             request->send(response);
         }
-    });
+    }));
 
     server.on("/parameterHelp", HTTP_GET, [](AsyncWebServerRequest* request) {
         JsonDocument doc;
@@ -428,7 +437,15 @@ inline void serverSetup() {
         request->send(response);
     });
 
-    server.on("/timeseries", HTTP_GET, [](AsyncWebServerRequest* request) {
+#ifdef CC_ORIONE
+    server.on("/shots", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        shot_history::writeJson(*response);
+        request->send(response);
+    }));
+
+#endif
+    server.on("/timeseries", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         // Chunked, so a response never needs more memory than the server's send buffer
         struct TsState {
                 int start = 0;
@@ -483,7 +500,7 @@ inline void serverSetup() {
 
         response->addHeader("Connection", "close");
         request->send(response);
-    });
+    }));
 
     server.on("/wifireset", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
@@ -501,7 +518,7 @@ inline void serverSetup() {
         wiFiReset();
     });
 
-    server.on("/download/config", HTTP_GET, [](AsyncWebServerRequest* request) {
+    server.on("/download/config", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -535,7 +552,7 @@ inline void serverSetup() {
         AsyncWebServerResponse* response = request->beginResponse(200, "application/json", prettifiedJson);
         response->addHeader("Content-Disposition", "attachment; filename=\"config.json\"");
         request->send(response);
-    });
+    }));
 
     server.on(
         "/upload/config", HTTP_POST,
@@ -643,11 +660,17 @@ inline void serverSetup() {
 
     // serve static files
     LittleFS.begin();
+#ifdef CC_ORIONE
+    // The Orione page is one gzipped file (frontend-orione/, built by orione_frontend.py). no-cache:
+    // the browser asks every time but gets a 304 by ETag as long as the file did not change.
+    web_gate::serveStatic(server, "/", LittleFS, "/html/", "no-cache").setDefaultFile("index.html");
+#else
     server.serveStatic("/css", LittleFS, "/css/", "max-age=604800"); // cache for one week
     server.serveStatic("/js", LittleFS, "/js/", "max-age=604800");
     server.serveStatic("/img", LittleFS, "/img/", "max-age=604800"); // cache for one week
     server.serveStatic("/manifest.json", LittleFS, "/manifest.json", "max-age=604800");
     server.serveStatic("/", LittleFS, "/html/", "max-age=604800").setDefaultFile("index.html");
+#endif
 
     server.begin();
 

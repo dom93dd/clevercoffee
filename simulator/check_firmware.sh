@@ -4,9 +4,10 @@
 #  2. the round display build leaves at least MIN_FREE bytes of the app partition free
 #  3. drawing time of every screen on the ESP32, measured in the QEMU emulator
 #     (esp32-bench; skipped if QEMU is not installed, see esp32-bench/run_qemu.sh)
-#  4. the stock esp32_usb build has exactly the size of upstream/master, i.e. the branch
-#     does not change the normal firmware (builds master in a temporary git worktree;
-#     skip with --quick)
+#  4. nothing of the round display / Orione build (CC_ORIONE) gets into the stock esp32_usb build
+#     (symbol check). Since 02.10.2026 the branch carries upstream 4.0.4 plus irrwisch1's frontend
+#     on purpose, so the stock build is no longer byte-equal to upstream: its size difference to
+#     upstream/master is only reported (builds master in a temporary git worktree; skip with --quick)
 #
 # Usage: simulator/check_firmware.sh [--quick]
 set -e
@@ -48,6 +49,12 @@ else
     echo "   skipped: QEMU not installed (see simulator/esp32-bench/run_qemu.sh)"
 fi
 
+echo "== Stock firmware free of round display / Orione code"
+NM=$(ls ~/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm)
+LEAK=$("$NM" -C .pio/build/esp32_usb/firmware.elf | grep -E 'web_gate::|round_timing::|[ (]rd::|RoundUi|roundDisplay|loopGuard|pruneUnknownKeys|fixedValue|freeConfigDefs|TempSensorFake|shot_history|orione_portal' | head -3)
+[ -z "$LEAK" ] || fail "round/Orione code in the stock build: $LEAK"
+echo "OK"
+
 if [ $QUICK -eq 1 ]; then
     echo "== Skipped comparison with upstream/master (--quick)"
     echo "OK"
@@ -64,6 +71,5 @@ git worktree add --detach "$TMP/base" "$BASE" >/dev/null 2>&1
 # Same branch name in the version string, so only code differences change the size
 set -- $(GITHUB_REF_NAME="$BRANCH" used esp32_usb "$TMP/base")
 [ -n "$1" ] || fail "upstream/master ($BASE) does not build"
-echo "   upstream/master ${BASE%"${BASE#???????}"}: $1 bytes, this branch: $STOCK bytes"
-[ "$1" -eq "$STOCK" ] || fail "the stock firmware differs from upstream/master by $(( STOCK - $1 )) bytes"
+echo "   upstream/master ${BASE%"${BASE#???????}"}: $1 bytes, this branch: $STOCK bytes ($(( STOCK - $1 )) bytes, irrwisch1's frontend and fixes)"
 echo "OK"

@@ -869,6 +869,10 @@ namespace {
                 {"langer Hostname", {"IP-ADRESSE", "kaffeemaschine-orione3000.local", "192.168.178.142"}},
                 {"lange Überschrift", {"WLAN-EINRICHTUNGSASSISTENT", "Hotspot: silvia", "192.168.4.1"}},
                 {"vier lange Zeilen", {"KALIBRIERUNG", "Bitte das bekannte Gewicht auflegen", "und zehn Sekunden warten, bis", "die Messung abgeschlossen ist 500.00g"}},
+                {"WLAN einrichten (QR)", {"WLAN EINRICHTEN", "WLAN: orione", "Passwort: CleverCoffee", nullptr, "WIFI:T:WPA;S:orione;P:CleverCoffee;;"}},
+                {"WLAN nicht erreichbar (QR)", {"WLAN EINRICHTEN", "DD07 nicht erreichbar", "Sonst in 1 Min. ohne WLAN", nullptr, "WIFI:T:WPA;S:orione;P:CleverCoffee;;"}},
+                {"WLAN nicht erreichbar, langer Name", {"WLAN EINRICHTEN", "FRITZ!Box 7590 Wohnzimmer nicht erreichbar", "Sonst in 1 Min. ohne WLAN", nullptr, "WIFI:T:WPA;S:orione;P:CleverCoffee;;"}},
+                {"WLAN einrichten, langer Name", {"WLAN EINRICHTEN", "WLAN: kaffeemaschine-orione3000", "Passwort: CleverCoffee", nullptr, "WIFI:T:WPA;S:kaffeemaschine-orione3000;P:CleverCoffee;;"}},
             };
 
             for (const auto& [caption, message] : messages) {

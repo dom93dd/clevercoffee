@@ -95,12 +95,15 @@ namespace rd {
      * @brief Full screen message for boot, WiFi setup and scale calibration,
      *        e.g. {"IP-ADRESSE", "silvia.local", "192.168.178.42"}.
      *        The title uses the capitals font; lower case letters are shown in the text font instead.
+     *        With qr set (e.g. "WIFI:T:WPA;S:orione;P:...;;" to join the setup WiFi with the phone
+     *        camera) the screen shows the title, the code and line1/line2 below it.
      */
     struct Message {
             const char* title = nullptr;
             const char* line1 = nullptr;
             const char* line2 = nullptr;
             const char* line3 = nullptr;
+            const char* qr = nullptr;
     };
 
 } // namespace rd

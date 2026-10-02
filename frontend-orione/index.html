@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c">
+<title>Orione</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%23ff9226' stroke-width='4'/%3E%3C/svg%3E">
+<!--
+  Web interface of the Orione build (CC_ORIONE): one file, no libraries, served gzipped (~10 KB).
+  Talks to the firmware's existing API: /parameters (GET ?names=, POST form), /events (SSE new_temps),
+  /timeseries, /toggleBackflush, /toggleTareScale, /restart, /wifireset, /factoryreset,
+  /download/config, /upload/config, /version, and /shots (last five shots, Orione build). Requests go one after another (the ESP32 answers one
+  at a time, src/webRequestGate.h); a 503 ("busy") is retried.
+-->
+<style>
+:root{--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#0b0b0c;--card:#161618;--line:#26262a;--text:#f2f2f4;--mute:#8e8e94;--faint:#56565c;
+--heat:#ff9226;--ready:#34d399;--brew:#f0b45c;--cool:#7dbeff;--err:#ef4444;--r:18px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 var(--font)}
+button,input,select{font-family:inherit}
+body{padding:0 16px calc(84px + env(safe-area-inset-bottom))}
+main{max-width:640px;margin:0 auto}
+header{max-width:640px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:18px 0 6px}
+.brand{font-weight:700;letter-spacing:.14em;font-size:15px}
+.brand small{display:block;font-weight:500;letter-spacing:.08em;color:var(--mute);font-size:11px}
+.chip{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:99px;background:var(--card);font-size:14px;font-weight:600;color:var(--mute);white-space:nowrap}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:4px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:rgba(11,11,12,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);z-index:5}
+nav button{flex:1;max-width:150px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;border:0;background:none;color:var(--mute);font-size:12px;font-weight:600;line-height:1;border-radius:12px;cursor:pointer}
+nav button svg{width:24px;height:24px}
+nav button.on{color:var(--text)}
+nav button.on svg{color:var(--heat)}
+.card{background:var(--card);border-radius:var(--r);padding:16px;margin:12px 0}
+.card h2{margin:0 0 4px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.hero{text-align:center;padding:22px 16px 18px}
+.temp{font-size:72px;font-weight:300;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+.temp small{font-size:28px;color:var(--mute);margin-left:4px}
+.sub{color:var(--mute);margin-top:6px;font-size:15px}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:18px 4px 6px}
+.bar b{display:block;height:100%;background:var(--heat);transform:scaleX(0);transform-origin:left;transition:transform .6s}
+.barlbl{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);margin:0 4px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--line)}
+.card h2+.row,.row:first-child{border-top:0}
+.lbl{min-width:0}
+.lbl div{font-weight:550}
+.lbl p{margin:2px 0 0;font-size:13px;color:var(--mute)}
+.sw{position:relative;flex:none;width:50px;height:30px;border-radius:15px;background:var(--line);border:0;cursor:pointer;transition:background .2s}
+.sw:after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .2s}
+.sw.on{background:var(--ready)}
+.sw.on:after{transform:translateX(20px)}
+.step{display:flex;align-items:center;flex:none;background:var(--bg);border-radius:12px}
+.step button{width:40px;height:40px;border:0;background:none;color:var(--text);font-size:22px;cursor:pointer}
+.step input{width:76px;text-align:center;border:0;background:none;color:var(--text);font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.seg{display:flex;flex:none;background:var(--bg);border-radius:12px;padding:3px}
+.seg button{border:0;background:none;color:var(--mute);font-size:14px;font-weight:600;padding:8px 12px;border-radius:9px;cursor:pointer}
+.seg button.on{background:var(--line);color:var(--text)}
+.row.stack{flex-direction:column;align-items:stretch;gap:10px}
+.row.stack .seg{width:100%}
+.row.stack .seg button{flex:1;padding:8px 4px}
+select,.txt{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;background:var(--line);color:var(--text);text-decoration:none}
+.btn.pri{background:var(--heat);color:#1a1006}
+.btn.bad{background:none;color:var(--err);box-shadow:inset 0 0 0 1.5px var(--err)}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+canvas{display:block;width:100%;height:180px;margin-top:8px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mute);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+details summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+details summary:after{content:"+";font-size:18px;line-height:1}
+details[open] summary:after{content:"−"}
+.note{background:rgba(255,146,38,.12);color:var(--heat);border-radius:12px;padding:12px;font-size:14px;margin:12px 0}
+.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;transition:.25s;pointer-events:none;z-index:9}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+body.reboot .toast{bottom:calc(150px + env(safe-area-inset-bottom))}
+.rebootbar{position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));max-width:608px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 8px 8px 14px;font-size:14px;z-index:6;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.rebootbar .btn{padding:9px 12px;font-size:14px;flex:none}
+.ver{color:var(--faint);font-size:12px;margin-top:14px}
+.shot{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:baseline;padding:11px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.shot:first-child{border-top:0}
+.shot small{color:var(--mute);font-size:13px}
+.empty{color:var(--mute);margin:10px 0 4px}
+.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 6px}
+.chips button{border:0;border-radius:12px;background:var(--bg);color:var(--text);font-size:15px;font-weight:600;padding:10px 4px;cursor:pointer}
+.chips small{display:block;margin-top:2px;color:var(--mute);font-size:12px;font-weight:500}
+.chips button.on{box-shadow:inset 0 0 0 2px var(--heat)}
+.chips button.on small{color:var(--heat)}
+.pair{display:flex;flex-direction:column;gap:6px;flex:none}
+[hidden]{display:none!important}
+@media (min-width:720px){.rebootbar{bottom:16px}body.reboot .toast{bottom:84px}body{padding-bottom:24px}nav{position:static;max-width:640px;margin:8px auto 0;background:none;border:0;padding:0;backdrop-filter:none}nav button{flex-direction:row;gap:8px;font-size:14px;padding:10px 12px}.toast{bottom:24px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">ORIONE<small>CLEVERCOFFEE</small></div>
+  <div class="chip" id="chip"><i></i><span id="state">…</span></div>
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<div class="rebootbar" id="rebootBar" hidden><span id="rebootText"></span><button class="btn pri" id="rebootBtn"></button></div>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-status" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-brew" viewBox="0 0 24 24"><path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5V9zm11 1h1.5a2.5 2.5 0 0 1 0 5H16M8 3c0 1.5 1.5 1.5 1.5 3M12 3c0 1.5 1.5 1.5 1.5 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-set" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-care" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0-5.3 5.3L4 16l4 4 5.2-5.2a4 4 0 0 0 5.3-5.3l-2.5 2.5-3-.5-.5-3 2.5-2.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+</svg>
+<script>
+"use strict";
+// ---------- texts (German; English when the display language is not German) ----------
+const T = {
+  de: {
+    status: "Maschine", brew: "Bezug", settings: "Einstellungen", care: "Wartung",
+    setpoint: "Soll", heater: "Heizung", pid: "Temperaturregelung", pidHint: "Aus: die Maschine heizt nicht",
+    history: "Letzte 20 Minuten", tempLine: "Temperatur", setLine: "Soll", heatLine: "Heizung",
+    tare: "Waage tarieren", bfActive: "Backflush-Modus aktiv: der Bezugsschalter startet die Reinigung.",
+    start: "Start", ready: "Bereit", heating: "Heizt auf", cooling: "Kühlt ab", brewing: "Bezug", flush: "Spülen",
+    steam: "Dampf", water: "Heißwasser", backflush: "Backflush", pidOff: "Regelung aus", tank: "Wassertank leer",
+    standby: "Standby", overtemp: "Übertemperatur", sensor: "Sensorfehler", offline: "Keine Verbindung",
+    sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
+    sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush",
+    sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
+    stopHint: "Gewicht: erst Waage einschalten",
+    "brew.mode": "Bezugsart", "brew.modeHint": "Automatisch: Zeit oder Gewicht beendet den Bezug",
+    "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
+    "hardware.sensors.scale.enabled": "Bluetooth-Waage", "hardware.sensors.scale.enabledHint": "Änderung wirkt nach einem Neustart",
+    "brew.by_weight.enabled": "Nach Gewicht stoppen", "brew.by_weight.target_weight": "Zielgewicht",
+    "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
+    "display.blescale_brew_timer": "Timer der Waage mitlaufen lassen",
+    "display.post_brew_timer_duration": "Bezugszeit stehen lassen", "display.post_brew_timer_durationHint": "nach dem Bezug auf dem Display",
+    "brew.temp_offset": "Offset", "brew.temp_offsetHint": "Unterschied zwischen Fühler und Brühgruppe",
+    "display.blinking.delta": "Bereit ab", "display.blinking.deltaHint": "Abweichung vom Soll, ab der „Bereit“ gilt",
+    "standby.enabled": "Standby", "standby.enabledHint": "Heizung aus, wenn die Maschine länger nicht benutzt wird",
+    "standby.time": "Nach", "hardware.sensors.watertank.enabled": "Füllstandssensor",
+    "hardware.sensors.watertank.mode": "Schaltart", "display.language": "Sprache",
+    "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I-Max",
+    "pid.ema_factor": "EMA-Glättung", "pid.use_ponm": "PonM",
+    "system.hostname": "Gerätename", "system.ota_password": "Update-Passwort", "system.log_level": "Protokoll",
+    "BACKFLUSH_ON": "Backflush-Modus", "BACKFLUSH_ONHint": "Blindsieb einsetzen, dann Bezugsschalter",
+    "backflush.cycles": "Zyklen", "backflush.fill_time": "Pumpen", "backflush.flush_time": "Pause",
+    download: "Einstellungen herunterladen", upload: "Einstellungen einspielen", restart: "Neu starten",
+    wifiReset: "WLAN zurücksetzen", factory: "Werkseinstellungen",
+    reallyWifi: "WLAN-Zugang löschen? Die Maschine öffnet danach ein Einrichtungs-WLAN mit ihrem Gerätenamen (Passwort CleverCoffee).",
+    reallyFactory: "Alle Einstellungen auf Werkszustand zurücksetzen?", reallyRestart: "Maschine jetzt neu starten?",
+    saved: "Gespeichert", failed: "Nicht gespeichert, bitte erneut", needReboot: "Wirkt nach einem Neustart",
+    restarting: "Startet neu …", uploaded: "Eingespielt, startet neu", version: "Version", restartNow: "Jetzt neu starten"
+  },
+  en: {
+    status: "Machine", brew: "Brew", settings: "Settings", care: "Care",
+    setpoint: "Target", heater: "Heater", pid: "Temperature control", pidHint: "Off: the machine does not heat",
+    history: "Last 20 minutes", tempLine: "Temperature", setLine: "Target", heatLine: "Heater",
+    tare: "Tare scale", bfActive: "Backflush mode on: the brew switch starts the cleaning.",
+    start: "Starting", ready: "Ready", heating: "Heating", cooling: "Cooling", brewing: "Brewing", flush: "Flushing",
+    steam: "Steam", water: "Hot water", backflush: "Backflush", pidOff: "Control off", tank: "Water tank empty",
+    standby: "Standby", overtemp: "Overtemperature", sensor: "Sensor error", offline: "No connection",
+    sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
+    sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush",
+    sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
+    stopHint: "Weight: switch the scale on first",
+    "brew.mode": "Brew mode", "brew.modeHint": "Automatic: time or weight ends the shot",
+    "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
+    "hardware.sensors.scale.enabled": "Bluetooth scale", "hardware.sensors.scale.enabledHint": "Takes effect after a restart",
+    "brew.by_weight.enabled": "Stop by weight", "brew.by_weight.target_weight": "Target weight",
+    "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
+    "display.blescale_brew_timer": "Run the scale's timer",
+    "display.post_brew_timer_duration": "Keep brew time shown", "display.post_brew_timer_durationHint": "on the display after the shot",
+    "brew.temp_offset": "Offset", "brew.temp_offsetHint": "Difference between sensor and group",
+    "display.blinking.delta": "Ready within", "display.blinking.deltaHint": "Distance from target that counts as ready",
+    "standby.enabled": "Standby", "standby.enabledHint": "Heater off when the machine is not used for a while",
+    "standby.time": "After", "hardware.sensors.watertank.enabled": "Level sensor",
+    "hardware.sensors.watertank.mode": "Switch type", "display.language": "Language",
+    "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I max",
+    "pid.ema_factor": "EMA smoothing", "pid.use_ponm": "PonM",
+    "system.hostname": "Device name", "system.ota_password": "Update password", "system.log_level": "Log level",
+    "BACKFLUSH_ON": "Backflush mode", "BACKFLUSH_ONHint": "Insert the blind basket, then the brew switch",
+    "backflush.cycles": "Cycles", "backflush.fill_time": "Pump", "backflush.flush_time": "Pause",
+    download: "Download settings", upload: "Restore settings", restart: "Restart",
+    wifiReset: "Reset WiFi", factory: "Factory settings",
+    reallyWifi: "Delete the WiFi credentials? The machine then opens a setup WiFi named after the device (password CleverCoffee).",
+    reallyFactory: "Reset all settings to factory defaults?", reallyRestart: "Restart the machine now?",
+    saved: "Saved", failed: "Not saved, please retry", needReboot: "Takes effect after a restart",
+    restarting: "Restarting …", uploaded: "Restored, restarting", version: "Version", restartNow: "Restart now"
+  }
+};
+let lang = "de";
+const t = k => T[lang][k] ?? T.de[k] ?? k;
+const OPTION_DE = {"Manual": "Manuell", "Automatic": "Automatisch", "Normally Open": "Schließer", "Normally Closed": "Öffner"};
+const optLabel = l => lang === "de" ? (OPTION_DE[l] ?? l) : l;
+
+// ---------- what the tabs show (ids of the firmware's parameters) ----------
+const UNIT = {"brew.setpoint": "°C", "brew.temp_offset": "°C", "display.blinking.delta": "°C", "brew.by_time.target_time": "s",
+  "brew.by_weight.target_weight": "g", "display.post_brew_timer_duration": "s", "standby.time": "min",
+  "backflush.fill_time": "s", "backflush.flush_time": "s", "pid.regular.tn": "s", "pid.regular.tv": "s"};
+const STEP = {"brew.setpoint": .5, "brew.temp_offset": .1, "display.blinking.delta": .1, "brew.by_time.target_time": .5,
+  "brew.by_weight.target_weight": .5, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
+  "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
+  "pid.regular.i_max": 1, "pid.ema_factor": .05};
+const TABS = [
+  {id: "status", icon: "i-status", names: ["pid.enabled", "brew.setpoint", "BACKFLUSH_ON", "display.language", "display.blinking.delta"]},
+  {id: "brew", icon: "i-brew", shot: true, cards: []},
+  {id: "settings", icon: "i-set", cards: [
+    // most used first: what changes a shot, then the machine, the rarely touched ones folded
+    ["sPresets", ["brew.presets"]], // presetCard()
+    ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "display.blescale_brew_timer"]],
+    ["sTemp", ["brew.temp_offset", "display.blinking.delta"]],
+    ["sStandby", ["standby.enabled", "standby.time"]],
+    ["sDisplay", ["display.language", "display.post_brew_timer_duration"]],
+    ["sTank", ["hardware.sensors.watertank.enabled", "hardware.sensors.watertank.mode"]],
+    ["sPid", ["pid.regular.kp", "pid.regular.tn", "pid.regular.tv", "pid.regular.i_max", "pid.ema_factor", "pid.use_ponm"], true],
+    ["sSystem", ["system.hostname", "system.ota_password", "system.log_level"], true]]},
+  {id: "care", icon: "i-care", cards: [
+    ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time"]]]}
+];
+
+// rows shown only while their switch is on
+const SHOWN_IF = {"standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
+  "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled"};
+const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON"];
+// settings the firmware only shows depending on another one (ParameterRegistry show conditions)
+const DEPENDS = {"brew.mode": /^brew\.by_|^display\.blescale/, "hardware.sensors.scale.enabled": /^brew\.by_weight|^TARE_ON|^display\.blescale/};
+function forget(id) { for (const k of Object.keys(P)) if (DEPENDS[id]?.test(k)) delete P[k]; }
+
+// ---------- talking to the ESP32: one request at a time, retry while it is busy ----------
+const P = {};          // parameters by id: {value, type, min, max, reboot, options}
+let chain = Promise.resolve();
+function call(url, opt = {}) {
+  const run = async () => {
+    for (let i = 0; ; i++) {
+      try {
+        const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 9000);
+        const r = await fetch(url, {...opt, signal: ctl.signal, cache: "no-store"});
+        // read the whole answer before the next request starts: the ESP32 is busy until it has sent it
+        const body = r.type === "opaqueredirect" ? "" : await r.text();
+        clearTimeout(timer);
+        if (r.status !== 503 || i >= 4) return {ok: r.ok || r.type === "opaqueredirect", status: r.status, text: async () => body, json: async () => JSON.parse(body)};
+      } catch (e) { if (i >= 2) throw e; }
+      await new Promise(ok => setTimeout(ok, 600 + i * 700));
+    }
+  };
+  const p = chain.then(run, run);
+  chain = p.catch(() => {});
+  return p;
+}
+async function load(names) {
+  const want = names.filter(n => !(n in P));
+  for (let i = 0; i < want.length; i += 8) {
+    const part = want.slice(i, i + 8);
+    const r = await call(`/parameters?offset=0&limit=8&names=${part.join(",")}`);
+    if (!r.ok) throw new Error(r.status);
+    for (const p of (await r.json()).parameters || []) P[p.name] = p;
+    for (const n of part) if (!(n in P)) P[n] = null; // not in this build or hidden: the row is left out
+  }
+}
+async function save(id, value) {
+  if (id.startsWith("preset.")) return savePreset(id, value);
+  try {
+    const r = await call("/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: encodeURIComponent(id) + "=" + encodeURIComponent(value)});
+    if (!r.ok) throw 0;
+    P[id].value = P[id].type === 4 ? value : Number(value);
+    for (const x of TABS) if (x.id !== tab) dirty.add(x.id);
+    if (P[id].reboot) needRestart(); else toast(t("saved"));
+    return true;
+  } catch (e) { toast(t("failed")); return false; }
+}
+const post = url => call(url, {method: "POST", redirect: "manual"}); // the toggles answer with a redirect to "/": do not fetch the page again
+function needRestart() {
+  $("#rebootText").textContent = t("needReboot"); $("#rebootBtn").textContent = t("restartNow");
+  $("#rebootBtn").onclick = () => restartAndReload();
+  $("#rebootBar").hidden = false; document.body.classList.add("reboot");
+}
+// restart, wait until the machine answers again, then load the page fresh (settings that came with the start)
+async function restartAndReload(msg = t("restarting")) {
+  $("#rebootBar").hidden = true; document.body.classList.remove("reboot");
+  await post("/restart");
+  toast(msg);
+  await new Promise(ok => setTimeout(ok, 3000));
+  for (let i = 0; i < 40; i++) {
+    try { if ((await fetch("/version", {cache: "no-store"})).ok) return location.reload(); } catch (e) {}
+    await new Promise(ok => setTimeout(ok, 1000));
+  }
+}
+
+// ---------- small helpers ----------
+const $ = s => document.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const num = (v, d = 1) => Number(v).toLocaleString(lang === "de" ? "de-DE" : "en-GB", {minimumFractionDigits: d, maximumFractionDigits: d});
+const decimals = id => (STEP[id] ?? 1) < 1 ? ((STEP[id] ?? 1) < .1 ? 2 : 1) : 0;
+let toastTimer;
+function toast(msg) { const e = $("#toast"); e.textContent = msg; e.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove("show"), 1800); }
+function lbl(id) { const b = el("div", "lbl"); b.append(el("div", null, t(id))); const h = T[lang][id + "Hint"] ?? T.de[id + "Hint"]; if (h) b.append(el("p", null, h)); return b; }
+
+// ---------- controls ----------
+function switchCtl(id, onChange) {
+  const b = el("button", "sw" + (P[id].value ? " on" : ""));
+  b.setAttribute("role", "switch");
+  b.onclick = async () => {
+    const v = P[id].value ? 0 : 1; b.classList.toggle("on", !!v);
+    if (!await (onChange ? onChange(v) : save(id, v))) { b.classList.toggle("on", !v); return; }
+    if (Object.values(SHOWN_IF).includes(id) || id in DEPENDS) { forget(id); refresh(); }
+  };
+  return b;
+}
+function stepCtl(id) {
+  const p = P[id], st = STEP[id] ?? 1, d = decimals(id), box = el("div", "step"), inp = el("input");
+  inp.inputMode = "decimal";
+  const show = v => inp.value = num(v, d) + (UNIT[id] ? " " + UNIT[id] : "");
+  let pending, val = p.value;
+  const set = v => {
+    val = Math.min(p.max, Math.max(p.min, Math.round(v / st) * st)); show(val); clearTimeout(pending);
+    if (Math.abs(val - p.value) > 1e-9) pending = setTimeout(() => save(id, val.toFixed(d)), 700); // back at the stored value: nothing to send
+  };
+  const minus = el("button", null, "−"), plus = el("button", null, "+");
+  minus.onclick = () => set(val - st); plus.onclick = () => set(val + st);
+  inp.onfocus = () => { inp.value = num(val, d); inp.select(); }; // typing replaces the number
+  inp.onchange = () => { const v = parseFloat(inp.value.replace(",", ".")); isNaN(v) ? show(val) : set(v); };
+  inp.onblur = () => show(val);
+  show(val);
+  box.append(minus, inp, plus);
+  return box;
+}
+function choiceCtl(id) {
+  const p = P[id], opts = (p.options || []).filter(o => id !== "display.language" || o.value < 2); // the display speaks DE/EN
+  if (opts.length <= 3) {
+    const s = el("div", "seg");
+    for (const o of opts) {
+      const b = el("button", o.value === p.value ? "on" : "", optLabel(o.label));
+      b.onclick = async () => {
+        if (!await save(id, o.value)) return;
+        s.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+        if (id === "display.language") setLang();
+        if (id in DEPENDS || id === "display.language") { forget(id); refresh(); }
+      };
+      s.append(b);
+    }
+    return s;
+  }
+  const s = el("select");
+  for (const o of opts) { const op = el("option", null, optLabel(o.label)); op.value = o.value; op.selected = o.value === p.value; s.append(op); }
+  s.onchange = () => save(id, s.value);
+  return s;
+}
+function textCtl(id) {
+  const i = el("input", "txt"); i.value = P[id].value ?? ""; i.type = /password/.test(id) ? "password" : "text";
+  i.onchange = () => save(id, i.value);
+  return i;
+}
+function control(id) {
+  if (id === "BACKFLUSH_ON") return switchCtl(id, async v => { // /toggleBackflush flips blindly: flip only if the machine is not there yet, then read back
+    delete P[id]; await load([id]).catch(() => {});
+    const r = P[id] && P[id].value !== v ? await post("/toggleBackflush") : {ok: !!P[id]};
+    delete P[id]; await load([id]).catch(() => {}); refresh();
+    return r.ok;
+  });
+  const p = P[id];
+  if (p.type === 5) return choiceCtl(id);
+  if (p.type === 4) return textCtl(id);
+  if (p.type === 1 && p.min === 0 && p.max === 1 && !(id in STEP)) return switchCtl(id);
+  return stepCtl(id);
+}
+function card(title, ids, closed) {
+  const rows = ids.filter(id => P[id] && !(SHOWN_IF[id] && !P[SHOWN_IF[id]]?.value));
+  if (!rows.length) return null;
+  const c = el("section", "card");
+  let box = c;
+  if (closed) { const d = el("details"); d.append(el("summary", null, t(title))); c.append(d); box = d; } else c.append(el("h2", null, t(title)));
+  for (const id of rows) {
+    const r = el("div", "row"), ctl = control(id);
+    if (ctl.classList.contains("seg") && ctl.children.length > 2) r.classList.add("stack");
+    r.append(lbl(id), ctl); box.append(r);
+  }
+  return c;
+}
+
+// ---------- status tab: live temperature, chart ----------
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, ok: false};
+const hist = [];       // [time ms, temp, target, heat]
+function statusView(m) {
+  const h = el("section", "card hero");
+  h.innerHTML = `<div class="temp" id="tNow">–<small>°C</small></div><div class="sub" id="tSet"></div>`;
+  if (P["brew.setpoint"]) { const r = el("div", "btns"); r.style.justifyContent = "center"; r.append(stepCtl("brew.setpoint")); h.append(r); }
+  h.append(el("div", "bar", "<b id='heatBar'></b>"), el("div", "barlbl", `<span>${t("heater")}</span><span id="heatPct">–</span>`));
+  m.append(h);
+  if (P["BACKFLUSH_ON"]?.value) m.append(el("div", "note", t("bfActive")));
+  if (P["pid.enabled"]) {
+    const c = el("section", "card"), r = el("div", "row");
+    r.append(lbl("pid"), switchCtl("pid.enabled")); // lbl() adds the hint
+    c.append(r); m.append(c);
+  }
+  const g = el("section", "card");
+  g.innerHTML = `<h2>${t("history")}</h2><canvas id="chart"></canvas><div class="legend"><span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("setLine")}</span><span><i style="background:rgba(255,146,38,.35)"></i>${t("heatLine")}</span></div>`;
+  m.append(g);
+  paintLive();
+}
+// "Stop: by hand | by time | by weight" -- brew.mode plus the by_time/by_weight switches in one choice
+function stopMode() {
+  if (!P["brew.mode"]?.value) return "hand";
+  if (P["brew.by_weight.enabled"]?.value) return "weight";
+  return P["brew.by_time.enabled"]?.value ? "time" : "hand";
+}
+async function setStop(mode) {
+  const ok = await save("brew.mode", mode === "hand" ? 0 : 1);
+  if (!ok || mode === "hand") return ok;
+  forget("brew.mode");
+  await load(SHOT);                                    // visible now that the mode is automatic
+  if (P["brew.by_time.enabled"]) await save("brew.by_time.enabled", mode === "time" ? 1 : 0);
+  if (P["brew.by_weight.enabled"]) await save("brew.by_weight.enabled", mode === "weight" ? 1 : 0);
+  return true;
+}
+// ---------- quick choice (brew.presets "s,g;s,g;s,g", read and written only by this page) ----------
+const PRESETS = [["Espresso", 25, 36], ["Doppio", 30, 45], ["Lungo", 45, 80]];
+PRESETS.forEach((_, i) => { STEP[`preset.${i}.s`] = STEP[`preset.${i}.g`] = .5; UNIT[`preset.${i}.s`] = "s"; UNIT[`preset.${i}.g`] = "g"; });
+function presets() {
+  const v = String(P["brew.presets"]?.value ?? "").split(";");
+  return PRESETS.map(([name, s, g], i) => {
+    const [ps, pg] = (v[i] || "").split(",").map(Number);
+    return {name, s: ps > 0 ? ps : s, g: pg > 0 ? pg : g};
+  });
+}
+async function savePreset(id, value) { // an editor stepper changed one value: the whole string is saved
+  const [, i, k] = id.split("."), list = presets();
+  list[i][k] = Number(value);
+  const ok = await save("brew.presets", list.map(p => p.s + "," + p.g).join(";"));
+  if (ok) P[id].value = Number(value);
+  return ok;
+}
+const fmt = v => num(v, v % 1 ? 1 : 0);
+function presetActive(p) {
+  const m = stopMode(), near = (id, v) => Math.abs((P[id]?.value ?? -1) - v) < .01;
+  return m === "time" ? near("brew.by_time.target_time", p.s) : m === "weight" ? near("brew.by_weight.target_weight", p.g) : false;
+}
+// a tap: stop by weight (scale on) or time unless one of them is chosen already, then both targets
+async function applyPreset(i) {
+  const p = presets()[i];
+  if (stopMode() === "hand" && !await setStop(P["hardware.sensors.scale.enabled"]?.value ? "weight" : "time")) return;
+  if (stopMode() === "hand" && !await setStop("time")) return; // weight not offered: scale off since the last start
+  for (const [id, v] of [["brew.by_time.target_time", p.s], ["brew.by_weight.target_weight", p.g]])
+    if (P[id] && Math.abs(P[id].value - v) > .01 && !await save(id, v.toFixed(1))) return;
+  refresh();
+}
+function presetCard() {
+  if (!P["brew.presets"]) return null; // firmware without quick choice
+  const c = el("section", "card"), scale = !!P["hardware.sensors.scale.enabled"]?.value;
+  c.append(el("h2", null, t("sPresets")));
+  presets().forEach((p, i) => {
+    const r = el("div", "row"), l = el("div", "lbl"), box = el("div", "pair");
+    for (const k of scale ? ["s", "g"] : ["s"]) {
+      P[`preset.${i}.${k}`] = {name: `preset.${i}.${k}`, type: 2, value: p[k], min: 5, max: k === "s" ? 120 : 200, reboot: false};
+      box.append(stepCtl(`preset.${i}.${k}`));
+    }
+    l.append(el("div", null, p.name));
+    r.append(l, box); c.append(r);
+  });
+  return c;
+}
+function shotCard() {
+  const c = el("section", "card");
+  c.append(el("h2", null, t("sShot")));
+  const cur = stopMode(), r = el("div", "row"), seg = el("div", "seg");
+  if (P["brew.presets"]) {
+    const chips = el("div", "chips"), byWeight = cur === "weight" || (cur === "hand" && P["hardware.sensors.scale.enabled"]?.value);
+    presets().forEach((p, i) => {
+      const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? fmt(p.g) + " g" : fmt(p.s) + " s"}</small>`);
+      b.onclick = () => applyPreset(i);
+      chips.append(b);
+    });
+    c.append(chips);
+  }
+  const modes = ["hand", "time"].concat(P["hardware.sensors.scale.enabled"]?.value ? ["weight"] : []);
+  for (const mo of modes) {
+    const b = el("button", mo === cur ? "on" : "", t("stop" + mo[0].toUpperCase() + mo.slice(1)));
+    b.onclick = async () => { if (mo !== stopMode() && await setStop(mo)) refresh(); };
+    seg.append(b);
+  }
+  const l = el("div", "lbl"); l.append(el("div", null, t("stop")));
+  if (modes.length < 3) l.append(el("p", null, t("stopHint")));
+  r.classList.add("stack");
+  r.append(l, seg); c.append(r);
+  const id = cur === "time" ? "brew.by_time.target_time" : cur === "weight" ? "brew.by_weight.target_weight" : null;
+  if (id && P[id]) { const v = el("div", "row"); v.append(lbl(id), stepCtl(id)); c.append(v); }
+  if (P["TARE_ON"]) { // only with the scale
+    const b = el("button", "btn", t("tare"));
+    b.onclick = async () => { // /toggleTareScale flips blindly: only ask for a tare if none is pending
+      delete P.TARE_ON; await load(["TARE_ON"]).catch(() => {});
+      const r = P.TARE_ON?.value ? {ok: true} : await post("/toggleTareScale");
+      toast(r.ok ? "✓" : t("failed"));
+    };
+    const w = el("div", "btns"); w.append(b); c.append(w);
+  }
+  return c;
+}
+
+// ---------- last shots (GET /shots: newest first, s seconds, g grams or null, at UTC seconds or 0) ----------
+let shots = null;
+async function loadShots() {
+  try { const r = await call("/shots"); if (r.ok) shots = (await r.json()).shots; } catch (e) {}
+  paintShots();
+}
+function whenText(at) {
+  if (!at) return "";
+  const d = new Date(at * 1000), day = x => x.toDateString(), y = new Date(Date.now() - 864e5), loc = lang === "de" ? "de-DE" : "en-GB";
+  const hm = d.toLocaleTimeString(loc, {hour: "2-digit", minute: "2-digit"});
+  if (day(d) === day(new Date())) return t("today") + " " + hm;
+  if (day(d) === day(y)) return t("yesterday") + " " + hm;
+  return d.toLocaleDateString(loc, {day: "2-digit", month: "2-digit"}) + " " + hm;
+}
+function shotsCard() {
+  const c = el("section", "card");
+  c.append(el("h2", null, t("sLast")), el("div", null));
+  c.lastChild.id = "shotList";
+  paintShots(c.lastChild);
+  return c;
+}
+function paintShots(box = $("#shotList")) {
+  if (!box) return;
+  box.innerHTML = "";
+  if (!shots) { box.append(el("p", "empty", "…")); return; }
+  if (!shots.length) { box.append(el("p", "empty", t("noShots"))); return; }
+  for (const x of shots) {
+    const r = el("div", "shot");
+    r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), el("small", null, whenText(x.at)));
+    box.append(r);
+  }
+}
+
+function stateText() {
+  if (!live.ok) return [t("offline"), "var(--faint)"];
+  const s = live.state, d = Math.abs((live.temp ?? 0) - (live.target ?? 0)), band = P["display.blinking.delta"]?.value ?? .5;
+  const map = {0: ["start", "var(--faint)"], 20: [null, "var(--brew)"], 25: ["flush", "var(--brew)"], 30: ["steam", "var(--heat)"], 40: ["water", "var(--cool)"],
+    50: ["backflush", "var(--cool)"], 60: ["pidOff", "var(--faint)"], 70: ["tank", "var(--cool)"], 80: ["standby", "var(--faint)"], 100: ["overtemp", "var(--err)"], 110: ["sensor", "var(--err)"]};
+  if (s === 20) return [t("brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"];
+  if (s in map) return [t(map[s][0]), map[s][1]];
+  if (live.temp == null) return ["…", "var(--faint)"];
+  if (d <= band) return [t("ready"), "var(--ready)"];
+  return live.temp < live.target ? [t("heating"), "var(--heat)"] : [t("cooling"), "var(--cool)"];
+}
+function paintLive() {
+  const [txt, col] = stateText();
+  $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip").style.color = col === "var(--faint)" ? "" : col;
+  const n = $("#tNow");
+  if (!n) return;
+  n.innerHTML = (live.temp == null ? "–" : num(live.temp, 1)) + "<small>°C</small>";
+  n.style.color = col === "var(--faint)" ? "" : col;
+  $("#tSet").textContent = live.target == null ? "" : `${t("setpoint")} ${num(live.target, 1)} °C`;
+  $("#heatBar").style.transform = `scaleX(${Math.max(0, Math.min(100, live.heat)) / 100})`;
+  $("#heatPct").textContent = num(live.heat, 0) + " %";
+  drawChart();
+}
+function drawChart() {
+  const c = $("#chart");
+  if (!c || hist.length < 2 || !c.clientWidth) return; // not built yet or hidden
+  const dpr = devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr);
+  const now = Date.now(), span = 20 * 60 * 1000, x = tm => (1 - (now - tm) / span) * (w - 30);
+  const pts = hist.filter(p => now - p[0] <= span);
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pts) { lo = Math.min(lo, p[1], p[2]); hi = Math.max(hi, p[1], p[2]); }
+  const stepC = hi - lo > 40 ? 20 : hi - lo > 15 ? 10 : 5;
+  lo = Math.floor((lo - 1) / stepC) * stepC; hi = Math.ceil((hi + 1) / stepC) * stepC;
+  const y = v => h - 18 - (v - lo) / (hi - lo) * (h - 26);
+  g.font = "11px -apple-system,sans-serif"; g.fillStyle = "#56565c"; g.strokeStyle = "#26262a"; g.lineWidth = 1;
+  for (let v = lo; v <= hi; v += stepC) { g.beginPath(); g.moveTo(0, y(v)); g.lineTo(w - 30, y(v)); g.stroke(); g.fillText(v + "°", w - 26, y(v) + 4); }
+  g.fillStyle = "rgba(255,146,38,.18)"; g.beginPath(); g.moveTo(x(pts[0][0]), h - 18);
+  for (const p of pts) g.lineTo(x(p[0]), h - 18 - p[3] / 100 * (h - 26) * .35);
+  g.lineTo(x(pts[pts.length - 1][0]), h - 18); g.fill();
+  const line = (i, col, dash) => { g.setLineDash(dash); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(x(p[0]), y(p[i])) : g.moveTo(x(p[0]), y(p[i]))); g.stroke(); };
+  line(2, "#56565c", [4, 4]); line(1, "#ff9226", []); g.setLineDash([]);
+}
+function connectLive() {
+  const es = new EventSource("/events");
+  es.addEventListener("new_temps", e => {
+    const d = JSON.parse(e.data);
+    if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, ok: true});
+    hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
+    while (hist.length > 1300) hist.shift();
+    paintLive();
+  });
+  es.onerror = () => { live.ok = false; paintLive(); };
+}
+async function loadHistory() {
+  try {
+    const d = await (await call("/timeseries")).json(), n = d.currentTemps.length, now = Date.now();
+    for (let i = 0; i < n; i++) hist.push([now - (n - i) * 2000, d.currentTemps[i], d.targetTemps[i], d.heaterPowers[i]]);
+  } catch (e) {}
+}
+
+// ---------- care tab: backup and device ----------
+function careExtras(m) {
+  const b = el("section", "card");
+  b.innerHTML = `<h2>${t("sBackup")}</h2>`;
+  const w = el("div", "btns"), dl = el("a", "btn", t("download")), up = el("button", "btn", t("upload")), file = el("input");
+  dl.href = "/download/config"; file.type = "file"; file.accept = ".json,application/json"; file.hidden = true;
+  up.onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files[0]; if (!f) return;
+    const fd = new FormData(); fd.append("config", f);
+    const r = await call("/upload/config", {method: "POST", body: fd});
+    if (!r.ok) { toast(t("failed")); return; }
+    await restartAndReload(t("uploaded")); // the firmware takes the uploaded values over only at the next start
+  };
+  w.append(dl, up, file); b.append(w); m.append(b);
+  const d = el("section", "card"); d.innerHTML = `<h2>${t("sDevice")}</h2>`;
+  const w2 = el("div", "btns");
+  const act = (label, url, really, cls) => { const x = el("button", "btn" + (cls ? " " + cls : ""), label); x.onclick = async () => { if (really && !confirm(really)) return; if (url === "/restart") return restartAndReload(); await post(url); toast(t("restarting")); }; return x; };
+  w2.append(act(t("restart"), "/restart", t("reallyRestart")), act(t("wifiReset"), "/wifireset", t("reallyWifi"), "bad"), act(t("factory"), "/factoryreset", t("reallyFactory"), "bad"));
+  d.append(w2);
+  const v = el("div", "ver", version ? `${t("version")} ${version} · ${location.host}` : "");
+  d.append(v); m.append(d);
+  if (!version) call("/version").then(r => r.text()).then(x => { version = x.trim(); v.textContent = `${t("version")} ${version} · ${location.host}`; }).catch(() => {});
+}
+let version = "";
+
+// ---------- tabs ----------
+let tab = (location.hash || "#status").slice(1);
+function setLang() { lang = P["display.language"] && P["display.language"].value !== 0 ? "en" : "de"; document.documentElement.lang = lang; }
+function renderNav() {
+  const n = $("#nav"); n.innerHTML = "";
+  for (const x of TABS) {
+    const b = el("button", x.id === tab ? "on" : "", `<svg><use href="#${x.icon}"/></svg>${t(x.id)}`);
+    b.onclick = () => { location.hash = x.id; };
+    n.append(b);
+  }
+}
+// Each tab is built once and then only shown or hidden: switching is instant and keeps the scroll
+// position. A view is rebuilt (from the cache, no request) when a change elsewhere made it stale.
+const views = {}, dirty = new Set(), scrollAt = {};
+let shown = null;
+const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.values(SHOWN_IF))).concat(def.shot ? SHOT : []);
+function build(def, m) {
+  if (def.id === "status") return statusView(m);
+  if (def.shot) m.append(shotCard(), shotsCard());
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : card(title, ids, closed); if (c) m.append(c); }
+  if (def.id === "care") careExtras(m);
+}
+function refresh() { for (const x of TABS) dirty.add(x.id); render(); }
+async function render() {
+  const def = TABS.find(x => x.id === tab) || TABS[0];
+  renderNav();
+  if (shown) scrollAt[shown] = scrollY;
+  let v = views[def.id];
+  if (!v || dirty.has(def.id)) {
+    try { await load(needOf(def)); } catch (e) { toast(t("failed")); }
+    if (def !== (TABS.find(x => x.id === tab) || TABS[0])) return; // switched meanwhile
+    const nv = el("div");
+    build(def, nv);
+    if (v) v.replaceWith(nv); else $("#main").append(nv);
+    views[def.id] = v = nv;
+    dirty.delete(def.id);
+  }
+  for (const [id, e] of Object.entries(views)) e.hidden = id !== def.id;
+  shown = def.id;
+  scrollTo(0, scrollAt[def.id] || 0);
+  if (def.id === "status") paintLive();
+}
+addEventListener("hashchange", () => { tab = location.hash.slice(1); render(); });
+addEventListener("resize", drawChart);
+(async () => {
+  try { await load(TABS[0].names); } catch (e) {}
+  setLang();
+  await render();
+  await loadHistory();
+  paintLive();
+  connectLive();
+  for (const x of TABS) { try { await load(needOf(x)); } catch (e) {} } // the other tabs' values, one request after another
+  loadShots();
+})();
+</script>
+</body>
+</html>

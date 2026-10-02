@@ -51,6 +51,12 @@ struct DiscoveryObject {
 };
 
 inline void setupMqtt() {
+#ifdef CC_ORIONE
+    mqtt_enabled = false; // no MQTT in the Orione build: no broker, parameters left out
+    mqtt_hassio_enabled = false;
+    return;
+#endif
+
     ParameterRegistry& registry = ParameterRegistry::getInstance();
 
     if (!registry.isReady()) {

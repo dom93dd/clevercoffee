@@ -156,6 +156,7 @@ void ParameterRegistry::initialize(Config& config) {
         "setpoint has been reached and is depending on machine type and whether the boiler is insulated or not."
     );
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addNumericConfigParam<double>(
         "pid.steam.kp",
         "Steam Kp",
@@ -167,8 +168,10 @@ void ParameterRegistry::initialize(Config& config) {
         PID_KP_STEAM_MAX,
         "Proportional gain for the steaming mode (I or D are not used)"
     );
+#endif
 
     // Temperature Section
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addNumericConfigParam<double>(
         "TEMP",
         "Temperature",
@@ -181,6 +184,7 @@ void ParameterRegistry::initialize(Config& config) {
         "",
         [] { return false; }
     );
+#endif
 
     addNumericConfigParam<double>(
         "brew.setpoint",
@@ -206,6 +210,7 @@ void ParameterRegistry::initialize(Config& config) {
         "Optional offset that is added to the user-visible setpoint. Can be used to compensate sensor offsets and the average temperature loss between boiler and group so that the setpoint represents the approximate brew temperature."
     );
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addNumericConfigParam<double>(
         "steam.setpoint",
         "Steam Setpoint (°C)",
@@ -217,6 +222,7 @@ void ParameterRegistry::initialize(Config& config) {
         STEAM_SETPOINT_MAX,
         "The temperature that the PID will use for steam mode"
     );
+#endif
 
     // Brew Section
     if (config.get<bool>("hardware.switches.brew.enabled")) {
@@ -289,6 +295,12 @@ void ParameterRegistry::initialize(Config& config) {
             );
         }
 
+#ifdef CC_ORIONE
+    // Quick choice Espresso/Doppio/Lungo: "seconds,grams;..." set and read by the web page only
+    addStringConfigParam("brew.presets", "Quick choice", sBrewSection, 324, nullptr, BREW_PRESETS_MAX_LENGTH, "Espresso, Doppio, Lungo: seconds,grams separated by ;");
+#endif
+
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
         addBoolConfigParam(
             "brew.pre_infusion.enabled",
             "Pre-Infusion",
@@ -321,6 +333,7 @@ void ParameterRegistry::initialize(Config& config) {
             PRE_INFUSION_PAUSE_MAX,
             "Pause to let the puck bloom after the initial pre-infusion while turning off the pump and leaving the 3-way valve open"
         );
+#endif
 
         // Maintenance Section
         addNumericConfigParam<int>(
@@ -379,6 +392,7 @@ void ParameterRegistry::initialize(Config& config) {
             &scaleTareOn
         ));
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
         addParam(std::make_shared<Parameter>(
             "CALIBRATION_ON",
             "Calibration",
@@ -396,10 +410,12 @@ void ParameterRegistry::initialize(Config& config) {
             [&config] { return config.get<int>("hardware.sensors.scale.type") < 2; },
             &scaleCalibrationOn
         ));
+#endif
     }
 
     if (config.get<bool>("hardware.switches.brew.enabled")) {
         // Brew PID Section
+#ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
         addBoolConfigParam(
             "pid.bd.enabled",
             "Enable Brew PID",
@@ -456,9 +472,11 @@ void ParameterRegistry::initialize(Config& config) {
             PID_TV_BD_MAX,
             "Differential time constant (in seconds) for the PID when brewing has been detected."
         );
+#endif
     }
 
     // Other Section (special parameters, e.g. runtime-only toggles)
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addParam(std::make_shared<Parameter>(
         "STEAM_MODE",
         "Steam Mode",
@@ -475,6 +493,7 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         &steamON
     ));
+#endif
 
     if (config.get<bool>("hardware.switches.brew.enabled")) {
         addParam(std::make_shared<Parameter>(
@@ -519,6 +538,7 @@ void ParameterRegistry::initialize(Config& config) {
     );
 
     // Display Section
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addEnumConfigParam(
         "display.template",
         "Display Template",
@@ -542,6 +562,7 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     addEnumConfigParam(
         "display.language",
@@ -556,6 +577,7 @@ void ParameterRegistry::initialize(Config& config) {
     true
     );
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "display.fullscreen_brew_timer",
         "Enable Fullscreen Brew Timer",
@@ -564,6 +586,7 @@ void ParameterRegistry::initialize(Config& config) {
         &featureFullscreenBrewTimer,
         "Enable fullscreen overlay during brew"
     );
+#endif
 
     addBoolConfigParam(
         "display.blescale_brew_timer",
@@ -577,6 +600,7 @@ void ParameterRegistry::initialize(Config& config) {
         [&config] { return config.get<int>("hardware.sensors.scale.type") == 2; }
     );
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "display.fullscreen_manual_flush_timer",
         "Enable Fullscreen Manual Flush Timer",
@@ -594,6 +618,7 @@ void ParameterRegistry::initialize(Config& config) {
         &featureFullscreenHotWaterTimer,
         "Enable fullscreen overlay during hot water mode"
     );
+#endif
 
     addNumericConfigParam(
         "display.post_brew_timer_duration",
@@ -607,6 +632,7 @@ void ParameterRegistry::initialize(Config& config) {
         "time in s that brew timer will be shown after brew finished"
     );
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "display.heating_logo",
         "Enable Heating Logo",
@@ -626,6 +652,7 @@ void ParameterRegistry::initialize(Config& config) {
         3,
         "Enable blinking of temperature based on distance to setpoint"
     );
+#endif
 
     addNumericConfigParam<double>(
         "display.blinking.delta",
@@ -640,6 +667,7 @@ void ParameterRegistry::initialize(Config& config) {
     );
 
     // MQTT section
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "mqtt.enabled",
         "MQTT enabled",
@@ -735,6 +763,7 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     addStringConfigParam(
         "system.hostname",
@@ -771,6 +800,7 @@ void ParameterRegistry::initialize(Config& config) {
         "Set the logging verbosity level"
     );
 
+#ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
     addBoolConfigParam(
         "system.auth.enabled",
         "Enable Website Authentication",
@@ -809,8 +839,10 @@ void ParameterRegistry::initialize(Config& config) {
         nullptr,
         "Disable wifi and start an access point to display the website"
     );
+#endif
 
     // Debugging Checkboxes
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "system.timing_debug.enabled",
         "Loop timing in console",
@@ -836,10 +868,12 @@ void ParameterRegistry::initialize(Config& config) {
         "Enable or disable showing sendBuffer loops in debug logs",
         [&config] { return config.get<int>("system.log_level") == static_cast<int>(Logger::Level::DEBUG); }
     );
+#endif
 
     // Hardware section
 
     // OLED
+#ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
     addBoolConfigParam(
         "hardware.oled.enabled",
         "Enable OLED Display",
@@ -850,7 +884,9 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addEnumConfigParam(
         "hardware.oled.type",
         "OLED Type",
@@ -876,8 +912,10 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     // Relays
+#ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
     addEnumConfigParam(
         "hardware.relays.heater.trigger_type",
         "Heater Relay Trigger Type",
@@ -916,8 +954,10 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     // Switches
+#ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
     addBoolConfigParam(
         "hardware.switches.brew.enabled",
         "Enable Brew Switch",
@@ -954,7 +994,9 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "hardware.switches.steam.enabled",
         "Enable Steam Switch",
@@ -1065,8 +1107,10 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     // LEDs
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addBoolConfigParam(
         "hardware.leds.status.enabled",
         "Enable Status LED",
@@ -1132,8 +1176,10 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     // Sensors
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addEnumConfigParam(
         "hardware.sensors.temperature.type",
         "Temperature Sensor Type",
@@ -1157,6 +1203,7 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
     addBoolConfigParam(
         "hardware.sensors.watertank.enabled",
@@ -1193,6 +1240,7 @@ void ParameterRegistry::initialize(Config& config) {
         true
     );
 
+#ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
     addEnumConfigParam(
         "hardware.sensors.scale.type",
         "Scale Type",
@@ -1205,7 +1253,9 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+#endif
 
+#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
     addNumericConfigParam<int>(
         "hardware.sensors.scale.samples",
         "Scale Samples",
@@ -1254,6 +1304,7 @@ void ParameterRegistry::initialize(Config& config) {
         "Weight in grams of the known calibration weight used for scale setup",
         [&config] { return config.get<int>("hardware.sensors.scale.type") < 2; }
     );
+#endif
 
     // clang-format on
 
