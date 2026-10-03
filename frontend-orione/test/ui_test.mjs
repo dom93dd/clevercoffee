@@ -716,6 +716,59 @@ test("Wartung: Spülen von Hand, Fortschritt, abbrechen; Hinweis auf der Startse
   await ctx.close();
 });
 
+test("iPhone-Home-Bildschirm: Kopfzeile unter der Statusleiste, nichts läuft unter der Uhr durch", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE);
+  const top = () => page.locator("header").evaluate(h => Math.round(h.querySelector(".brand").getBoundingClientRect().top));
+  const plain = await top();
+  // what iOS reports in a home screen app on an iPhone with a notch / Dynamic Island (59 pt top, 47 pt in landscape at the sides)
+  await page.evaluate(() => { const s = document.documentElement.style; s.setProperty("--st", "59px"); s.setProperty("--sl", "47px"); s.setProperty("--sr", "47px"); });
+  assert.equal(await top(), plain + 59, "the header moves down by the status bar");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body, "::before").height), "59px", "a bar covers the status bar");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body).paddingLeft), "63px", "clear of the notch in landscape");
+  await page.evaluate(() => { const s = document.documentElement.style; s.setProperty("--sl", "0px"); s.setProperty("--sr", "0px"); });
+  await page.screenshot({path: OUT + "iphone-safe-area.png"});
+  await page.evaluate(() => scrollTo(0, 400));
+  const covered = await page.evaluate(() => { const e = document.elementFromPoint(195, 20); return e === document.body || e === document.documentElement; });
+  assert.ok(covered, "scrolled content stays under the bar, not on top of it");
+  await ctx.close();
+});
+
+test("iPhone-Home-Bildschirm: Abstand unten nur einmal", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE);
+  const pad = (...a) => page.evaluate(a => bottomPad(...a), a);
+  assert.equal(await pad(34, 59, 852, 852, 393, false), 34, "browser: the inset as iOS reports it");
+  assert.equal(await pad(34, 59, 852, 852, 393, true), 34, "app over the whole screen: once");
+  assert.equal(await pad(34, 59, 852, 818, 393, true), 0, "app stopping above the home indicator: not again");
+  assert.equal(await pad(34, 0, 852, 798, 393, true), 34, "app below the status bar (shorter at the top): still needed");
+  assert.equal(await pad(21, 0, 852, 393, 852, true), 21, "landscape: as reported");
+  await page.evaluate(() => document.documentElement.style.setProperty("--sb", "0px"));
+  const navH = await page.locator("nav").evaluate(n => Math.round(n.getBoundingClientRect().height));
+  assert.ok(navH <= 63, `the bar itself stays slim (${navH} px)`);
+  await ctx.close();
+});
+
+test("Reiterleiste klebt unten, auf kurzen und langen Seiten, auch beim Scrollen; am Rechner oben", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE);
+  const gap = () => page.evaluate(() => Math.round(innerHeight - document.querySelector("nav").getBoundingClientRect().bottom));
+  const fullWidth = () => page.evaluate(() => { const r = document.querySelector("nav").getBoundingClientRect(); return r.left === 0 && Math.round(r.right) === innerWidth; });
+  assert.equal(await gap(), 0, "short page: at the bottom");
+  assert.ok(await fullWidth(), "from edge to edge");
+  for (const t of ["Einstellungen", "Wartung"]) {
+    await tab(page, t);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight + 200), t + " is longer than the screen");
+    assert.equal(await gap(), 0, t + ": at the bottom before scrolling");
+    await page.evaluate(() => scrollTo(0, 99999));
+    assert.equal(await gap(), 0, t + ": and at the end");
+    const last = await page.evaluate(() => { const c = [...document.querySelectorAll("main > div:not([hidden]) section.card")].pop().getBoundingClientRect(); return Math.round(document.querySelector("nav").getBoundingClientRect().top - c.bottom); });
+    assert.ok(last >= 8, t + `: the last card is not under the bar (${last} px)`);
+    await page.evaluate(() => scrollTo(0, 0));
+  }
+  await page.setViewportSize({width: 1024, height: 800});
+  const order = await page.evaluate(() => document.querySelector("nav").getBoundingClientRect().bottom <= document.querySelector("main").getBoundingClientRect().top);
+  assert.ok(order, "wide screen: the tabs under the header, above the content");
+  await ctx.close();
+});
+
 test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");
