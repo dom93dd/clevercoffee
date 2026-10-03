@@ -1600,8 +1600,28 @@ void loopPid() {
     }
 
 #ifdef CC_ORIONE
-    // curve of the running shot and the drops after it (the brew weight stays frozen once the brew is over)
-    shot_history::loop(!(scale && scale->isConnected()) ? -1.0f : checkBrewActive() ? currBrewWeight : currReadingWeight - preBrewWeight, temperature);
+    // Safety net behind the web server's brake: a heap that stays fragmented below its limits for a
+    // minute refuses every page until a restart, so restart (never during a shot or a backflush)
+    {
+        static orione::HeapWatch heapWatch;
+        static unsigned long lastHeapCheck = 0;
+
+        if (millis() - lastHeapCheck >= 1000) {
+            lastHeapCheck = millis();
+            const size_t heapFree = heap_caps_get_free_size(MALLOC_CAP_8BIT), heapBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+            const bool busy = checkBrewActive() || machineState == kBackflush || currBackflushState != kBackflushIdle;
+
+            if (heapWatch.update(millis(), orione::HeapWatch::low(heapFree, heapBlock), busy)) {
+                LOGF(ERROR, "Heap below the web server's brake for a minute (free %u, largest block %u): restarting", static_cast<unsigned>(heapFree), static_cast<unsigned>(heapBlock));
+                delay(200);
+                ESP.restart();
+            }
+        }
+    }
+
+    // curve of the running shot and the drops after it (the brew weight stays frozen once the brew is over);
+    // < 0 means no scale, so a connected scale's noise just under zero after taring counts as 0
+    shot_history::loop(!(scale && scale->isConnected()) ? -1.0f : std::max(0.0f, static_cast<float>(checkBrewActive() ? currBrewWeight : currReadingWeight - preBrewWeight)), temperature);
 #endif
 
     if (config.get<bool>("hardware.sensors.pressure.enabled")) {

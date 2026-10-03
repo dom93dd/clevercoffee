@@ -166,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, ASSETS[name], kind)
         if url.path == "/shots":
             with S.lock:
-                shots = [{"d": None, "m": "", "r": 0, **x} for x in S.shots[:5]]
+                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, **x} for x in S.shots[:5]]
                 return self.send(200, json.dumps({"now": int(time.time()), "bf": S.bf, "shots": shots}), "application/json")
         if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
             i = int(q.get("i", ["0"])[0])
@@ -181,8 +181,9 @@ class Handler(BaseHTTPRequestHandler):
                 if t < 6: return 0
                 return round(min(t - 6, shot["s"] - 6) / (shot["s"] - 6) * shot["g"] * 10 + (4 if t > shot["s"] else 0))
             w = None if shot.get("g") is None else [grams(k) for k in range(n)]
+            f = None if w is None else [max(0, (w[min(k + 1, n - 1)] - w[max(k - 1, 0)]) * 10) for k in range(n)]  # hundredths of g/s
             temp = [round((93.5 - 1.6 * (1 if 4 < k * 0.5 < shot["s"] else 0) * min(1, (k * 0.5 - 4) / 6)) * 10) for k in range(n)]
-            return self.send(200, json.dumps({"dt": 500, "stop": stop, "w": w, "t": temp}), "application/json")
+            return self.send(200, json.dumps({"dt": 500, "stop": stop, "w": w, "t": temp, "f": f}), "application/json")
         if url.path == "/version":
             return self.send(200, "4.0.4+mock")
         if url.path == "/download/config":
@@ -211,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
                     S.temp += (target - S.temp) * 0.08 if pid else (22 - S.temp) * 0.02
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
-                            "state": state, "brewTime": 0, "scale": 2 if S.scale_at_boot else 0, "weight": 0.0 if S.scale_at_boot else None}
+                            "state": state, "brewTime": 0, "scale": 2 if S.scale_at_boot else 0, "weight": 0.0 if S.scale_at_boot else None, "flow": None}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()

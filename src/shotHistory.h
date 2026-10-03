@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <OrioneFlow.h>
 #include <OrioneShots.h>
 #include <Preferences.h>
 #include <memory>
@@ -20,6 +21,8 @@ namespace shot_history {
 
     inline orione::ShotLog shotLog;
     inline orione::ShotCurve shotCurve; // the shot being recorded (or the last one, until saved)
+    inline orione::FlowMeter flowMeter; // flow and first drops from the scale, at its own rate
+    inline float startCelsius = 0;      // brew temperature when the shot started
 
     inline constexpr const char* kNamespace = "orione";
     inline constexpr const char* kKey = "shots";
@@ -59,6 +62,7 @@ namespace shot_history {
     /** The log, and the curve of its newest shot */
     inline void save() {
         shotCurve.end();
+        flowMeter.stop();
         Preferences prefs;
 
         if (!prefs.begin(kNamespace, false)) {
@@ -103,12 +107,19 @@ namespace shot_history {
         LOG(INFO, "Backflush done: shot counter reset");
     }
 
-    inline void brewStarted() {
+    inline void brewStarted(const double celsius) {
         if (shotLog.settleNow()) {
             save(); // the previous shot was still counting drops
         }
 
+        startCelsius = static_cast<float>(celsius);
         shotCurve.begin(millis());
+        flowMeter.start(millis());
+    }
+
+    /** g/s while a shot runs or its drops are counted, < 0 otherwise or without scale */
+    inline float liveFlow(const bool scaleConnected) {
+        return scaleConnected && flowMeter.running() ? flowMeter.flow() : -1.0f;
     }
 
     /** @param grams brew weight, < 0 without a connected scale */
@@ -117,10 +128,12 @@ namespace shot_history {
 
         if (shotLog.record(static_cast<float>(seconds), grams, nowUtc(), millis())) {
             shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str());
+            shotLog.noteFacts(startCelsius, grams < 0 ? -1.0f : flowMeter.firstDropSeconds());
             LOGF(INFO, "Shot logged: %.1f s, %.1f g", seconds, grams);
         }
         else {
             shotCurve.end(); // not a shot: no curve either
+            flowMeter.stop();
         }
     }
 
@@ -129,7 +142,11 @@ namespace shot_history {
      * @param celsius brew temperature as the web interface shows it
      */
     inline void loop(const float grams, const double celsius) {
-        shotCurve.sample(millis(), grams, static_cast<float>(celsius));
+        if (grams >= 0) {
+            flowMeter.add(millis(), grams);
+        }
+
+        shotCurve.sample(millis(), grams, static_cast<float>(celsius), grams >= 0 && flowMeter.running() ? flowMeter.flow() : -1.0f);
 
         if (rateIndex >= 0) {
             portENTER_CRITICAL(&rateLock);
@@ -149,8 +166,9 @@ namespace shot_history {
     }
 
     /**
-     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","r":2},...]},
-     * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter
+     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","r":2,"t0":93.4,"fd":6.2},...]},
+     * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
+     * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown)
      */
     inline void writeJson(Print& out) {
         out.printf(R"({"now":%u,"bf":%u,"shots":[)", static_cast<unsigned>(nowUtc()), static_cast<unsigned>(shotLog.sinceBackflush()));
@@ -187,14 +205,18 @@ namespace shot_history {
                 }
             }
 
-            out.printf(R"(","r":%u})", static_cast<unsigned>(s.taste));
+            out.printf(R"(","r":%u,"t0":)", static_cast<unsigned>(s.taste));
+            s.startTenths ? (void)out.printf("%d.%d", s.startTenths / 10, s.startTenths % 10) : (void)out.print("null");
+            out.print(R"(,"fd":)");
+            s.firstDropTenths ? (void)out.printf("%u.%u", s.firstDropTenths / 10u, s.firstDropTenths % 10u) : (void)out.print("null");
+            out.print("}");
         }
 
         out.print("]}");
     }
 
     /**
-     * Curve of shot i (0 = newest) as {"dt":ms,"stop":point,"w":[tenths of a gram] or null,"t":[tenths of a degree]}
+     * Curve of shot i (0 = newest) as {"dt":ms,"stop":point,"w":[tenths of a gram] or null,"t":[tenths of a degree],"f":[hundredths of g/s] or null}
      * @return false if there is no such shot or no curve saved for it
      */
     inline bool writeCurveJson(const int i, Print& out) {
@@ -235,13 +257,13 @@ namespace shot_history {
 
         out.printf(R"({"dt":%u,"stop":%d,"w":)", static_cast<unsigned>(curve.intervalMs()), curve.stop());
 
-        for (int series = 0; series < 2; ++series) {
-            if (series == 0 && !scale) {
+        for (int series = 0; series < 3; ++series) {
+            if (series != 1 && !scale) {
                 out.print("null");
             }
             else {
                 for (int k = 0; k < curve.count(); ++k) {
-                    const int16_t v = series == 0 ? curve.at(k).grams : curve.at(k).celsius;
+                    const int16_t v = series == 0 ? curve.at(k).grams : series == 1 ? curve.at(k).celsius : curve.at(k).flow;
                     out.print(k ? "," : "[");
 
                     if (v == orione::ShotCurve::kNone) {
@@ -255,7 +277,7 @@ namespace shot_history {
                 out.print(curve.count() ? "]" : "[]");
             }
 
-            out.print(series == 0 ? R"(,"t":)" : "}");
+            out.print(series == 0 ? R"(,"t":)" : series == 1 ? R"(,"f":)" : "}");
         }
 
         return true;

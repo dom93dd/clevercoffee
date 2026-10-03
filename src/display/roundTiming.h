@@ -113,6 +113,14 @@ namespace round_timing {
                 stacks();
             }
 
+            // once a minute in bytes: a slow leak shows long before the kilobytes move
+            static uint32_t minutes = 0;
+
+            if (++minutes % 60 == 0) {
+                Serial.printf("TIMING heapb free %u block %u min %u\n", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+                              static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)));
+            }
+
             lowHeap = UINT32_MAX;
             loops = loopMaxUs = outsideMaxUs = slowLoops = frames = frameMaxUs = 0;
         }

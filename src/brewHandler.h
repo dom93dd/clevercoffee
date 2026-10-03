@@ -264,7 +264,7 @@ inline bool brew() {
 
                 LOG(INFO, "Brew started");
 #ifdef CC_ORIONE
-                shot_history::brewStarted();
+                shot_history::brewStarted(temperature);
 #endif
 
                 if (!preinfusionEnabled) {
@@ -359,7 +359,7 @@ inline bool brew() {
                 LOG(INFO, "Brew finished");
                 LOGF(INFO, "Shot time: %4.1f s", currBrewTime / 1000);
 #ifdef CC_ORIONE
-                shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? currBrewWeight : -1.0f);
+                shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? std::max(0.0f, static_cast<float>(currBrewWeight)) : -1.0f);
 #endif
                 LOG(INFO, "Brew idle");
                 currBrewState = kBrewIdle;

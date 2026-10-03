@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace orione {
 
@@ -58,5 +59,37 @@ namespace orione {
 
         return waiting >= l.maxWaiting ? GateAction::Busy : GateAction::Wait;
     }
+
+    /**
+     * Safety net behind the brake: when the heap stays below the brake's limits for a minute (it
+     * fragments or something leaks), every page request is refused and only a restart helps. Then
+     * restart, but never during a shot or a backflush (busy).
+     */
+    class HeapWatch {
+        public:
+            static constexpr uint32_t kGraceMs = 60000;
+
+            /** @return true: restart now */
+            bool update(const uint32_t nowMs, const bool low, const bool busy) {
+                if (!low) {
+                    since_ = 0;
+                    return false;
+                }
+
+                if (since_ == 0) {
+                    since_ = nowMs == 0 ? 1 : nowMs;
+                }
+
+                return !busy && nowMs - since_ >= kGraceMs;
+            }
+
+            /** heap below the brake's limits */
+            static bool low(const size_t freeHeap, const size_t largestBlock, const GateLimits& l = GateLimits{}) {
+                return largestBlock < l.brakeBlock || freeHeap < l.brakeFree;
+            }
+
+        private:
+            uint32_t since_ = 0;
+    };
 
 } // namespace orione

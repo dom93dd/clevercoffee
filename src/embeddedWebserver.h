@@ -99,6 +99,7 @@ namespace live_events {
             double brewTime;
             int scale;     // 0 no scale, 1 not connected, 2 connected
             double weight; // brew weight while brewing, the scale's reading otherwise
+            double flow;   // g/s during a shot, < 0 otherwise
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -119,7 +120,8 @@ namespace live_events {
 
             if (events.count() > 0) {
                 int n = snprintf(json, sizeof(json), R"({"currentTemp":%.2f,"targetTemp":%.2f,"heaterPower":%.1f,"state":%d,"brewTime":%.1f,"scale":%d)", v.temp, v.target, v.power, v.state, v.brewTime, v.scale);
-                snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f})" : R"(,"weight":null})", v.weight);
+                n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f)" : R"(,"weight":null)", v.weight);
+                snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f})" : R"(,"flow":null})", v.flow);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -830,7 +832,7 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
     // the values themselves keep the connection alive, no extra "ping"
     const int scaleState = scale == nullptr || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : scale->isConnected() ? 2 : 1;
     live_events::publish({currentTemp, targetTemp, heaterPower, static_cast<int>(machineState), round(currBrewTime / 100.0) / 10.0, scaleState,
-                          checkBrewActive() ? currBrewWeight : currReadingWeight});
+                          checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2)});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

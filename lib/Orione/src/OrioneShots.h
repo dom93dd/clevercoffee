@@ -37,6 +37,8 @@ namespace orione {
             uint16_t doseTenths = 0; // ground coffee in 0.1 g, 0 = not given
             char grind[10] = {};     // grinder setting as typed (e.g. "12" or "2.5")
             uint8_t taste = kNotRated;
+            int16_t startTenths = 0;      // brew temperature at the start, 0.1 degrees, 0 = unknown
+            uint16_t firstDropTenths = 0; // seconds until the first drops, 0.1 s, 0 = no scale
     };
 
     class ShotLog {
@@ -99,6 +101,17 @@ namespace orione {
                 if (grind != nullptr) {
                     std::strncpy(shots_[0].grind, grind, sizeof(shots_[0].grind) - 1);
                 }
+            }
+
+            /** Temperature at the start and the first drops of the newest shot (< 0: unknown) */
+            void noteFacts(const float startCelsius, const float firstDropSeconds) {
+                if (count_ == 0) {
+                    return;
+                }
+
+                const float t = startCelsius * 10.0f, d = firstDropSeconds * 10.0f;
+                shots_[0].startTenths = std::isfinite(t) && t > 0.0f && t < 3000.0f ? static_cast<int16_t>(t + 0.5f) : 0;
+                shots_[0].firstDropTenths = std::isfinite(d) && d > 0.0f && d < 65535.0f ? static_cast<uint16_t>(d + 0.5f) : 0;
             }
 
             /** @return false if there is no such shot or no such taste */
@@ -182,7 +195,7 @@ namespace orione {
             }
 
         private:
-            static constexpr uint8_t kVersion = 3; // 2: running number for the curves, 3: dose, grind, taste, backflush counter
+            static constexpr uint8_t kVersion = 4; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops
 
             Shot shots_[kSize];
             int count_ = 0;
@@ -206,6 +219,7 @@ namespace orione {
             struct Point {
                     int16_t grams;
                     int16_t celsius;
+                    int16_t flow; // 0.01 g/s
             };
 
             // Saved form (one per shot): version, interval, stop point, points
@@ -225,8 +239,8 @@ namespace orione {
                 recording_ = true;
             }
 
-            /** Call often; takes a point when the next one is due (point k at k * interval) */
-            void sample(const uint32_t nowMs, const float grams, const float celsius) {
+            /** Call often; takes a point when the next one is due (point k at k * interval). Flow in g/s, < 0 without scale */
+            void sample(const uint32_t nowMs, const float grams, const float celsius, const float flow = -1.0f) {
                 if (!recording_ || nowMs - startMs_ < static_cast<uint32_t>(count_) * intervalMs_) {
                     return;
                 }
@@ -235,7 +249,8 @@ namespace orione {
                     halve();
                 }
 
-                points_[count_++] = Point{grams < 0 ? kNone : tenths(grams), tenths(celsius)};
+                const float f = std::round(flow * 100.0f);
+                points_[count_++] = Point{grams < 0 ? kNone : tenths(grams), tenths(celsius), flow < 0 || !std::isfinite(flow) ? kNone : static_cast<int16_t>(f > 32767.0f ? 32767.0f : f)};
             }
 
             /** The pump stopped: what follows are the drops */
@@ -301,7 +316,7 @@ namespace orione {
             }
 
         private:
-            static constexpr uint8_t kVersion = 1;
+            static constexpr uint8_t kVersion = 2; // 2: flow
 
             static int16_t tenths(const float v) {
                 if (!std::isfinite(v)) {

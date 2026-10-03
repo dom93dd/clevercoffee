@@ -430,7 +430,7 @@ test("Letzte Bezüge: Balken-Übersicht und Kurve je Bezug", async ({browser}) =
   await rows.nth(0).click();
   await curves.nth(0).locator("canvas").waitFor();
   assert.ok(await painted("#shotList .curve:not([hidden]) canvas") > 1000, "curve drawn");
-  assert.deepEqual(await curves.nth(0).locator(".legend span").allTextContents(), ["Gewicht", "Temperatur", "Pumpe aus"]);
+  assert.deepEqual(await curves.nth(0).locator(".legend span").allTextContents(), ["Gewicht", "Durchfluss", "Temperatur", "Pumpe aus"]);
   assert.match(await rows.nth(0).getAttribute("class"), /open/);
   await page.screenshot({path: OUT + "brew-curve.png", fullPage: true});
 
@@ -463,6 +463,8 @@ test("Live-Bezug: Zeit, Gewicht, Fortschritt zum Ziel, danach Ergebnis", async (
   assert.equal(await page.locator("#lsTime").textContent(), "12,3 s");
   assert.equal(await page.locator("#lsWeight").textContent(), "18,0 g");
   assert.equal(await page.locator("#lsGoal").textContent(), "Ziel 45 g");
+  await mock(BASE, "/__live", {state: 20, brewTime: 12.3, weight: 18, scale: 2, flow: 2.14});
+  await page.locator("#lsGoal", {hasText: "Ziel 45 g · 2,1 g/s"}).waitFor();
   assert.match(await page.locator("#lsBar").getAttribute("style"), /scaleX\(0\.4\)/);
   assert.equal(await page.title(), "Bezug 12,3 s · Orione");
   await page.screenshot({path: OUT + "brew-live.png", fullPage: true});
@@ -532,15 +534,18 @@ test("Rezept: Dosis, Mahlgrad und Verhältnis im nächsten Bezug", async ({brows
   await ctx.close();
 });
 
-test("Bezug aufklappen: Rezept, Bewertung, Vergleich mit einem anderen", async ({browser}) => {
+test("Bezug aufklappen: Rezept, erster Tropfen, Bewertung, Vergleich, kalt gestartet", async ({browser}) => {
   const now = Math.floor(Date.now() / 1000);
-  await mock(BASE, "/__shot", {s: 22.0, g: 33.0, at: now - 3600, d: 18.0, m: "13"});
-  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600, d: 18.0, m: "12"});
+  await mock(BASE, "/__shot", {s: 22.0, g: 33.0, at: now - 3600, d: 18.0, m: "13", t0: 89.5, fd: 4.8});
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600, d: 18.0, m: "12", t0: 94.6, fd: 6.2});
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   await view(page).locator("#shotList .shot").first().click();
   const cv = view(page).locator("#shotList .curve:not([hidden])");
   await cv.locator("canvas").waitFor();
-  assert.equal(await cv.locator(".shotinfo").textContent(), "18,0 g Kaffee · Mahlgrad 12 · 1:2,0");
+  assert.equal(await cv.locator(".shotinfo").textContent(), "18,0 g Kaffee · Mahlgrad 12 · 1:2,0 · erster Tropfen nach 6,2 s · Start bei 94,6 °C");
+  assert.deepEqual(await cv.locator(".legend span").allTextContents(), ["Gewicht", "Durchfluss", "Temperatur", "Pumpe aus"]);
+  assert.equal(await view(page).locator("#shotList .shot").nth(1).locator(".cold").textContent(), "kalt gestartet", "89,5 °C at 95 °C set");
+  assert.equal(await view(page).locator("#shotList .shot").first().locator(".cold").count(), 0);
   await cv.locator(".taste button", {hasText: "sauer"}).click();
   await page.locator("#shotList .curve:not([hidden]) .taste button.on", {hasText: "sauer"}).waitFor();
   await settle(page);
@@ -605,7 +610,7 @@ test("Claude: Vorschlag zum neuesten Bezug, einmal; Bewertung fragt neu; ausfüh
   assert.equal(await box.locator("b").textContent(), "Vorschlag zum letzten Bezug");
   const b0 = seen[0].body, user = b0.messages[0].content;
   assert.match(b0.system, /Barista/); assert.match(b0.system, /auf Deutsch/);
-  for (const part of ["Quick Mill Orione", "25,3 s", "36,1 g in der Tasse", "18,0 g Kaffee", "Mahlgrad 12", "Temperatur in °C"]) assert.ok(user.includes(part), part);
+  for (const part of ["Quick Mill Orione", "25,3 s", "36,1 g in der Tasse", "18,0 g Kaffee", "Mahlgrad 12", "Temperatur in °C", "Durchfluss in g/s"]) assert.ok(user.includes(part), part);
   assert.equal(b0.stream, true);
   await page.screenshot({path: OUT + "brew-claude.png", fullPage: true});
   await page.reload(); await settle(page);

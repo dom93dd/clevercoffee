@@ -100,6 +100,7 @@ details[open] summary:after{content:"−"}
 .recipe .step input{width:100%;min-width:0}
 .recipe .txt{max-width:none;width:100%;text-align:center}
 .shotinfo{font-size:13px;color:var(--mute);margin:10px 0 2px}
+.shotinfo .cold,.shot .cold{color:var(--cool)}
 .taste{display:flex;align-items:center;gap:10px;margin:12px 0 4px;font-size:14px;color:var(--mute)}
 .taste .seg{flex:1}
 .taste .seg button{flex:1}
@@ -171,7 +172,7 @@ const T = {
     sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush",
     sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
     scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?",
-    dialBrew: "BEZUG", dialDone: "FERTIG", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
+    dialBrew: "BEZUG", dialDone: "FERTIG", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
     compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
     sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor, etwa beim Mahlgrad. Dafür brauchst du einen API-Schlüssel von Anthropic. Er bleibt nur in diesem Browser; am sichersten ist ein eigener Schlüssel mit Monatslimit.",
     claudeGet: "Schlüssel erstellen ↗", claudeConnect: "Verbinden", claudeChecking: "Prüfe …", claudeOn: "Verbunden", claudeOnHint: "Vorschläge zu deinen Bezügen von Claude Sonnet 5", claudeOff: "Trennen",
@@ -219,7 +220,7 @@ const T = {
     sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush",
     sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
     scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?",
-    dialBrew: "BREW", dialDone: "DONE", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
+    dialBrew: "BREW", dialDone: "DONE", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
     compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
     sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step, e.g. the grind. It needs an API key from Anthropic. The key stays in this browser only; safest is a key of its own with a monthly limit.",
     claudeGet: "Create a key ↗", claudeConnect: "Connect", claudeChecking: "Checking …", claudeOn: "Connected", claudeOnHint: "Suggestions on your shots by Claude Sonnet 5", claudeOff: "Disconnect",
@@ -632,6 +633,7 @@ const curves = {};     // curve per shot, by "time,seconds"
 let openShot = null;   // key of the shot whose curve is open
 let compareShot = null; // key of the shot drawn behind it
 const shotKey = x => x.at + "," + x.s;
+const coldStart = x => x.t0 != null && P["brew.setpoint"] && x.t0 < P["brew.setpoint"].value - 2;
 function paintShots(box = $("#shotList")) {
   if (!box) return;
   box.innerHTML = "";
@@ -643,7 +645,9 @@ function paintShots(box = $("#shotList")) {
   if (top) box.append(top);
   shots.forEach((x, i) => {
     const r = el("div", "shot" + (shotKey(x) === openShot ? " open" : "")), cv = el("div", "curve");
-    r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), el("small", null, whenText(x.at)), el("i", null, "›"));
+    const when = el("small", null, whenText(x.at));
+    if (coldStart(x)) when.append(" · ", el("span", "cold", t("coldStart")));
+    r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), when, el("i", null, "›"));
     cv.hidden = shotKey(x) !== openShot;
     if (!cv.hidden) fillDetail(cv, x, i);
     r.onclick = () => toggleCurve(x, i);
@@ -679,10 +683,15 @@ function fillDetail(cv, x, i) {
   if (x.d) info.push(num(x.d, 1) + " " + t("coffeeG"));
   if (x.m) info.push(t("brew.grind") + " " + x.m);
   if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
-  if (info.length) { const line = el("div", "shotinfo"); line.textContent = info.join(" · "); cv.append(line); } // typed by the user: text, not HTML
+  if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
+  if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
+  if (info.length) { // typed by the user: text, not HTML
+    const line = el("div", "shotinfo"); line.textContent = info.join(" · ");
+    cv.append(line);
+  }
   if (d === "none") cv.append(el("p", "empty", t("noCurve")));
   else if (d) {
-    cv.append(el("canvas"), el("div", "legend", (d.w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "") + `<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span>`));
+    cv.append(el("canvas"), el("div", "legend", (d.w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "") + (d.f ? `<span><i style="background:var(--cool)"></i>${t("flowLine")}</span>` : "") + `<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span>`));
   }
   const ts = el("div", "taste"), seg = el("div", "seg");
   for (const [v, key] of [[1, "sour"], [2, "good"], [3, "bitter"]]) {
@@ -765,13 +774,17 @@ function drawCurve(c, d, o) {
     vals.forEach((v, k) => { if (v == null) { on = false; return; } on ? g.lineTo(X(s, k), y(v / 10)) : g.moveTo(X(s, k), y(v / 10)); on = true; });
     g.stroke();
   };
-  if (o) { if (o.w) line(o, o.w, yG, "rgba(236,226,208,.45)", [5, 4]); line(o, o.t, yT, "rgba(255,146,38,.45)", [5, 4]); }
+  const flows = all.flatMap(s => (s.f || []).filter(v => v != null).map(v => v / 100)), fHi = Math.max(3, ...flows) * 1.15;
+  const yF = v => B - v / 10 / fHi * (B - T); // flow comes in hundredths of g/s, line() already divided by ten
+  if (flows.length) { g.fillStyle = "#7dbeff"; g.textAlign = "left"; g.fillText(num(fHi / 1.15, 1) + " g/s", L + 4, T + 10); }
+  if (o) { if (o.w) line(o, o.w, yG, "rgba(236,226,208,.45)", [5, 4]); if (o.f) line(o, o.f, yF, "rgba(125,190,255,.45)", [5, 4]); line(o, o.t, yT, "rgba(255,146,38,.45)", [5, 4]); }
   g.setLineDash([]);
   if (d.w) { // weight with a soft fill under it
     g.fillStyle = "rgba(236,226,208,.10)"; g.beginPath(); g.moveTo(X(d, 0), B);
     d.w.forEach((v, k) => g.lineTo(X(d, k), yG((v ?? 0) / 10))); g.lineTo(X(d, d.w.length - 1), B); g.fill();
     line(d, d.w, yG, "#ece2d0", []);
   }
+  if (d.f) line(d, d.f, yF, "#7dbeff", []);
   line(d, d.t, yT, "#ff9226", []);
 }
 
@@ -828,6 +841,8 @@ function coffeeContext() {
     if (x.d && x.g != null) p.push("Verhältnis 1:" + num(x.g / x.d, 2));
     if (x.m) p.push("Mahlgrad " + x.m);
     if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
+    if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
+    if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
     out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
   });
   const c = curves[shotKey(shots[0])];
@@ -835,6 +850,7 @@ function coffeeContext() {
     const step = Math.max(1, Math.round(1000 / c.dt)), sec = a => a.filter((_, k) => k % step === 0).map(v => v == null ? "-" : num(v / 10, 1)).join(" ");
     out.push(`Verlauf des neuesten Bezugs je Sekunde (Pumpe aus nach ${num(c.stop * c.dt / 1000, 1)} s):`);
     if (c.w) out.push("Gewicht in g: " + sec(c.w));
+    if (c.f) out.push("Durchfluss in g/s: " + c.f.filter((_, k) => k % step === 0).map(v => v == null ? "-" : num(v / 100, 1)).join(" "));
     out.push("Temperatur in °C: " + sec(c.t));
   }
   return out.join("\n");
@@ -941,7 +957,7 @@ function paintShotLive() {
     st.lastChild.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : t("scaleOff");
   }
   const brewing = live.ok && live.state === 20;
-  if (brewing) lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, until: 0};
+  if (brewing) lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, until: 0};
   else if (lastShot && !lastShot.until) { // the first value after the shot carries its final time; the result stays a little
     lastShot.t = Math.max(lastShot.t, live.brewTime || 0); lastShot.until = Date.now() + 15000;
   }
@@ -955,7 +971,7 @@ function paintShotLive() {
   $("#lsWeight").textContent = x.w == null ? "" : num(x.w, 1) + " g";
   $("#lsBarBox").hidden = !goal;
   if (goal) $("#lsBar").style.transform = `scaleX(${Math.max(0, Math.min(1, (m === "weight" ? x.w ?? 0 : x.t) / goal))})`;
-  $("#lsGoal").textContent = goal ? `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}` : t("stopHand");
+  $("#lsGoal").textContent = (goal ? `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}` : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "");
 }
 // During a shot (and for a moment after it) the machine tab shows what the round display shows:
 // the ring fills with the time, or with the weight when the scale stops the shot (lib/RoundDisplay drawBrew)
@@ -1046,7 +1062,7 @@ function connectLive() {
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
     if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();

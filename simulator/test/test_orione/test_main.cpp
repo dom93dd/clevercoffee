@@ -9,6 +9,7 @@
 #include "../support/TestSupport.h"
 
 #include <OrioneFixed.h>
+#include <OrioneFlow.h>
 #include <OrioneShots.h>
 #include <OrioneWebGate.h>
 
@@ -393,6 +394,88 @@ void test_shots_count_since_backflush() {
     TEST_ASSERT_EQUAL_UINT16(1, back.sinceBackflush());
 }
 
+// ---------- flow, heap watch ----------
+void test_flow_is_the_slope_over_the_last_second() {
+    orione::FlowMeter f;
+    f.start(1000);
+
+    for (uint32_t ms = 1000; ms <= 9000; ms += 100) { // scale at 10 Hz: nothing for 5 s, then 2 g/s
+        const float t = (ms - 1000) / 1000.0f;
+        f.add(ms, t < 5.0f ? 0.0f : (t - 5.0f) * 2.0f);
+    }
+
+    TEST_ASSERT_EQUAL_INT(200, static_cast<int>(f.flow() * 100.0f + 0.5f));
+    TEST_ASSERT_EQUAL_INT(53, static_cast<int>(f.firstDropSeconds() * 10.0f + 0.5f)); // 0.5 g at 5.25 s, seen at 5.3 s
+}
+
+void test_flow_needs_some_time_and_ignores_a_lifted_cup() {
+    orione::FlowMeter f;
+    f.add(0, 5.0f); // not started: nothing
+    TEST_ASSERT_TRUE(f.firstDropSeconds() < 0);
+    f.start(0);
+    f.add(0, 0.0f);
+    f.add(200, 1.0f);
+    TEST_ASSERT_EQUAL_INT(0, static_cast<int>(f.flow() * 100.0f)); // 0.2 s: too short to tell
+    f.add(400, 2.0f);
+    TEST_ASSERT_EQUAL_INT(500, static_cast<int>(f.flow() * 100.0f + 0.5f)); // 5 g/s over 0.4 s
+    f.add(500, 0.0f / 0.0f);                                                // NaN ignored
+    f.add(600, -0.3f);                                                      // cup lifted
+    TEST_ASSERT_EQUAL_INT(0, static_cast<int>(f.flow() * 100.0f));
+}
+
+void test_flow_skips_calls_between_scale_reports() {
+    orione::FlowMeter f;
+    f.start(0);
+
+    for (uint32_t ms = 0; ms <= 3000; ms += 1) { // loop() every millisecond, the weight changes every 100 ms
+        f.add(ms, static_cast<float>(ms / 100) * 0.2f);
+    }
+
+    TEST_ASSERT_EQUAL_INT(200, static_cast<int>(f.flow() * 100.0f + 0.5f));
+}
+
+void test_heap_watch_restarts_after_a_minute_low_but_not_during_a_shot() {
+    orione::HeapWatch w;
+    TEST_ASSERT_FALSE(w.update(1000, true, false));
+    TEST_ASSERT_FALSE(w.update(60999, true, false)); // 59.999 s
+    TEST_ASSERT_FALSE(w.update(61000, true, true));  // a shot runs: wait
+    TEST_ASSERT_TRUE(w.update(70000, true, false));  // after it
+    TEST_ASSERT_FALSE(w.update(70100, false, false)); // recovered: counts from the start again
+    TEST_ASSERT_FALSE(w.update(100000, true, false));
+    TEST_ASSERT_FALSE(w.update(159999, true, false));
+    TEST_ASSERT_TRUE(w.update(160000, true, false));
+}
+
+void test_heap_watch_uses_the_brake_limits_and_survives_millis_wrap() {
+    TEST_ASSERT_TRUE(orione::HeapWatch::low(30 * 1024, 7 * 1024));  // fragmented
+    TEST_ASSERT_TRUE(orione::HeapWatch::low(17 * 1024, 16 * 1024)); // too little
+    TEST_ASSERT_FALSE(orione::HeapWatch::low(30 * 1024, 16 * 1024));
+    orione::HeapWatch w;
+    TEST_ASSERT_FALSE(w.update(0xFFFFF000u, true, false));
+    TEST_ASSERT_TRUE(w.update(0xFFFFF000u + 60000u, true, false)); // wraps past 0
+}
+
+void test_shots_keep_start_temperature_and_first_drops() {
+    orione::ShotLog log;
+    log.record(25.0f, 36.0f, 0, 0);
+    log.noteFacts(93.46f, 6.24f);
+    TEST_ASSERT_EQUAL_INT(935, log.at(0).startTenths);
+    TEST_ASSERT_EQUAL_UINT16(62, log.at(0).firstDropTenths);
+    log.noteFacts(0.0f / 0.0f, -1.0f); // no sensor value, no scale
+    TEST_ASSERT_EQUAL_INT(0, log.at(0).startTenths);
+    TEST_ASSERT_EQUAL_UINT16(0, log.at(0).firstDropTenths);
+}
+
+void test_curve_keeps_the_flow() {
+    orione::ShotCurve c;
+    c.begin(0);
+    c.sample(0, 0.0f, 93.0f, 0.0f);
+    c.sample(500, 1.0f, 93.0f, 2.14f);
+    c.sample(1000, -1.0f, 93.0f, -1.0f); // no scale
+    TEST_ASSERT_EQUAL_INT(214, c.at(1).flow);
+    TEST_ASSERT_EQUAL_INT(orione::ShotCurve::kNone, c.at(2).flow);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -426,5 +509,12 @@ int main() {
     RUN_TEST(test_curve_survives_save_and_restore);
     RUN_TEST(test_shots_keep_recipe_and_taste);
     RUN_TEST(test_shots_count_since_backflush);
+    RUN_TEST(test_flow_is_the_slope_over_the_last_second);
+    RUN_TEST(test_flow_needs_some_time_and_ignores_a_lifted_cup);
+    RUN_TEST(test_flow_skips_calls_between_scale_reports);
+    RUN_TEST(test_heap_watch_restarts_after_a_minute_low_but_not_during_a_shot);
+    RUN_TEST(test_heap_watch_uses_the_brake_limits_and_survives_millis_wrap);
+    RUN_TEST(test_shots_keep_start_temperature_and_first_drops);
+    RUN_TEST(test_curve_keeps_the_flow);
     return UNITY_END();
 }
