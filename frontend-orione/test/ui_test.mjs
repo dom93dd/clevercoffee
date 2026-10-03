@@ -482,6 +482,10 @@ test("Waagen-Status im Reiter Bezug, mit Akkustand", async ({browser}) => {
   await page.locator("#scaleSt .low", {hasText: /^Akku 18 % – bitte laden$/}).waitFor();
   assert.equal(await page.locator("#scaleSt").textContent(), "Waage verbunden · 0,0 g · Akku 18 % – bitte laden");
   await page.screenshot({path: OUT + "brew-battery-low.png", fullPage: true});
+  await mock(BASE, "/__live", {weight: -0.02}); // noise just under zero after taring
+  await page.locator("#scaleSt", {hasText: "Waage verbunden · 0,0 g · Akku 76 %"}).waitFor();
+  await mock(BASE, "/__live", {weight: -0.3});
+  await page.locator("#scaleSt", {hasText: "Waage verbunden · -0,3 g"}).waitFor(); // a real negative reading stays
   await mock(BASE, "/__live", {battery: null}); // a scale that does not report its battery
   await page.locator("#scaleSt.on", {hasText: /^Waage verbunden · 0,0 g$/}).waitFor();
   await mock(BASE, "/__live", {scale: 1, weight: null, battery: 50}); // not connected: no battery, whatever comes

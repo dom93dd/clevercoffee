@@ -385,7 +385,8 @@ async function restartAndReload(msg = t("restarting")) {
 // ---------- small helpers ----------
 const $ = s => document.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
-const num = (v, d = 1) => Number(v).toLocaleString(lang === "de" ? "de-DE" : "en-GB", {minimumFractionDigits: d, maximumFractionDigits: d});
+// values that round to zero are zero: a tared scale's -0.02 g is "0,0", not "-0,0"
+const num = (v, d = 1) => { const x = Number(v); return (Math.abs(x) < .5 / 10 ** d ? 0 : x).toLocaleString(lang === "de" ? "de-DE" : "en-GB", {minimumFractionDigits: d, maximumFractionDigits: d}); };
 const decimals = id => (STEP[id] ?? 1) < 1 ? ((STEP[id] ?? 1) < .1 ? 2 : 1) : 0;
 let toastTimer;
 function toast(msg) { const e = $("#toast"); e.textContent = msg; e.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove("show"), 1800); }
