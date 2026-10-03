@@ -92,6 +92,7 @@ details[open] summary:after{content:"−"}
 .scalest{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mute);margin-top:12px}
 .scalest i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
 .scalest.on i{background:var(--ready)}
+.scalest .low{color:var(--heat)}
 .dialcard{display:flex;justify-content:center;padding:16px}
 .dialcard canvas{width:min(100%,300px);height:auto;aspect-ratio:1;margin:0}
 .recipe{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0 4px;border-top:1px solid var(--line)}
@@ -169,9 +170,15 @@ const T = {
     steam: "Dampf", water: "Heißwasser", backflush: "Backflush", pidOff: "Regelung aus", tank: "Wassertank leer",
     standby: "Standby", overtemp: "Übertemperatur", sensor: "Sensorfehler", offline: "Keine Verbindung",
     sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
-    sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush",
+    sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush", sFlush: "Spülen",
+    flushWhat: "Drei kurze Spülstöße (je 3 s, dazwischen 20 s Pause) bringen Schlauch, Brühgruppe und Siebträger auf Temperatur. Siebträger leer eingespannt lassen, Tasse oder Schale unterstellen.",
+    "brew.warmup_flush": "Nach dem Kaltstart automatisch", "brew.warmup_flushHint": "sobald die Temperatur 2 min stabil am Soll ist",
+    flushNow: "Jetzt spülen", flushStop: "Spülen abbrechen", flushPulse: "Spülstoß {n} von 3", flushPause: "Pause, gleich Spülstoß {n} von 3",
+    flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist (kein Bezug, Backflush oder Standby, Wasser im Tank).",
+    flushNeedsSensor: "Nur mit Wasserstandssensor: ohne ihn könnte die Pumpe bei leerem Tank trocken laufen. Einschalten unter Einstellungen → Wassertank.",
+    flushNote: "Gleich wird automatisch gespült (3 × kurz), sobald die Temperatur 2 min stabil am Soll ist. Siebträger leer eingespannt lassen, Tasse unterstellen.",
     sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
-    scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?",
+    scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?", battery: "Akku", batteryLow: "bitte laden",
     dialBrew: "BEZUG", dialDone: "FERTIG", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
     compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
     sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor, etwa beim Mahlgrad. Dafür brauchst du einen API-Schlüssel von Anthropic. Er bleibt nur in diesem Browser; am sichersten ist ein eigener Schlüssel mit Monatslimit.",
@@ -217,9 +224,15 @@ const T = {
     steam: "Steam", water: "Hot water", backflush: "Backflush", pidOff: "Control off", tank: "Water tank empty",
     standby: "Standby", overtemp: "Overtemperature", sensor: "Sensor error", offline: "No connection",
     sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
-    sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush",
+    sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush", sFlush: "Flush",
+    flushWhat: "Three short flushes (3 s each, 20 s apart) bring the hose, group and portafilter up to temperature. Leave the empty portafilter in, put a cup or bowl under it.",
+    "brew.warmup_flush": "Automatically after a cold start", "brew.warmup_flushHint": "once the temperature has been steady at the setpoint for 2 min",
+    flushNow: "Flush now", flushStop: "Stop flushing", flushPulse: "Flush {n} of 3", flushPause: "Pause, flush {n} of 3 next",
+    flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready (no shot, backflush or standby, water in the tank).",
+    flushNeedsSensor: "Only with a water level sensor: without one the pump could run dry with an empty tank. Switch it on under Settings → Water tank.",
+    flushNote: "The machine will flush by itself (3 × briefly) once the temperature has been steady at the setpoint for 2 min. Leave the empty portafilter in, put a cup under it.",
     sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
-    scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?",
+    scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?", battery: "Battery", batteryLow: "please charge",
     dialBrew: "BREW", dialDone: "DONE", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
     compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
     sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step, e.g. the grind. It needs an API key from Anthropic. The key stays in this browser only; safest is a key of its own with a monthly limit.",
@@ -287,6 +300,7 @@ const TABS = [
     ["sPid", ["pid.regular.kp", "pid.regular.tn", "pid.regular.tv", "pid.regular.i_max", "pid.ema_factor", "pid.use_ponm"], true],
     ["sSystem", ["system.hostname", "system.ota_password", "system.log_level"], true]]},
   {id: "care", icon: "i-care", cards: [
+    ["sFlush", ["brew.warmup_flush", "hardware.sensors.watertank.enabled"]], // flushCard()
     ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time", "backflush.remind_after"]]]}
 ];
 
@@ -463,7 +477,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -475,6 +489,7 @@ function statusView(m) {
   const a = el("div", "alarm"); a.id = "alarm"; a.hidden = true; m.insertBefore(a, h); // above everything, set by paintLive()
   if (P["BACKFLUSH_ON"]?.value) m.append(el("div", "note", t("bfActive")));
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
+  const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
     const sw = switchCtl("pid.enabled");
@@ -592,7 +607,7 @@ function shotCard() {
     };
     const w = el("div", "btns"); w.append(b); c.append(w);
   }
-  if (P["hardware.sensors.scale.enabled"]?.value) { const st = el("div", "scalest", "<i></i><span></span>"); st.id = "scaleSt"; c.append(st); }
+  if (P["hardware.sensors.scale.enabled"]?.value) { const st = el("div", "scalest", "<i></i><span><span></span><span></span></span>"); st.id = "scaleSt"; c.append(st); }
   setTimeout(paintLive); // fill live shot and scale state right away
   return c;
 }
@@ -939,6 +954,7 @@ function stateText() {
   const map = {0: ["start", "var(--faint)"], 20: [null, "var(--brew)"], 25: ["flush", "var(--brew)"], 30: ["steam", "var(--heat)"], 40: ["water", "var(--cool)"],
     50: ["backflush", "var(--cool)"], 60: ["pidOff", "var(--faint)"], 70: ["tank", "var(--cool)"], 80: ["standby", "var(--faint)"], 100: ["overtemp", "var(--err)"], 110: ["sensor", "var(--err)"]};
   if (s === 20) return [t("brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"];
+  if (s === 25 && flushRunning()) return [t("flush") + " " + live.pulse + "/3", "var(--brew)"];
   if (s in map) return [t(map[s][0]), map[s][1]];
   if (live.temp == null) return ["…", "var(--faint)"];
   if (d <= band) return [t("ready"), "var(--ready)"];
@@ -954,7 +970,9 @@ function paintShotLive() {
   const ls = $("#liveShot"), st = $("#scaleSt");
   if (st) {
     st.classList.toggle("on", live.scale === 2);
-    st.lastChild.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : t("scaleOff");
+    const [txt, bat] = st.lastChild.children, b = live.scale === 2 ? live.battery : null; // battery: only scales that report it
+    txt.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : t("scaleOff");
+    bat.replaceChildren(...(b == null ? [] : [" · ", el("span", b <= 20 ? "low" : "", `${t("battery")} ${b} %` + (b <= 20 ? " – " + t("batteryLow") : ""))]));
   }
   const brewing = live.ok && live.state === 20;
   if (brewing) lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, until: 0};
@@ -1023,7 +1041,7 @@ function paintLive() {
   $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip").style.color = col === "var(--faint)" ? "" : col;
   const title = txt + " · Orione"; // also in the tab and app switcher
   if (document.title !== title) document.title = title;
-  paintAlarm(); paintShotLive(); paintDial();
+  paintAlarm(); paintShotLive(); paintDial(); paintFlush();
   const n = $("#tNow");
   if (!n) return;
   n.innerHTML = (live.temp == null ? "–" : num(live.temp, 1)) + "<small>°C</small>";
@@ -1062,7 +1080,7 @@ function connectLive() {
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
     if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1083,6 +1101,33 @@ async function loadHistory() {
 }
 
 // ---------- care tab: backup and device ----------
+// warm-up flush (src/warmupFlush.h): by hand any time the machine is ready, by itself once after a cold
+// start; both only with a water level sensor. live.warmup: 0 none, 1 waiting, 2 pulse, 3 pause, 4 done
+const flushRunning = () => live.warmup === 2 || live.warmup === 3;
+function flushCard() {
+  const c = el("section", "card"), sensor = !!P["hardware.sensors.watertank.enabled"]?.value;
+  c.append(el("h2", null, t("sFlush")), el("p", "shotinfo", t("flushWhat")));
+  if (sensor && P["brew.warmup_flush"]) { const r = el("div", "row"), ctl = control("brew.warmup_flush"); r.append(lbl("brew.warmup_flush"), ctl); c.append(r); }
+  const w = el("div", "btns"), b = el("button", "btn", t("flushNow")), st = el("p", "shotinfo");
+  b.id = "flushBtn"; st.id = "flushSt"; b.disabled = !sensor;
+  b.onclick = async () => {
+    const r = await post(flushRunning() ? "/flush?stop=1" : "/flush?start=1").catch(() => null);
+    if (!r?.ok) toast(t("failed"));
+  };
+  w.append(b); c.append(w, st);
+  if (!sensor) st.textContent = t("flushNeedsSensor");
+  setTimeout(paintFlush);
+  return c;
+}
+function paintFlush() {
+  const b = $("#flushBtn"), st = $("#flushSt"), note = $("#flushNote"), run = live.ok && flushRunning();
+  if (note) note.hidden = !(live.ok && live.warmup === 1);
+  if (!b || !P["hardware.sensors.watertank.enabled"]?.value) return;
+  b.textContent = t(run ? "flushStop" : "flushNow");
+  b.disabled = !run && !(live.ok && live.state === 10); // the firmware starts only from "ready" (kPidNormal)
+  st.textContent = run ? t(live.warmup === 2 ? "flushPulse" : "flushPause").replace("{n}", live.warmup === 2 ? live.pulse : live.pulse + 1)
+    : live.ok && live.warmup === 1 ? t("flushPending") : b.disabled && live.ok ? t("flushBusy") : "";
+}
 function careExtras(m) {
   const b = el("section", "card");
   b.innerHTML = `<h2>${t("sBackup")}</h2>`;
@@ -1130,9 +1175,9 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : card(title, ids, closed); if (c) m.append(c); }
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
-    const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector(".card")?.append(since);
+    const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
     careExtras(m); paintBf();
   }
 }

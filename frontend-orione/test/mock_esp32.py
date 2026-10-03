@@ -67,6 +67,7 @@ BASE = {
     "system.ota_password": dict(type=4, value="otapass", min=0, max=32),
     "system.log_level": dict(type=5, value=2, min=0, max=6, options=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "SILENT"]),
     "hardware.sensors.watertank.enabled": dict(type=1, value=0, min=0, max=1, reboot=True),
+    "brew.warmup_flush": dict(type=1, value=1, min=0, max=1),
     "hardware.sensors.watertank.mode": dict(type=5, value=1, min=0, max=1, options=["Normally Open", "Normally Closed"], reboot=True),
     "hardware.sensors.scale.enabled": dict(type=1, value=1, min=0, max=1, reboot=True),
 }
@@ -212,7 +213,8 @@ class Handler(BaseHTTPRequestHandler):
                     S.temp += (target - S.temp) * 0.08 if pid else (22 - S.temp) * 0.02
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
-                            "state": state, "brewTime": 0, "scale": 2 if S.scale_at_boot else 0, "weight": 0.0 if S.scale_at_boot else None, "flow": None}
+                            "state": state, "brewTime": 0, "scale": 2 if S.scale_at_boot else 0, "weight": 0.0 if S.scale_at_boot else None, "flow": None,
+                            "battery": 76 if S.scale_at_boot else None, "warmup": 0, "pulse": 0}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
@@ -226,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(n) if n else b""
         if not url.path.startswith("/__"):
             with S.lock:
-                S.posts.append({"path": url.path, "body": body.decode(errors="replace")[:200]})
+                S.posts.append({"path": url.path, "query": url.query, "body": body.decode(errors="replace")[:200]})
         if url.path == "/parameters":
             form = urllib.parse.parse_qs(body.decode(), keep_blank_values=True)
             with S.lock:
@@ -253,6 +255,10 @@ class Handler(BaseHTTPRequestHandler):
             with S.lock:
                 S.pending_upload = cfg
             return self.send(200, json.dumps({"success": True, "message": "ok", "restart": True}), "application/json")
+        if url.path == "/flush":  # warm-up flush by hand: the test drives the live values itself
+            if not S.p["hardware.sensors.watertank.enabled"]["value"]:
+                return self.send(409, "no water level sensor")
+            return self.send(202, "ok")
         if url.path == "/restart":
             with S.lock:
                 S.restart()

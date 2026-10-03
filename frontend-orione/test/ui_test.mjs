@@ -474,11 +474,19 @@ test("Live-Bezug: Zeit, Gewicht, Fortschritt zum Ziel, danach Ergebnis", async (
   await ctx.close();
 });
 
-test("Waagen-Status im Reiter Bezug", async ({browser}) => {
+test("Waagen-Status im Reiter Bezug, mit Akkustand", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
-  await page.locator("#scaleSt.on", {hasText: "Waage verbunden · 0,0 g"}).waitFor();
-  await mock(BASE, "/__live", {scale: 1, weight: null});
+  await page.locator("#scaleSt.on", {hasText: "Waage verbunden · 0,0 g · Akku 76 %"}).waitFor();
+  assert.equal(await page.locator("#scaleSt .low").count(), 0);
+  await mock(BASE, "/__live", {battery: 18});
+  await page.locator("#scaleSt .low", {hasText: /^Akku 18 % – bitte laden$/}).waitFor();
+  assert.equal(await page.locator("#scaleSt").textContent(), "Waage verbunden · 0,0 g · Akku 18 % – bitte laden");
+  await page.screenshot({path: OUT + "brew-battery-low.png", fullPage: true});
+  await mock(BASE, "/__live", {battery: null}); // a scale that does not report its battery
+  await page.locator("#scaleSt.on", {hasText: /^Waage verbunden · 0,0 g$/}).waitFor();
+  await mock(BASE, "/__live", {scale: 1, weight: null, battery: 50}); // not connected: no battery, whatever comes
   await page.locator("#scaleSt:not(.on)", {hasText: "nicht verbunden"}).waitFor();
+  assert.equal(await page.locator("#scaleSt").textContent(), "Waage nicht verbunden – ist sie eingeschaltet?");
   await ctx.close();
 });
 
@@ -661,6 +669,50 @@ test("Backflush-Erinnerung: Hinweis auf der Startseite, Zähler in Wartung", asy
   const inp = row(page, "Erinnern nach").locator("input"); // typed 2 stays 2 (+/- go in fives)
   await inp.fill("2"); await inp.press("Enter"); await settle(page);
   assert.equal((await values(BASE))["backflush.remind_after"], 2);
+  await ctx.close();
+});
+
+test("Wartung: Spülen ohne Wasserstandssensor gesperrt, Backflush-Zähler bleibt bei Backflush", async ({browser}) => {
+  await mock(BASE, "/__bf", {bf: 7});
+  const {page, ctx} = await open(browser, BASE, {hash: "#care"});
+  const cards = page.locator("section.card[data-card]");
+  assert.deepEqual(await cards.evaluateAll(cs => cs.map(c => c.dataset.card)), ["sFlush", "sBf"]);
+  assert.equal(await page.locator("#flushBtn").isDisabled(), true);
+  assert.match(await page.locator("#flushSt").textContent(), /^Nur mit Wasserstandssensor/);
+  assert.equal(await row(page, "Nach dem Kaltstart automatisch").count(), 0, "no switch without the sensor");
+  await page.locator('[data-card="sBf"] #bfSince', {hasText: "vor 7 Bezügen"}).waitFor(); // still in the backflush card
+  assert.equal(await (await fetch(BASE + "/flush?start=1", {method: "POST"})).status, 409, "the firmware refuses too");
+  await ctx.close();
+});
+
+test("Wartung: Spülen von Hand, Fortschritt, abbrechen; Hinweis auf der Startseite", async ({browser}) => {
+  await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "hardware.sensors.watertank.enabled=1"});
+  await mock(BASE, "/__live", {state: 10, warmup: 0});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  const btn = page.locator("#flushBtn"), st = page.locator("#flushSt");
+  await page.locator("#flushBtn:not([disabled])", {hasText: "Jetzt spülen"}).waitFor();
+  assert.equal(await row(page, "Nach dem Kaltstart automatisch").count(), 1);
+  await btn.click(); await settle(page);
+  assert.deepEqual((await posts(BASE)).filter(p => p.path === "/flush").map(p => p.query), ["start=1"]);
+  await mock(BASE, "/__live", {state: 25, warmup: 2, pulse: 1});
+  await page.locator("#flushBtn", {hasText: "Spülen abbrechen"}).waitFor();
+  assert.equal(await st.textContent(), "Spülstoß 1 von 3");
+  await mock(BASE, "/__live", {state: 25, warmup: 3, pulse: 1});
+  await page.locator("#flushSt", {hasText: "Pause, gleich Spülstoß 2 von 3"}).waitFor();
+  await page.screenshot({path: OUT + "care-flush.png", fullPage: true});
+  await btn.click(); await settle(page);
+  assert.deepEqual((await posts(BASE)).filter(p => p.path === "/flush").map(p => p.query), ["start=1", "stop=1"]);
+  await mock(BASE, "/__live", {state: 50, warmup: 4}); // backflush mode: no flush
+  await page.locator("#flushBtn[disabled]", {hasText: "Jetzt spülen"}).waitFor();
+  assert.match(await st.textContent(), /^Geht, sobald die Maschine bereit ist/);
+  // start page: the note while the automatic one is pending, the pulse in the state while it runs
+  await mock(BASE, "/__live", {state: 10, warmup: 1});
+  await tab(page, "Maschine");
+  await page.locator("#flushNote:not([hidden])", {hasText: "Gleich wird automatisch gespült"}).waitFor();
+  await mock(BASE, "/__live", {state: 25, warmup: 2, pulse: 2});
+  await page.locator("#flushNote[hidden]").waitFor({state: "attached"});
+  await page.locator("#state", {hasText: "Spülen 2/3"}).waitFor();
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 

@@ -374,6 +374,13 @@ inline bool isScaleInFallbackMode() {
     return brewByWeightFallbackActive;
 }
 
+#ifdef CC_ORIONE
+/** Remaining battery of the Bluetooth scale in percent, -1 if unknown (src/hardware/scales/BluetoothScale.h) */
+inline int scaleBatteryPercent() {
+    return isBluetoothScale && scale ? static_cast<BluetoothScale*>(scale)->getBattery() : -1;
+}
+#endif
+
 /**
  * @brief Check if Bluetooth scale is currently trying to connect
  */

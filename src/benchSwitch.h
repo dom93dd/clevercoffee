@@ -37,4 +37,7 @@ namespace bench {
         return wifiOutageUntilMs != 0 && static_cast<int32_t>(millis() - wifiOutageUntilMs) < 0;
     }
 
+    // water level sensor (the setting must be on): POST /bench/tank?empty=1
+    inline bool tankEmpty = false;
+
 } // namespace bench

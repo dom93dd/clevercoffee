@@ -399,6 +399,7 @@ class Config {
             _configDefs.emplace("brew.grinder", ConfigDef::forString("", GRINDER_MAX_LENGTH));
             _configDefs.emplace("brew.beans", ConfigDef::forString("", GRINDER_MAX_LENGTH));
             _configDefs.emplace("backflush.remind_after", ConfigDef::forInt(BACKFLUSH_REMIND_AFTER, 0, BACKFLUSH_REMIND_MAX));
+            _configDefs.emplace("brew.warmup_flush", ConfigDef::forBool(true)); // only with a water level sensor (src/warmupFlush.h)
 #endif
 
             // Pre-infusion

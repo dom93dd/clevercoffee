@@ -103,6 +103,7 @@ AcaiaArduinoBLE::AcaiaArduinoBLE(const bool debug) {
     _connectionStartTime = 0;
     _targetMac = "";
     _newWeightAvailable = false;
+    _battery = -1;
     _pClient = nullptr;
     _pWriteCharacteristic = nullptr;
     _pReadCharacteristic = nullptr;
@@ -984,6 +985,10 @@ void AcaiaArduinoBLE::notifyCallback(const uint8_t *pData, size_t length) {
                 _currentWeight = -_currentWeight;
             }
 
+            // Orione: remaining battery in percent, BYTE14 of BOOKOO's weight packet
+            // (github.com/BooKooCode/OpenSource, bookoo_mini_scale/protocols.md)
+            _battery = pData[13] <= 100 ? pData[13] : -1;
+
             newWeightPacket = true;
 
             if (_debug) {
@@ -1136,6 +1141,11 @@ void AcaiaArduinoBLE::releaseClient() {
 
     _pWriteCharacteristic = nullptr;
     _pReadCharacteristic = nullptr;
+    _battery = -1;
+}
+
+int AcaiaArduinoBLE::getBattery() const {
+    return _battery;
 }
 
 void AcaiaArduinoBLE::clearScanResults() {

@@ -12,6 +12,7 @@
 #include <OrioneFlow.h>
 #include <OrioneShots.h>
 #include <OrioneWebGate.h>
+#include <OrioneWarmupFlush.h>
 
 #include <cstring>
 #include <set>
@@ -476,6 +477,159 @@ void test_curve_keeps_the_flow() {
     TEST_ASSERT_EQUAL_INT(orione::ShotCurve::kNone, c.at(2).flow);
 }
 
+// ---------- warm-up flush ----------
+
+namespace {
+    using Flush = orione::WarmupFlush;
+    constexpr Flush::Inputs kAllGood{true, true, true, true, false};
+
+    /** runs the flush in 100 ms steps; returns the times (s, one decimal) at which valve and pump switched */
+    std::string switches(Flush& f, const uint32_t fromMs, const uint32_t toMs, const double celsius, const double setpoint, const Flush::Inputs& in, bool on = false) {
+        std::string out;
+
+        for (uint32_t t = fromMs; t <= toMs; t += 100) {
+            if (const bool now = f.update(t, celsius, setpoint, in); now != on) {
+                on = now;
+                char buf[24];
+                snprintf(buf, sizeof(buf), "%s%.1f%s", out.empty() ? "" : " ", t / 1000.0, on ? "+" : "-");
+                out += buf;
+            }
+        }
+
+        return out;
+    }
+}
+
+void test_flush_after_a_cold_start_three_pulses_once_settled() {
+    Flush f;
+    TEST_ASSERT_FALSE(f.update(1000, 22.0, 94.0, kAllGood)); // cold start
+    TEST_ASSERT_EQUAL(Flush::kWaiting, f.phase());
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 1100, 200000, 80.0, 94.0, kAllGood).c_str()); // still heating: nothing
+    // settled from 200 s: first pulse 120 s later, 3 s each, 20 s pauses
+    TEST_ASSERT_EQUAL_STRING("320.0+ 323.0- 343.0+ 346.0- 366.0+ 369.0-", switches(f, 200000, 500000, 94.3, 94.0, kAllGood).c_str());
+    TEST_ASSERT_EQUAL(Flush::kDone, f.phase());
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 500000, 900000, 94.0, 94.0, kAllGood).c_str()); // only once
+}
+
+void test_flush_not_after_a_warm_restart() {
+    Flush f; // the ESP restarted with a hot block (update, safety net, brownout)
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 1000, 600000, 93.8, 94.0, kAllGood).c_str());
+    TEST_ASSERT_EQUAL(Flush::kNone, f.phase());
+}
+
+void test_flush_ignores_readings_before_the_sensor_has_one() {
+    Flush f;
+    f.update(500, 0.0, 94.0, kAllGood);   // temperature not read yet
+    f.update(600, -49.9, 94.0, kAllGood); // TSIC error value
+    TEST_ASSERT_EQUAL(Flush::kNone, f.phase());
+    f.update(700, 91.0, 94.0, kAllGood); // first real reading: warm
+    TEST_ASSERT_EQUAL(Flush::kNone, f.phase());
+}
+
+void test_flush_never_without_a_water_level_sensor() {
+    Flush f;
+    Flush::Inputs in = kAllGood;
+    in.sensor = false;
+    f.update(1000, 22.0, 94.0, in);
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 1100, 600000, 94.0, 94.0, in).c_str());
+    f.requestStart();
+    TEST_ASSERT_FALSE_MESSAGE(f.update(600100, 94.0, 94.0, in), "not by hand either");
+    TEST_ASSERT_FALSE(f.running());
+}
+
+void test_flush_also_with_a_steady_offset_but_not_while_it_swings() {
+    Flush f; // the bench's simulated block: settles at 90.2 for a setpoint of 93
+    f.update(0, 22.0, 93.0, kAllGood);
+    TEST_ASSERT_EQUAL_STRING("120.1+ 123.1-", switches(f, 100, 123500, 90.2, 93.0, kAllGood).substr(0, 13).c_str());
+    Flush g; // swinging by 2 K: not settled, no water
+    g.update(0, 22.0, 93.0, kAllGood);
+    bool any = false;
+
+    for (uint32_t t = 100; t < 600000; t += 100) {
+        any = any || g.update(t, (t / 10000) % 2 ? 94.0 : 92.0, 93.0, kAllGood);
+    }
+
+    TEST_ASSERT_FALSE(any);
+    Flush h; // swinging by 1 K: settled
+    h.update(0, 22.0, 93.0, kAllGood);
+    TEST_ASSERT_EQUAL_STRING("120.1+", switches(h, 100, 120500, 93.0, 93.0, kAllGood).substr(0, 6).c_str());
+}
+
+void test_flush_settling_restarts_when_the_temperature_leaves_the_band() {
+    Flush f;
+    f.update(0, 22.0, 94.0, kAllGood);
+    switches(f, 100, 100000, 94.0, 94.0, kAllGood);  // 100 s settled
+    switches(f, 100100, 101000, 96.0, 94.0, kAllGood); // overshoot: start again
+    TEST_ASSERT_EQUAL_STRING("221.1+ 224.1-", switches(f, 101100, 225000, 94.0, 94.0, kAllGood).c_str());
+}
+
+void test_flush_cut_short_by_an_empty_tank_and_not_resumed() {
+    Flush f;
+    f.update(0, 22.0, 94.0, kAllGood);
+    switches(f, 100, 121500, 94.0, 94.0, kAllGood); // first pulse running
+    TEST_ASSERT_TRUE(f.running());
+    Flush::Inputs empty = kAllGood;
+    empty.tankOk = false;
+    TEST_ASSERT_FALSE(f.update(121600, 94.0, 94.0, empty));
+    TEST_ASSERT_EQUAL(Flush::kDone, f.phase());
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 121700, 400000, 94.0, 94.0, kAllGood).c_str());
+}
+
+void test_flush_user_taking_over_cancels_the_pending_one() {
+    Flush f;
+    f.update(0, 22.0, 94.0, kAllGood);
+    Flush::Inputs brewing = kAllGood;
+    brewing.userActive = true;
+    f.update(60000, 90.0, 94.0, brewing); // brew switch on before the flush
+    TEST_ASSERT_EQUAL(Flush::kDone, f.phase());
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 60100, 400000, 94.0, 94.0, kAllGood).c_str());
+}
+
+void test_flush_automatic_off_but_by_hand_any_time() {
+    Flush f;
+    Flush::Inputs manual = kAllGood;
+    manual.automatic = false;
+    f.update(0, 22.0, 94.0, manual);
+    TEST_ASSERT_EQUAL_STRING("", switches(f, 100, 300000, 94.0, 94.0, manual).c_str());
+    f.requestStart();
+    TEST_ASSERT_TRUE(f.update(300100, 94.0, 94.0, manual));
+    TEST_ASSERT_EQUAL(1, f.pulse());
+    TEST_ASSERT_EQUAL_STRING("303.1- 323.1+ 326.1- 346.1+ 349.1-", switches(f, 300200, 400000, 94.0, 94.0, manual, true).c_str());
+    f.requestStart(); // and again
+    TEST_ASSERT_TRUE(f.update(400100, 94.0, 94.0, manual));
+}
+
+void test_flush_stopped_by_hand() {
+    Flush f;
+    f.update(0, 93.0, 94.0, kAllGood);
+    f.requestStart();
+    TEST_ASSERT_TRUE(f.update(100, 93.0, 94.0, kAllGood));
+    TEST_ASSERT_EQUAL(100u, f.elapsedMs(200));
+    f.requestStop();
+    TEST_ASSERT_FALSE(f.update(200, 93.0, 94.0, kAllGood));
+    TEST_ASSERT_EQUAL(Flush::kDone, f.phase());
+    TEST_ASSERT_EQUAL(0, f.pulse());
+    f.requestStop(); // a stop with nothing running is forgotten, it does not cut the next start short
+    f.update(300, 93.0, 94.0, kAllGood);
+    f.requestStart();
+    TEST_ASSERT_TRUE(f.update(400, 93.0, 94.0, kAllGood));
+    TEST_ASSERT_TRUE(f.update(500, 93.0, 94.0, kAllGood));
+}
+
+void test_flush_by_hand_needs_water_and_a_free_machine() {
+    Flush f;
+    f.update(0, 93.0, 94.0, kAllGood);
+    Flush::Inputs busy = kAllGood;
+    busy.ready = false; // e.g. backflush or standby
+    f.requestStart();
+    TEST_ASSERT_FALSE(f.update(100, 93.0, 94.0, busy));
+    TEST_ASSERT_FALSE_MESSAGE(f.update(200, 93.0, 94.0, kAllGood), "a refused start is not kept for later");
+    Flush::Inputs empty = kAllGood;
+    empty.tankOk = false;
+    f.requestStart();
+    TEST_ASSERT_FALSE(f.update(300, 93.0, 94.0, empty));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -516,5 +670,16 @@ int main() {
     RUN_TEST(test_heap_watch_uses_the_brake_limits_and_survives_millis_wrap);
     RUN_TEST(test_shots_keep_start_temperature_and_first_drops);
     RUN_TEST(test_curve_keeps_the_flow);
+    RUN_TEST(test_flush_after_a_cold_start_three_pulses_once_settled);
+    RUN_TEST(test_flush_not_after_a_warm_restart);
+    RUN_TEST(test_flush_ignores_readings_before_the_sensor_has_one);
+    RUN_TEST(test_flush_never_without_a_water_level_sensor);
+    RUN_TEST(test_flush_also_with_a_steady_offset_but_not_while_it_swings);
+    RUN_TEST(test_flush_settling_restarts_when_the_temperature_leaves_the_band);
+    RUN_TEST(test_flush_cut_short_by_an_empty_tank_and_not_resumed);
+    RUN_TEST(test_flush_user_taking_over_cancels_the_pending_one);
+    RUN_TEST(test_flush_automatic_off_but_by_hand_any_time);
+    RUN_TEST(test_flush_stopped_by_hand);
+    RUN_TEST(test_flush_by_hand_needs_water_and_a_free_machine);
     return UNITY_END();
 }

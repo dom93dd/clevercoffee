@@ -43,6 +43,9 @@ class BluetoothScale : public Scale {
          *        scale is not connected anyway, and loop() skips the round.
          */
         void startConnectionTask();
+
+        /** Remaining battery of the scale in percent, -1 if not connected or the scale does not report it */
+        [[nodiscard]] int getBattery() const;
 #endif
 
     private:

@@ -129,6 +129,7 @@ class AcaiaArduinoBLE {
         [[nodiscard]] bool heartbeatRequired() const;
         [[nodiscard]] bool isConnected() const;
         bool newWeightAvailable();
+        [[nodiscard]] int getBattery() const; // Orione: percent, -1 unknown
 
     private:
         static void staticNotifyCallback(NimBLERemoteCharacteristic *pBLERemoteCharacteristic, uint8_t *pData,
@@ -155,6 +156,7 @@ class AcaiaArduinoBLE {
         bool _debug;
         unsigned long _lastPacket;
         bool _newWeightAvailable;
+        volatile int _battery; // Orione: written by the NimBLE task
 
         uint8_t decent_scale_tare_counter;
 

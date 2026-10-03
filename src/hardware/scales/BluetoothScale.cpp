@@ -106,6 +106,10 @@ bool BluetoothScale::isConnected() const {
 
 void BluetoothScale::startConnectionTask() {}
 
+int BluetoothScale::getBattery() const {
+    return 76;
+}
+
 void BluetoothScale::connectionTask(void* self) {}
 
 #else // the real scale
@@ -300,6 +304,10 @@ bool BluetoothScale::isConnected() const {
 #ifdef CC_ORIONE
 void BluetoothScale::startConnectionTask() {
     xTaskCreatePinnedToCore(connectionTask, "scale", 4096, this, 1, nullptr, 0);
+}
+
+int BluetoothScale::getBattery() const {
+    return connected ? bleScale->getBattery() : -1;
 }
 
 void BluetoothScale::connectionTask(void* self) {

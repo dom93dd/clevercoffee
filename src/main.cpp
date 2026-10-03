@@ -248,6 +248,10 @@ boolean setupDone = false;
 boolean waterTankFull = true;
 Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 ms
 
+#ifdef CC_ORIONE
+#include "warmupFlush.h"
+#endif
+
 // PID controller
 unsigned long previousMillistemp; // initialisation at the end of init()
 unsigned long previousMillisTimer;
@@ -614,7 +618,11 @@ void handleMachineState() {
             break;
 
         case kManualFlush:
+#ifdef CC_ORIONE
+            if (!manualFlush() && !warmup_flush::flush.running()) { // the warm-up flush holds this state while it runs
+#else
             if (!manualFlush()) {
+#endif
                 machineState = kPidNormal;
             }
 
@@ -1645,6 +1653,9 @@ void loopPid() {
 
     updateStandbyTimer();
     handleMachineState();
+#ifdef CC_ORIONE
+    warmup_flush::loop();
+#endif
     hotWaterHandler();
     valveSafetyShutdownCheck();
     testTimer();
@@ -1784,7 +1795,11 @@ void checkWaterTank() {
         return;
     }
 
+#ifdef CC_FAKE_TEMP_SENSOR
+    if (const bool isWaterDetected = !bench::tankEmpty; isWaterDetected && !waterTankFull) { // bench: no sensor on GPIO23
+#else
     if (const bool isWaterDetected = waterTankSensor->isPressed(); isWaterDetected && !waterTankFull) {
+#endif
         waterTankFull = true;
         LOG(INFO, "Water tank full");
     }

@@ -100,6 +100,9 @@ namespace live_events {
             int scale;     // 0 no scale, 1 not connected, 2 connected
             double weight; // brew weight while brewing, the scale's reading otherwise
             double flow;   // g/s during a shot, < 0 otherwise
+            int battery;   // the scale's battery in percent, < 0 unknown
+            int warmup;    // warm-up flush: orione::WarmupFlush::Phase
+            int pulse;     // its pulse, 0 when not running
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -107,7 +110,7 @@ namespace live_events {
     inline TaskHandle_t task = nullptr;
 
     inline void run(void*) {
-        char json[200];
+        char json[240];
 
         for (;;) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -121,7 +124,9 @@ namespace live_events {
             if (events.count() > 0) {
                 int n = snprintf(json, sizeof(json), R"({"currentTemp":%.2f,"targetTemp":%.2f,"heaterPower":%.1f,"state":%d,"brewTime":%.1f,"scale":%d)", v.temp, v.target, v.power, v.state, v.brewTime, v.scale);
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f)" : R"(,"weight":null)", v.weight);
-                snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f})" : R"(,"flow":null})", v.flow);
+                n += snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f)" : R"(,"flow":null)", v.flow);
+                n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
+                snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d})", v.warmup, v.pulse);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -515,6 +520,11 @@ inline void serverSetup() {
         request->send(200, "text/plain", s > 0 ? "brew switch on" : "brew switch off");
     });
 
+    server.on("/bench/tank", HTTP_POST, [](AsyncWebServerRequest* request) {
+        bench::tankEmpty = request->hasParam("empty") && request->getParam("empty")->value() == "1";
+        request->send(200, "text/plain", bench::tankEmpty ? "tank empty" : "tank full");
+    });
+
     server.on("/bench/wifi-outage", HTTP_POST, [](AsyncWebServerRequest* request) {
         const long s = request->hasParam("s") ? request->getParam("s")->value().toInt() : 180;
         bench::wifiOutageUntilMs = millis() + static_cast<uint32_t>(constrain(s, 10L, 1800L)) * 1000;
@@ -524,6 +534,16 @@ inline void serverSetup() {
 
 #endif
 #ifdef CC_ORIONE
+    // warm-up flush by hand (Wartung): ?start=1 or ?stop=1, applied by loop(); only with a water level sensor
+    server.on("/flush", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!warmup_flush::sensorEnabled()) {
+            return request->send(409, "text/plain", "no water level sensor");
+        }
+
+        warmup_flush::requestFromWeb(!request->hasParam("stop"));
+        request->send(202, "text/plain", "ok");
+    });
+
     server.on("/shots", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         shot_history::writeJson(*response);
@@ -832,7 +852,8 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
     // the values themselves keep the connection alive, no extra "ping"
     const int scaleState = scale == nullptr || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : scale->isConnected() ? 2 : 1;
     live_events::publish({currentTemp, targetTemp, heaterPower, static_cast<int>(machineState), round(currBrewTime / 100.0) / 10.0, scaleState,
-                          checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2)});
+                          checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
+                          warmup_flush::livePhase(), warmup_flush::flush.pulse()});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

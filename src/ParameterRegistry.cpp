@@ -305,6 +305,8 @@ void ParameterRegistry::initialize(Config& config) {
     addStringConfigParam("brew.beans", "Beans", sBrewSection, 328, nullptr, GRINDER_MAX_LENGTH, "Beans in the grinder");
     addNumericConfigParam<int>("backflush.remind_after", "Backflush reminder", kInteger, sMaintenanceSection, 404, nullptr, 0, BACKFLUSH_REMIND_MAX,
                                "Remind of a backflush after this many shots (0 = never)");
+    addBoolConfigParam("brew.warmup_flush", "Warm-up flush after a cold start", sMaintenanceSection, 405, nullptr,
+                       "Three short flushes once the temperature has settled after a cold start (only with a water level sensor)");
 #endif
 
 #ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
