@@ -232,6 +232,9 @@ PID bPID(&temperature, &pidOutput, &setpoint, aggKp, aggKi, aggKd, 1, DIRECT);
 #ifdef CC_ORIONE
 #include "shotHistory.h"
 #endif
+#ifdef CC_FAKE_TEMP_SENSOR
+#include "benchSwitch.h"
+#endif
 #include "brewHandler.h"
 #include "hotWaterHandler.h"
 
@@ -374,6 +377,9 @@ void checkWifi() {
                 wifiReconnects++;
                 LOGF(INFO, "Attempting WIFI (re-)connection: %i", wifiReconnects);
                 wm.disconnect();
+#ifdef CC_FAKE_TEMP_SENSOR
+                if (!bench::wifiOutage()) // bench: the router is "off"
+#endif
                 WiFi.begin();
             }
 
@@ -409,6 +415,79 @@ void checkWifi() {
         }
     }
 }
+
+#ifdef CC_ORIONE
+/**
+ * @brief OTA, orione.local and the clock for the last shots, once the home WiFi is there (at the
+ *        start or later, see retryWifiWhileOffline())
+ */
+void startOnlineServices() {
+    static bool started = false;
+
+    if (started) {
+        return;
+    }
+
+    started = true;
+    otaPass = config.get<String>("system.ota_password");
+    ArduinoOTA.setHostname(hostname.c_str()); //  Device name for OTA
+    ArduinoOTA.setPassword(otaPass.c_str());  //  Password for OTA
+    ArduinoOTA.begin();
+    shot_history::startClock(); // time of day for the last shots
+}
+
+/**
+ * @brief Offline because the home WiFi was out of reach (the router starts slower than the
+ *        machine after a power cut, or was gone for long at runtime): try it again every minute
+ *        and come back online when it answers; the stock firmware stays offline until the next
+ *        restart. The access point stays up meanwhile, each try lets the station look for 15 s,
+ *        never during a shot.
+ */
+void retryWifiWhileOffline() {
+    constexpr unsigned long kEveryMs = 60000;
+    constexpr unsigned long kTryForMs = 15000;
+    static unsigned long lastTry = millis();
+    static unsigned long tryStart = 0;
+    const unsigned long now = millis();
+
+    if (tryStart == 0) {
+        if (now - lastTry < kEveryMs || checkBrewActive() || !wm.getWiFiIsSaved()) {
+            return;
+        }
+
+        lastTry = now;
+#ifdef CC_FAKE_TEMP_SENSOR
+        if (bench::wifiOutage()) {
+            LOG(INFO, "Offline: home WiFi still off (bench)");
+            return;
+        }
+#endif
+        LOG(INFO, "Offline: trying the home WiFi again");
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.begin(); // the saved WiFi
+        tryStart = now;
+        return;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        LOGF(INFO, "Home WiFi back - IP = %s", WiFi.localIP().toString().c_str());
+        tryStart = 0;
+        WiFi.softAPdisconnect(true); // access point off, the station stays
+        offlineMode = false;
+        wifiReconnects = 0;
+        displayOffline = 0;
+        startOnlineServices();
+        return;
+    }
+
+    if (now - tryStart >= kTryForMs) {
+        WiFi.disconnect(false); // stop looking until the next try; the saved WiFi stays
+        WiFi.mode(WIFI_AP);
+        tryStart = 0;
+        lastTry = now;
+    }
+}
+#endif
 
 /**
  * @brief Filter input value using exponential moving average filter (using fixed coefficients)
@@ -1126,14 +1205,15 @@ void setup() {
         ROUND_TIMING_DO(round_timing::heapMark("web server"));
         // OTA Updates
         if (WiFi.status() == WL_CONNECTED) {
+#ifdef CC_ORIONE
+            startOnlineServices();
+#else
             otaPass = config.get<String>("system.ota_password");
             ArduinoOTA.setHostname(hostname.c_str()); //  Device name for OTA
             ArduinoOTA.setPassword(otaPass.c_str());  //  Password for OTA
             ArduinoOTA.begin();
-        ROUND_TIMING_DO(round_timing::heapMark("ota"));
-#ifdef CC_ORIONE
-            shot_history::startClock(); // time of day for the last shots
 #endif
+            ROUND_TIMING_DO(round_timing::heapMark("ota"));
         }
 
 #ifdef ORIONE_PORTAL_PREVIEW
@@ -1455,7 +1535,20 @@ void loopPid() {
     else {
         wifiWasConnected = false;
         checkWifi();
+#ifdef CC_ORIONE
+        if (offlineMode) {
+            retryWifiWhileOffline();
+        }
+#endif
     }
+
+#ifdef CC_FAKE_TEMP_SENSOR
+    if (bench::wifiOutageStart) { // bench: the router goes "off"
+        bench::wifiOutageStart = false;
+        LOG(INFO, "Bench: home WiFi off");
+        WiFi.disconnect(false);
+    }
+#endif
 
     {
         ROUND_TIME(Pid);

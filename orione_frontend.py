@@ -1,7 +1,8 @@
 """
 Orione build (-D CC_ORIONE) only: the web interface is the single file frontend-orione/index.html,
-gzipped into data/html/index.html.gz. Runs after the other frontend scripts and replaces what they
-wrote to data/ (the stock frontend), so the LittleFS image holds one ~10 KB file instead of ~140 KB.
+gzipped into data/html/index.html.gz, plus manifest and icons for the home screen app
+(frontend-orione/assets.py). Runs after the other frontend scripts and replaces what they wrote to
+data/ (the stock frontend), so the LittleFS image holds a few small files instead of ~140 KB.
 """
 
 Import("env")  # noqa: F821  (PlatformIO)
@@ -10,6 +11,7 @@ import gzip
 import io
 import os
 import shutil
+import sys
 
 if "CC_ORIONE" in " ".join(env.GetProjectOption("build_flags", [])):  # noqa: F821  (CPPDEFINES are not parsed yet in pre: scripts)
     root = env.subst("$PROJECT_DIR")  # noqa: F821
@@ -30,3 +32,13 @@ if "CC_ORIONE" in " ".join(env.GetProjectOption("build_flags", [])):  # noqa: F8
         f.write(packed.getvalue())
 
     print(f"Orione frontend: {source} -> data/html/index.html.gz ({len(raw)} -> {len(packed.getvalue())} bytes)")
+
+    sys.path.insert(0, os.path.join(root, "frontend-orione"))
+    import assets  # noqa: E402
+
+    for name, content in assets.files().items():
+        os.makedirs(os.path.dirname(os.path.join(data, "html", name)), exist_ok=True)
+        with open(os.path.join(data, "html", name), "wb") as f:
+            f.write(content)
+
+    print(f"Orione frontend: manifest, icons and fonts ({sum(len(c) for c in assets.files().values())} bytes)")

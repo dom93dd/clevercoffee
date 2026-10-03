@@ -298,6 +298,13 @@ void ParameterRegistry::initialize(Config& config) {
 #ifdef CC_ORIONE
     // Quick choice Espresso/Doppio/Lungo: "seconds,grams;..." set and read by the web page only
     addStringConfigParam("brew.presets", "Quick choice", sBrewSection, 324, nullptr, BREW_PRESETS_MAX_LENGTH, "Espresso, Doppio, Lungo: seconds,grams separated by ;");
+    // Recipe of the next shot and the coffee it is made with: logged with each shot, context for the analysis
+    addNumericConfigParam<double>("brew.dose", "Dose (g)", kDouble, sBrewSection, 325, nullptr, BREW_DOSE_MIN, BREW_DOSE_MAX, "Ground coffee in the portafilter");
+    addStringConfigParam("brew.grind", "Grind setting", sBrewSection, 326, nullptr, BREW_GRIND_MAX_LENGTH, "Grinder setting of the next shot");
+    addStringConfigParam("brew.grinder", "Grinder", sBrewSection, 327, nullptr, GRINDER_MAX_LENGTH, "Grinder model");
+    addStringConfigParam("brew.beans", "Beans", sBrewSection, 328, nullptr, GRINDER_MAX_LENGTH, "Beans in the grinder");
+    addNumericConfigParam<int>("backflush.remind_after", "Backflush reminder", kInteger, sMaintenanceSection, 404, nullptr, 0, BACKFLUSH_REMIND_MAX,
+                               "Remind of a backflush after this many shots (0 = never)");
 #endif
 
 #ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
@@ -574,7 +581,11 @@ void ParameterRegistry::initialize(Config& config) {
         3,
         "Set the language for the OLED display",
         [] { return true; },
-    true
+#ifdef CC_ORIONE
+        false // the round display reads the language with every frame; only the boot messages follow at the next start
+#else
+        true
+#endif
     );
 
 #ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)

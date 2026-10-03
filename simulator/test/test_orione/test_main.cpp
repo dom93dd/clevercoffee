@@ -356,6 +356,43 @@ void test_curve_survives_save_and_restore() {
     TEST_ASSERT_FALSE(back.restore(&saved, sizeof(saved) - 2));
 }
 
+void test_shots_keep_recipe_and_taste() {
+    orione::ShotLog log;
+    log.noteRecipe(18.0f, "12"); // no shot yet: nothing to note
+    log.record(25.0f, 36.0f, 0, 0);
+    log.noteRecipe(18.04f, "2.5 (fein)");
+    TEST_ASSERT_EQUAL_UINT16(180, log.at(0).doseTenths);
+    TEST_ASSERT_EQUAL_STRING("2.5 (fein", log.at(0).grind); // cut to the field, always terminated
+    log.noteRecipe(0.0f / 0.0f, nullptr);
+    TEST_ASSERT_EQUAL_UINT16(0, log.at(0).doseTenths);
+    TEST_ASSERT_EQUAL_STRING("", log.at(0).grind);
+    TEST_ASSERT_TRUE(log.rate(0, orione::kSour));
+    TEST_ASSERT_FALSE(log.rate(1, orione::kGood)); // no second shot
+    TEST_ASSERT_FALSE(log.rate(0, 9));
+    TEST_ASSERT_EQUAL_UINT8(orione::kSour, log.at(0).taste);
+    log.record(26.0f, 37.0f, 0, 0); // the rating stays with its shot
+    TEST_ASSERT_EQUAL_UINT8(orione::kNotRated, log.at(0).taste);
+    TEST_ASSERT_EQUAL_UINT8(orione::kSour, log.at(1).taste);
+}
+
+void test_shots_count_since_backflush() {
+    orione::ShotLog log;
+
+    for (int i = 0; i < 7; ++i) {
+        log.record(25.0f, 36.0f, 0, 0);
+    }
+
+    TEST_ASSERT_EQUAL_UINT16(7, log.sinceBackflush()); // counts beyond the five kept
+    log.backflushDone();
+    log.record(25.0f, 36.0f, 0, 0);
+    log.record(3.0f, 1.0f, 0, 0); // not a shot
+    TEST_ASSERT_EQUAL_UINT16(1, log.sinceBackflush());
+    const auto saved = log.stored();
+    orione::ShotLog back;
+    TEST_ASSERT_TRUE(back.restore(&saved, sizeof(saved)));
+    TEST_ASSERT_EQUAL_UINT16(1, back.sinceBackflush());
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -387,5 +424,7 @@ int main() {
     RUN_TEST(test_curve_stop_survives_halving);
     RUN_TEST(test_curve_without_scale_or_sensor);
     RUN_TEST(test_curve_survives_save_and_restore);
+    RUN_TEST(test_shots_keep_recipe_and_taste);
+    RUN_TEST(test_shots_count_since_backflush);
     return UNITY_END();
 }

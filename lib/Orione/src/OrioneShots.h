@@ -22,11 +22,21 @@
 
 namespace orione {
 
+    enum Taste : uint8_t {
+        kNotRated = 0,
+        kSour = 1,
+        kGood = 2,
+        kBitter = 3,
+    };
+
     struct Shot {
             float seconds = 0;
-            float grams = -1;  // < 0: no scale connected
-            uint32_t when = 0; // UTC seconds since 1970, 0 = clock not set yet
-            uint16_t seq = 0;  // running number; the curve is saved under seq % ShotLog::kSize
+            float grams = -1;        // < 0: no scale connected
+            uint32_t when = 0;       // UTC seconds since 1970, 0 = clock not set yet
+            uint16_t seq = 0;        // running number; the curve is saved under seq % ShotLog::kSize
+            uint16_t doseTenths = 0; // ground coffee in 0.1 g, 0 = not given
+            char grind[10] = {};     // grinder setting as typed (e.g. "12" or "2.5")
+            uint8_t taste = kNotRated;
     };
 
     class ShotLog {
@@ -48,6 +58,7 @@ namespace orione {
 
                 shots_[0] = Shot{seconds, grams, when, static_cast<uint16_t>(count_ ? shots_[1].seq + 1 : 0)};
                 count_ = count_ < kSize ? count_ + 1 : kSize;
+                sinceBackflush_ = sinceBackflush_ < 0xFFFF ? sinceBackflush_ + 1 : sinceBackflush_;
                 settleStart_ = nowMs;
                 settling_ = true;
                 return true;
@@ -75,6 +86,39 @@ namespace orione {
                 return true;
             }
 
+            /** Dose and grinder setting of the newest shot (what was set up for it) */
+            void noteRecipe(const float dose, const char* grind) {
+                if (count_ == 0) {
+                    return;
+                }
+
+                const float t = dose * 10.0f;
+                shots_[0].doseTenths = std::isfinite(t) && t > 0.0f && t < 65535.0f ? static_cast<uint16_t>(t + 0.5f) : 0;
+                std::memset(shots_[0].grind, 0, sizeof(shots_[0].grind));
+
+                if (grind != nullptr) {
+                    std::strncpy(shots_[0].grind, grind, sizeof(shots_[0].grind) - 1);
+                }
+            }
+
+            /** @return false if there is no such shot or no such taste */
+            bool rate(const int i, const uint8_t taste) {
+                if (i < 0 || i >= count_ || taste > kBitter) {
+                    return false;
+                }
+
+                shots_[i].taste = taste;
+                return true;
+            }
+
+            uint16_t sinceBackflush() const {
+                return sinceBackflush_;
+            }
+
+            void backflushDone() {
+                sinceBackflush_ = 0;
+            }
+
             /** @return true if a shot was waiting for its drops: save it now (the next shot starts) */
             bool settleNow() {
                 const bool was = settling_;
@@ -99,6 +143,7 @@ namespace orione {
             struct Stored {
                     uint8_t version;
                     uint8_t count;
+                    uint16_t sinceBackflush;
                     Shot shots[kSize];
             };
 
@@ -106,6 +151,7 @@ namespace orione {
                 Stored s{};
                 s.version = kVersion;
                 s.count = static_cast<uint8_t>(count_);
+                s.sinceBackflush = sinceBackflush_;
                 std::memcpy(s.shots, shots_, sizeof(shots_));
                 return s;
             }
@@ -125,15 +171,22 @@ namespace orione {
                 }
 
                 count_ = s.count;
+                sinceBackflush_ = s.sinceBackflush;
                 std::memcpy(shots_, s.shots, sizeof(shots_));
+
+                for (auto& shot : shots_) {
+                    shot.grind[sizeof(shot.grind) - 1] = '\0';
+                }
+
                 return true;
             }
 
         private:
-            static constexpr uint8_t kVersion = 2; // 2: running number for the curves
+            static constexpr uint8_t kVersion = 3; // 2: running number for the curves, 3: dose, grind, taste, backflush counter
 
             Shot shots_[kSize];
             int count_ = 0;
+            uint16_t sinceBackflush_ = 0;
             uint32_t settleStart_ = 0;
             bool settling_ = false;
     };

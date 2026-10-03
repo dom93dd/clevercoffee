@@ -74,6 +74,35 @@ namespace shot_history {
         prefs.end();
     }
 
+    // A rating from the web page (its task) is applied and saved in loop(), where the log lives
+    inline portMUX_TYPE rateLock = portMUX_INITIALIZER_UNLOCKED;
+    inline int rateIndex = -1;
+    inline uint8_t rateTaste = 0;
+
+    inline void requestRating(const int i, const uint8_t taste) {
+        portENTER_CRITICAL(&rateLock);
+        rateIndex = i;
+        rateTaste = taste;
+        portEXIT_CRITICAL(&rateLock);
+    }
+
+    /** Log only (the newest curve may still be recording) */
+    inline void saveLog() {
+        Preferences prefs;
+
+        if (prefs.begin(kNamespace, false)) {
+            const auto log = shotLog.stored();
+            prefs.putBytes(kKey, &log, sizeof(log));
+            prefs.end();
+        }
+    }
+
+    inline void backflushDone() {
+        shotLog.backflushDone();
+        saveLog();
+        LOG(INFO, "Backflush done: shot counter reset");
+    }
+
     inline void brewStarted() {
         if (shotLog.settleNow()) {
             save(); // the previous shot was still counting drops
@@ -87,6 +116,7 @@ namespace shot_history {
         shotCurve.stopped();
 
         if (shotLog.record(static_cast<float>(seconds), grams, nowUtc(), millis())) {
+            shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str());
             LOGF(INFO, "Shot logged: %.1f s, %.1f g", seconds, grams);
         }
         else {
@@ -101,14 +131,29 @@ namespace shot_history {
     inline void loop(const float grams, const double celsius) {
         shotCurve.sample(millis(), grams, static_cast<float>(celsius));
 
+        if (rateIndex >= 0) {
+            portENTER_CRITICAL(&rateLock);
+            const int i = rateIndex;
+            const uint8_t taste = rateTaste;
+            rateIndex = -1;
+            portEXIT_CRITICAL(&rateLock);
+
+            if (shotLog.rate(i, taste) && !shotLog.settling()) {
+                saveLog(); // while settling, the save after the drops takes it along
+            }
+        }
+
         if (shotLog.settle(millis(), grams)) {
             save();
         }
     }
 
-    /** {"now":UTC,"shots":[{"s":25.3,"g":36.1,"at":UTC},...]}, newest first; g null without scale, at 0 if unknown */
+    /**
+     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","r":2},...]},
+     * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter
+     */
     inline void writeJson(Print& out) {
-        out.printf(R"({"now":%u,"shots":[)", static_cast<unsigned>(nowUtc()));
+        out.printf(R"({"now":%u,"bf":%u,"shots":[)", static_cast<unsigned>(nowUtc()), static_cast<unsigned>(shotLog.sinceBackflush()));
 
         for (int i = 0; i < shotLog.count(); ++i) {
             const auto& s = shotLog.at(i);
@@ -121,7 +166,28 @@ namespace shot_history {
                 out.printf("%.1f", static_cast<double>(s.grams));
             }
 
-            out.printf(R"(,"at":%u})", static_cast<unsigned>(s.when));
+            out.printf(R"(,"at":%u,"d":)", static_cast<unsigned>(s.when));
+
+            if (s.doseTenths == 0) {
+                out.print("null");
+            }
+            else {
+                out.printf("%u.%u", s.doseTenths / 10u, s.doseTenths % 10u);
+            }
+
+            out.print(R"(,"m":")");
+
+            for (const char* c = s.grind; *c != '\0'; ++c) { // typed by the user: escape for JSON
+                if (*c == '"' || *c == '\\') {
+                    out.print('\\');
+                }
+
+                if (static_cast<unsigned char>(*c) >= 0x20) {
+                    out.print(*c);
+                }
+            }
+
+            out.printf(R"(","r":%u})", static_cast<unsigned>(s.taste));
         }
 
         out.print("]}");

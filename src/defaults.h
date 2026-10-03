@@ -20,6 +20,13 @@
 #ifdef CC_ORIONE
 #define BREW_PRESETS             "25,36;30,45;45,80" // quick choice Espresso/Doppio/Lungo of the web page: seconds,grams
 #define BREW_PRESETS_MAX_LENGTH  48
+#define BREW_DOSE                18.0              // ground coffee for the next shot (g), logged with it
+#define BREW_DOSE_MIN            5.0
+#define BREW_DOSE_MAX            30.0
+#define BREW_GRIND_MAX_LENGTH    9                 // grinder setting as typed, logged with the shot
+#define GRINDER_MAX_LENGTH       40                // grinder and beans: context for the shot analysis
+#define BACKFLUSH_REMIND_AFTER   50                // shots until the web page reminds of a backflush (0 = never)
+#define BACKFLUSH_REMIND_MAX     500
 #endif
 #define OTAPASS                  "otapass"         // default password for over-the-air updates
 #define WM_PASS                  "CleverCoffee"    // default password for WiFiManager

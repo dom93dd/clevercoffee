@@ -9,13 +9,15 @@ for backflush and tare, a config upload that needs a restart, SSE live values.
 
 --busy-every N answers every N-th GET /parameters with 503, like the request gate of the firmware.
 Test hooks: GET /__posts (POST requests so far), GET /__state (values, restarts),
-POST /__live (JSON merged into the SSE values), POST /__shot (log a shot), POST /__reset (fresh state).
+POST /__live (JSON merged into the SSE values), POST /__shot (log a shot), POST /__bf (backflush counter),
+POST /__reset (fresh state).
 """
 
 import argparse
 import copy
 import json
 import re
+import sys
 import os
 import threading
 import time
@@ -23,6 +25,9 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "index.html")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import assets  # noqa: E402  (manifest and icons, as the build puts them next to the page)
+ASSETS = assets.files()
 
 # type: 0 int, 1 bool (uint8 0/1), 2 double, 4 string, 5 enum -- EditableKind in src/Parameter.h
 BASE = {
@@ -42,6 +47,11 @@ BASE = {
     "brew.by_weight.target_weight": dict(type=2, value=36.0, min=0, max=500),
     "brew.by_weight.auto_tare": dict(type=1, value=1, min=0, max=1),
     "brew.presets": dict(type=4, value="25,36;30,45;45,80", min=0, max=48),
+    "brew.dose": dict(type=2, value=18.0, min=5, max=30),
+    "brew.grind": dict(type=4, value="12", min=0, max=9),
+    "brew.grinder": dict(type=4, value="", min=0, max=40),
+    "brew.beans": dict(type=4, value="", min=0, max=40),
+    "backflush.remind_after": dict(type=0, value=50, min=0, max=500),
     "backflush.cycles": dict(type=0, value=5, min=2, max=20),
     "backflush.fill_time": dict(type=2, value=5.0, min=3, max=10),
     "backflush.flush_time": dict(type=2, value=10.0, min=5, max=20),
@@ -71,6 +81,7 @@ class State:
         self.restarts = 0
         self.page_loads = 0
         self.shots = []  # newest first, as GET /shots of the firmware (src/shotHistory.h)
+        self.bf = 0      # shots since the last backflush
         self.live = {}  # POST /__live: fields that override the SSE values (e.g. a running shot)
         self.temp = 22.0
         self.lock = threading.Lock()
@@ -149,9 +160,14 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/timeseries":
             n = 30
             return self.send(200, json.dumps({"currentTemps": [22 + i * 2 for i in range(n)], "targetTemps": [95] * n, "heaterPowers": [100] * n}), "application/json")
+        if url.path.lstrip("/") in ASSETS:
+            name = url.path.lstrip("/")
+            kind = "application/manifest+json" if name.endswith(".json") else "font/woff2" if name.endswith(".woff2") else "image/png"
+            return self.send(200, ASSETS[name], kind)
         if url.path == "/shots":
             with S.lock:
-                return self.send(200, json.dumps({"now": int(time.time()), "shots": S.shots[:5]}), "application/json")
+                shots = [{"d": None, "m": "", "r": 0, **x} for x in S.shots[:5]]
+                return self.send(200, json.dumps({"now": int(time.time()), "bf": S.bf, "shots": shots}), "application/json")
         if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
             i = int(q.get("i", ["0"])[0])
             with S.lock:
@@ -195,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
                     S.temp += (target - S.temp) * 0.08 if pid else (22 - S.temp) * 0.02
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
-                            "state": state, "brewTime": 0}
+                            "state": state, "brewTime": 0, "scale": 2 if S.scale_at_boot else 0, "weight": 0.0 if S.scale_at_boot else None}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
@@ -211,9 +227,11 @@ class Handler(BaseHTTPRequestHandler):
             with S.lock:
                 S.posts.append({"path": url.path, "body": body.decode(errors="replace")[:200]})
         if url.path == "/parameters":
-            form = urllib.parse.parse_qs(body.decode())
+            form = urllib.parse.parse_qs(body.decode(), keep_blank_values=True)
             with S.lock:
                 for k, vals in form.items():
+                    if vals[0] == "" and k not in ("brew.grind", "brew.grinder", "brew.beans"):
+                        continue  # the firmware ignores empty values, except for these
                     if k in S.p and S.shown(k):
                         d = S.p[k]
                         d["value"] = vals[0] if d["type"] == 4 else (int(float(vals[0])) if d["type"] in (1, 5) else float(vals[0]))
@@ -239,6 +257,18 @@ class Handler(BaseHTTPRequestHandler):
                 S.restart()
             return self.send(200, "OK")
         if url.path in ("/wifireset", "/factoryreset"):
+            return self.send(200, "OK")
+        if url.path == "/shot/rate":
+            q = urllib.parse.parse_qs(url.query)
+            i, t = int(q.get("i", ["-1"])[0]), int(q.get("t", ["-1"])[0])
+            with S.lock:
+                if not (0 <= i < min(5, len(S.shots)) and 0 <= t <= 3):
+                    return self.send(400, "bad rating")
+                S.shots[i]["r"] = t
+            return self.send(200, "OK")
+        if url.path == "/__bf":  # JSON {"bf": shots since the last backflush}
+            with S.lock:
+                S.bf = json.loads(body)["bf"]
             return self.send(200, "OK")
         if url.path == "/__shot":  # JSON {"s": 25.3, "g": 36.1 or null, "at": UTC seconds or 0}
             with S.lock:

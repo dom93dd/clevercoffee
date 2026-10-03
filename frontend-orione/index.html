@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0c">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Orione">
 <title>Orione</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%23ff9226' stroke-width='4'/%3E%3C/svg%3E">
 <!--
@@ -14,7 +20,8 @@
   at a time, src/webRequestGate.h); a 503 ("busy") is retried.
 -->
 <style>
-:root{--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#0b0b0c;--card:#161618;--line:#26262a;--text:#f2f2f4;--mute:#8e8e94;--faint:#56565c;
+/* "Barlow SC": the round display's font (Barlow Semi Condensed, SIL OFL), loaded by loadFonts() */
+:root{--font:"Barlow SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#0b0b0c;--card:#161618;--line:#26262a;--text:#f2f2f4;--mute:#8e8e94;--faint:#56565c;
 --heat:#ff9226;--ready:#34d399;--brew:#f0b45c;--cool:#7dbeff;--err:#ef4444;--r:18px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 var(--font)}
@@ -50,7 +57,7 @@ nav button.on svg{color:var(--heat)}
 .sw.on{background:var(--ready)}
 .sw.on:after{transform:translateX(20px)}
 .step{display:flex;align-items:center;flex:none;background:var(--bg);border-radius:12px}
-.step button{width:40px;height:40px;border:0;background:none;color:var(--text);font-size:22px;cursor:pointer}
+.step button{width:44px;height:44px;border:0;background:none;color:var(--text);font-size:22px;cursor:pointer}
 .step input{width:76px;text-align:center;border:0;background:none;color:var(--text);font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
 .seg{display:flex;flex:none;background:var(--bg);border-radius:12px;padding:3px}
 .seg button{border:0;background:none;color:var(--mute);font-size:14px;font-weight:600;padding:8px 12px;border-radius:9px;cursor:pointer}
@@ -58,7 +65,7 @@ nav button.on svg{color:var(--heat)}
 .row.stack{flex-direction:column;align-items:stretch;gap:10px}
 .row.stack .seg{width:100%}
 .row.stack .seg button{flex:1;padding:8px 4px}
-select,.txt{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600}
+select,.txt{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:16px;font-weight:600} /* 16 px: iOS does not zoom in */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;background:var(--line);color:var(--text);text-decoration:none}
 .btn.pri{background:var(--heat);color:#1a1006}
 .btn.bad{background:none;color:var(--err);box-shadow:inset 0 0 0 1.5px var(--err)}
@@ -70,9 +77,47 @@ details summary{cursor:pointer;list-style:none;display:flex;justify-content:spac
 details summary:after{content:"+";font-size:18px;line-height:1}
 details[open] summary:after{content:"−"}
 .note{background:rgba(255,146,38,.12);color:var(--heat);border-radius:12px;padding:12px;font-size:14px;margin:12px 0}
+.alarm{border-radius:14px;padding:14px 16px;margin:12px 0;font-size:16px;font-weight:650}
+.alarm p{margin:3px 0 0;font-size:14px;font-weight:450;opacity:.9}
+.alarm.err{background:rgba(239,68,68,.16);color:#fca5a5}
+.alarm.info{background:rgba(125,190,255,.14);color:#bfdcff}
+.liveshot{margin:10px 0 6px;padding:14px 16px;border-radius:14px;background:var(--bg)}
+.liveshot .lab{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brew)}
+.liveshot .nums{display:flex;justify-content:space-between;align-items:baseline;margin-top:2px;font-variant-numeric:tabular-nums}
+.liveshot .nums b{font-size:44px;font-weight:300;letter-spacing:-.01em}
+.liveshot .nums span{font-size:28px;font-weight:300;color:#ece2d0}
+.liveshot .bar{margin:10px 0 6px}
+.liveshot .bar b{background:var(--brew)}
+.liveshot .goal{font-size:13px;color:var(--mute)}
+.scalest{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mute);margin-top:12px}
+.scalest i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.scalest.on i{background:var(--ready)}
+.dialcard{display:flex;justify-content:center;padding:16px}
+.dialcard canvas{width:min(100%,300px);height:auto;aspect-ratio:1;margin:0}
+.recipe{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0 4px;border-top:1px solid var(--line)}
+.recipe label{display:block;font-size:13px;color:var(--mute);margin:0 0 6px}
+.recipe .step{width:100%;justify-content:space-between}
+.recipe .step input{width:100%;min-width:0}
+.recipe .txt{max-width:none;width:100%;text-align:center}
+.shotinfo{font-size:13px;color:var(--mute);margin:10px 0 2px}
+.taste{display:flex;align-items:center;gap:10px;margin:12px 0 4px;font-size:14px;color:var(--mute)}
+.taste .seg{flex:1}
+.taste .seg button{flex:1}
+.cmp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 4px;font-size:13px;color:var(--mute)}
+.cmp button{border:0;border-radius:9px;background:var(--bg);color:var(--text);padding:7px 10px;font-size:13px;font-weight:600;cursor:pointer}
+.cmp button.on{box-shadow:inset 0 0 0 2px var(--heat)}
+.ai{margin:12px 0 6px;padding:12px 14px;border-radius:14px;background:rgba(168,140,255,.11);color:#ddd2ff;font-size:15px;line-height:1.45}
+.ai b{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#b9a6ff;margin-bottom:4px}
+.ai div{white-space:pre-wrap}
+.ai .linkbtn{margin-top:8px;color:#b9a6ff}
+.linkbtn{display:inline-block;background:none;border:0;color:var(--heat);font-weight:600;font-size:15px;padding:0;cursor:pointer;text-decoration:none}
+.claude p{margin:6px 0 12px;color:var(--mute);font-size:14px}
+.claude .txt{max-width:none;width:100%;margin:12px 0}
+.claude p.err{color:#fca5a5;margin-top:10px}
 .toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;transition:.25s;pointer-events:none;z-index:9}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 body.reboot .toast{bottom:calc(150px + env(safe-area-inset-bottom))}
+body.reboot{padding-bottom:calc(150px + env(safe-area-inset-bottom))}
 .rebootbar{position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));max-width:608px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 8px 8px 14px;font-size:14px;z-index:6;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .rebootbar .btn{padding:9px 12px;font-size:14px;flex:none}
 .ver{color:var(--faint);font-size:12px;margin-top:14px}
@@ -92,7 +137,7 @@ body.reboot .toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 .chips button.on small{color:var(--heat)}
 .pair{display:flex;flex-direction:column;gap:6px;flex:none}
 [hidden]{display:none!important}
-@media (min-width:720px){.rebootbar{bottom:16px}body.reboot .toast{bottom:84px}body{padding-bottom:24px}nav{position:static;max-width:640px;margin:8px auto 0;background:none;border:0;padding:0;backdrop-filter:none}nav button{flex-direction:row;gap:8px;font-size:14px;padding:10px 12px}.toast{bottom:24px}}
+@media (min-width:720px){.rebootbar{bottom:16px}body.reboot .toast{bottom:84px}body{padding-bottom:24px}body.reboot{padding-bottom:90px}nav{position:static;max-width:640px;margin:8px auto 0;background:none;border:0;padding:0;backdrop-filter:none}nav button{flex-direction:row;gap:8px;font-size:14px;padding:10px 12px}.toast{bottom:24px}}
 </style>
 </head>
 <body>
@@ -124,7 +169,19 @@ const T = {
     standby: "Standby", overtemp: "Übertemperatur", sensor: "Sensorfehler", offline: "Keine Verbindung",
     sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
     sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush",
-    sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
+    sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
+    scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?",
+    dialBrew: "BEZUG", dialDone: "FERTIG", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
+    compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
+    sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor, etwa beim Mahlgrad. Dafür brauchst du einen API-Schlüssel von Anthropic. Er bleibt nur in diesem Browser; am sichersten ist ein eigener Schlüssel mit Monatslimit.",
+    claudeGet: "Schlüssel erstellen ↗", claudeConnect: "Verbinden", claudeChecking: "Prüfe …", claudeOn: "Verbunden", claudeOnHint: "Vorschläge zu deinen Bezügen von Claude Sonnet 5", claudeOff: "Trennen",
+    claudeBad: "Der Schlüssel wurde abgelehnt. Bitte neu verbinden.", claudeNet: "Anthropic ist gerade nicht erreichbar (Internet?).", claudeForm: "Ein Anthropic-Schlüssel beginnt mit sk-ant-.",
+    claudeCredit: "Der Schlüssel ist gültig, aber das API-Guthaben ist leer. In der Anthropic-Konsole unter „Plans & Billing“ Guthaben aufladen; ein Claude-Abo zählt dafür nicht.",
+    claudeModel: "Das Modell ist mit diesem Schlüssel nicht verfügbar.", claudeBusy: "Anthropic ist gerade ausgelastet. Bitte gleich noch einmal.", claudeOther: "Anthropic meldet: ",
+    suggestion: "Vorschlag zum letzten Bezug", suggestionOf: "Vorschlag", analysis: "Auswertung", analyze: "Ausführlich auswerten",
+    bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, dann in Wartung den Backflush-Modus einschalten.",
+    "backflush.remind_after": "Erinnern nach", "backflush.remind_afterHint": "Bezügen (0 = nie)",
+    alarmOver: "Übertemperatur", alarmOverHint: "Die Heizung bleibt aus, bis die Temperatur gesunken ist.", alarmSensor: "Sensorfehler", alarmSensorHint: "Die Heizung ist aus. Temperaturfühler und Kabel prüfen.", alarmTank: "Wassertank leer", alarmTankHint: "Bitte nachfüllen, dann geht es weiter.", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
     stopHint: "Gewicht: erst Waage einschalten",
     "brew.mode": "Bezugsart", "brew.modeHint": "Automatisch: Zeit oder Gewicht beendet den Bezug",
     "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
@@ -160,7 +217,19 @@ const T = {
     standby: "Standby", overtemp: "Overtemperature", sensor: "Sensor error", offline: "No connection",
     sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
     sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush",
-    sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
+    sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
+    scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?",
+    dialBrew: "BREW", dialDone: "DONE", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
+    compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
+    sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step, e.g. the grind. It needs an API key from Anthropic. The key stays in this browser only; safest is a key of its own with a monthly limit.",
+    claudeGet: "Create a key ↗", claudeConnect: "Connect", claudeChecking: "Checking …", claudeOn: "Connected", claudeOnHint: "Suggestions on your shots by Claude Sonnet 5", claudeOff: "Disconnect",
+    claudeBad: "The key was refused. Please connect again.", claudeNet: "Anthropic cannot be reached right now (internet?).", claudeForm: "An Anthropic key starts with sk-ant-.",
+    claudeCredit: "The key is valid, but the API credit is used up. Buy credits in the Anthropic console under “Plans & Billing”; a Claude subscription does not count for it.",
+    claudeModel: "The model is not available with this key.", claudeBusy: "Anthropic is busy right now. Please try again in a moment.", claudeOther: "Anthropic says: ",
+    suggestion: "Suggestion on the last shot", suggestionOf: "Suggestion", analysis: "Analysis", analyze: "Analyse in depth",
+    bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, then switch on backflush mode in Care.",
+    "backflush.remind_after": "Remind after", "backflush.remind_afterHint": "shots (0 = never)",
+    alarmOver: "Overtemperature", alarmOverHint: "The heater stays off until the temperature has dropped.", alarmSensor: "Sensor error", alarmSensorHint: "The heater is off. Check the temperature sensor and its cable.", alarmTank: "Water tank empty", alarmTankHint: "Please refill, then it goes on.", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
     stopHint: "Weight: switch the scale on first",
     "brew.mode": "Brew mode", "brew.modeHint": "Automatic: time or weight ends the shot",
     "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
@@ -199,13 +268,16 @@ const UNIT = {"brew.setpoint": "°C", "brew.temp_offset": "°C", "display.blinki
 const STEP = {"brew.setpoint": .5, "brew.temp_offset": .1, "display.blinking.delta": .1, "brew.by_time.target_time": .5,
   "brew.by_weight.target_weight": .5, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
-  "pid.regular.i_max": 1, "pid.ema_factor": .05};
+  "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
+UNIT["brew.dose"] = "g";
 const TABS = [
-  {id: "status", icon: "i-status", names: ["pid.enabled", "brew.setpoint", "BACKFLUSH_ON", "display.language", "display.blinking.delta"]},
+  {id: "status", icon: "i-status", names: ["pid.enabled", "brew.setpoint", "BACKFLUSH_ON", "display.language", "display.blinking.delta", "backflush.remind_after"]},
   {id: "brew", icon: "i-brew", shot: true, cards: []},
   {id: "settings", icon: "i-set", cards: [
     // most used first: what changes a shot, then the machine, the rarely touched ones folded
     ["sPresets", ["brew.presets"]], // presetCard()
+    ["sCoffee", ["brew.grinder", "brew.beans"]],
+    ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
     ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "display.blescale_brew_timer"]],
     ["sTemp", ["brew.temp_offset", "display.blinking.delta"]],
     ["sStandby", ["standby.enabled", "standby.time"]],
@@ -214,13 +286,13 @@ const TABS = [
     ["sPid", ["pid.regular.kp", "pid.regular.tn", "pid.regular.tv", "pid.regular.i_max", "pid.ema_factor", "pid.use_ponm"], true],
     ["sSystem", ["system.hostname", "system.ota_password", "system.log_level"], true]]},
   {id: "care", icon: "i-care", cards: [
-    ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time"]]]}
+    ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time", "backflush.remind_after"]]]}
 ];
 
 // rows shown only while their switch is on
 const SHOWN_IF = {"standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
   "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled"};
-const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON"];
+const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind"];
 // settings the firmware only shows depending on another one (ParameterRegistry show conditions)
 const DEPENDS = {"brew.mode": /^brew\.by_|^display\.blescale/, "hardware.sensors.scale.enabled": /^brew\.by_weight|^TARE_ON|^display\.blescale/};
 function forget(id) { for (const k of Object.keys(P)) if (DEPENDS[id]?.test(k)) delete P[k]; }
@@ -233,11 +305,11 @@ function call(url, opt = {}) {
     for (let i = 0; ; i++) {
       try {
         const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 9000);
-        const r = await fetch(url, {...opt, signal: ctl.signal, cache: "no-store"});
+        const r = await fetch(url, {...opt, signal: ctl.signal, cache: opt.cache || "no-store"});
         // read the whole answer before the next request starts: the ESP32 is busy until it has sent it
-        const body = r.type === "opaqueredirect" ? "" : await r.text();
+        const buf = r.type === "opaqueredirect" ? new ArrayBuffer(0) : await r.arrayBuffer(), body = () => new TextDecoder().decode(buf);
         clearTimeout(timer);
-        if (r.status !== 503 || i >= 4) return {ok: r.ok || r.type === "opaqueredirect", status: r.status, text: async () => body, json: async () => JSON.parse(body)};
+        if (r.status !== 503 || i >= 4) return {ok: r.ok || r.type === "opaqueredirect", status: r.status, buf, text: async () => body(), json: async () => JSON.parse(body())};
       } catch (e) { if (i >= 2) throw e; }
       await new Promise(ok => setTimeout(ok, 600 + i * 700));
     }
@@ -252,7 +324,7 @@ async function load(names) {
     const part = want.slice(i, i + 8);
     const r = await call(`/parameters?offset=0&limit=8&names=${part.join(",")}`);
     if (!r.ok) throw new Error(r.status);
-    for (const p of (await r.json()).parameters || []) P[p.name] = p;
+    for (const p of (await r.json()).parameters || []) { P[p.name] = p; if (p.reboot && !(p.name in startVal)) startVal[p.name] = String(p.value); }
     for (const n of part) if (!(n in P)) P[n] = null; // not in this build or hidden: the row is left out
   }
 }
@@ -264,15 +336,19 @@ async function save(id, value) {
     if (!r.ok) throw 0;
     P[id].value = P[id].type === 4 ? value : Number(value);
     for (const x of TABS) if (x.id !== tab) dirty.add(x.id);
-    if (P[id].reboot) needRestart(); else toast(t("saved"));
+    if (P[id].reboot) { String(value) === startVal[id] ? pendingRestart.delete(id) : pendingRestart.add(id); needRestart(); } else toast(t("saved"));
+    if (id === "brew.dose" || id === "brew.by_weight.target_weight") paintRatio();
     return true;
   } catch (e) { toast(t("failed")); return false; }
 }
 const post = url => call(url, {method: "POST", redirect: "manual"}); // the toggles answer with a redirect to "/": do not fetch the page again
-function needRestart() {
+// settings that only take effect after a restart and differ from the values the machine started with
+const startVal = {}, pendingRestart = new Set();
+function needRestart() { // shows or hides the bar, in the current language
   $("#rebootText").textContent = t("needReboot"); $("#rebootBtn").textContent = t("restartNow");
   $("#rebootBtn").onclick = () => restartAndReload();
-  $("#rebootBar").hidden = false; document.body.classList.add("reboot");
+  $("#rebootBar").hidden = !pendingRestart.size; document.body.classList.toggle("reboot", !!pendingRestart.size);
+  if (!pendingRestart.size) toast(t("saved"));
 }
 // restart, wait until the machine answers again, then load the page fresh (settings that came with the start)
 async function restartAndReload(msg = t("restarting")) {
@@ -298,10 +374,11 @@ function lbl(id) { const b = el("div", "lbl"); b.append(el("div", null, t(id)));
 // ---------- controls ----------
 function switchCtl(id, onChange) {
   const b = el("button", "sw" + (P[id].value ? " on" : ""));
-  b.setAttribute("role", "switch");
+  const mark = on => { b.classList.toggle("on", !!on); b.setAttribute("aria-checked", String(!!on)); };
+  b.setAttribute("role", "switch"); b.setAttribute("aria-label", t(id === "pid.enabled" ? "pid" : id)); mark(P[id].value);
   b.onclick = async () => {
-    const v = P[id].value ? 0 : 1; b.classList.toggle("on", !!v);
-    if (!await (onChange ? onChange(v) : save(id, v))) { b.classList.toggle("on", !v); return; }
+    const v = P[id].value ? 0 : 1; mark(v);
+    if (!await (onChange ? onChange(v) : save(id, v))) { mark(!v); return; }
     if (Object.values(SHOWN_IF).includes(id) || id in DEPENDS) { forget(id); refresh(); }
   };
   return b;
@@ -311,14 +388,16 @@ function stepCtl(id) {
   inp.inputMode = "decimal";
   const show = v => inp.value = num(v, d) + (UNIT[id] ? " " + UNIT[id] : "");
   let pending, val = p.value;
-  const set = v => {
-    val = Math.min(p.max, Math.max(p.min, Math.round(v / st) * st)); show(val); clearTimeout(pending);
+  const set = (v, typed) => { // +/- go in steps; a typed value stays as precise as the field shows it
+    const q = typed ? 10 ** -d : st;
+    val = Math.min(p.max, Math.max(p.min, Math.round(v / q) * q)); show(val); clearTimeout(pending);
     if (Math.abs(val - p.value) > 1e-9) pending = setTimeout(() => save(id, val.toFixed(d)), 700); // back at the stored value: nothing to send
   };
   const minus = el("button", null, "−"), plus = el("button", null, "+");
+  minus.setAttribute("aria-label", t("less")); plus.setAttribute("aria-label", t("more")); inp.setAttribute("aria-label", t(id));
   minus.onclick = () => set(val - st); plus.onclick = () => set(val + st);
   inp.onfocus = () => { inp.value = num(val, d); inp.select(); }; // typing replaces the number
-  inp.onchange = () => { const v = parseFloat(inp.value.replace(",", ".")); isNaN(v) ? show(val) : set(v); };
+  inp.onchange = () => { const v = parseFloat(inp.value.replace(",", ".")); isNaN(v) ? show(val) : set(v, true); };
   inp.onblur = () => show(val);
   show(val);
   box.append(minus, inp, plus);
@@ -363,6 +442,10 @@ function control(id) {
   if (p.type === 1 && p.min === 0 && p.max === 1 && !(id in STEP)) return switchCtl(id);
   return stepCtl(id);
 }
+function rowToggles(r, sw) { // a tap anywhere on the row flips its switch (bigger target than the switch)
+  r.style.cursor = "pointer";
+  r.onclick = e => { if (!sw.contains(e.target)) sw.click(); };
+}
 function card(title, ids, closed) {
   const rows = ids.filter(id => P[id] && !(SHOWN_IF[id] && !P[SHOWN_IF[id]]?.value));
   if (!rows.length) return null;
@@ -373,12 +456,14 @@ function card(title, ids, closed) {
     const r = el("div", "row"), ctl = control(id);
     if (ctl.classList.contains("seg") && ctl.children.length > 2) r.classList.add("stack");
     r.append(lbl(id), ctl); box.append(r);
+    if (ctl.classList.contains("sw")) rowToggles(r, ctl);
   }
   return c;
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, ok: false};
+let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
   const h = el("section", "card hero");
@@ -386,16 +471,20 @@ function statusView(m) {
   if (P["brew.setpoint"]) { const r = el("div", "btns"); r.style.justifyContent = "center"; r.append(stepCtl("brew.setpoint")); h.append(r); }
   h.append(el("div", "bar", "<b id='heatBar'></b>"), el("div", "barlbl", `<span>${t("heater")}</span><span id="heatPct">–</span>`));
   m.append(h);
+  const a = el("div", "alarm"); a.id = "alarm"; a.hidden = true; m.insertBefore(a, h); // above everything, set by paintLive()
   if (P["BACKFLUSH_ON"]?.value) m.append(el("div", "note", t("bfActive")));
+  const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
-    r.append(lbl("pid"), switchCtl("pid.enabled")); // lbl() adds the hint
+    const sw = switchCtl("pid.enabled");
+    r.append(lbl("pid"), sw); rowToggles(r, sw); // lbl() adds the hint
     c.append(r); m.append(c);
   }
+  const dc = el("section", "card dialcard", "<canvas id='dial'></canvas>"); dc.id = "dialCard"; dc.hidden = true; m.insertBefore(dc, h); // the display's shot screen
   const g = el("section", "card");
   g.innerHTML = `<h2>${t("history")}</h2><canvas id="chart"></canvas><div class="legend"><span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("setLine")}</span><span><i style="background:rgba(255,146,38,.35)"></i>${t("heatLine")}</span></div>`;
   m.append(g);
-  paintLive();
+  paintLive(); paintBf();
 }
 // "Stop: by hand | by time | by weight" -- brew.mode plus the by_time/by_weight switches in one choice
 function stopMode() {
@@ -461,6 +550,8 @@ function presetCard() {
 function shotCard() {
   const c = el("section", "card");
   c.append(el("h2", null, t("sShot")));
+  const ls = el("div", "liveshot", `<div class="lab" id="lsLab"></div><div class="nums"><b id="lsTime"></b><span id="lsWeight"></span></div><div class="bar" id="lsBarBox"><b id="lsBar"></b></div><div class="goal" id="lsGoal"></div>`);
+  ls.id = "liveShot"; ls.hidden = true; c.append(ls);
   const cur = stopMode(), r = el("div", "row"), seg = el("div", "seg");
   if (P["brew.presets"]) {
     const chips = el("div", "chips"), byWeight = cur === "weight" || (cur === "hand" && P["hardware.sensors.scale.enabled"]?.value);
@@ -470,6 +561,11 @@ function shotCard() {
       chips.append(b);
     });
     c.append(chips);
+  }
+  if (P["brew.dose"] || P["brew.grind"]) { // the recipe goes into the log with the shot
+    const rc = el("div", "recipe");
+    for (const id of ["brew.dose", "brew.grind"]) if (P[id]) { const b = el("div"), ctl = control(id); b.append(el("label", null, t(id)), ctl); rc.append(b); }
+    c.append(rc);
   }
   const modes = ["hand", "time"].concat(P["hardware.sensors.scale.enabled"]?.value ? ["weight"] : []);
   for (const mo of modes) {
@@ -482,7 +578,10 @@ function shotCard() {
   r.classList.add("stack");
   r.append(l, seg); c.append(r);
   const id = cur === "time" ? "brew.by_time.target_time" : cur === "weight" ? "brew.by_weight.target_weight" : null;
-  if (id && P[id]) { const v = el("div", "row"); v.append(lbl(id), stepCtl(id)); c.append(v); }
+  if (id && P[id]) {
+    const v = el("div", "row"); v.append(lbl(id), stepCtl(id)); c.append(v);
+    if (cur === "weight") { const q = el("p"); q.id = "ratio"; v.firstChild.append(q); setTimeout(paintRatio); }
+  }
   if (P["TARE_ON"]) { // only with the scale
     const b = el("button", "btn", t("tare"));
     b.onclick = async () => { // /toggleTareScale flips blindly: only ask for a tare if none is pending
@@ -492,14 +591,26 @@ function shotCard() {
     };
     const w = el("div", "btns"); w.append(b); c.append(w);
   }
+  if (P["hardware.sensors.scale.enabled"]?.value) { const st = el("div", "scalest", "<i></i><span></span>"); st.id = "scaleSt"; c.append(st); }
+  setTimeout(paintLive); // fill live shot and scale state right away
   return c;
 }
 
 // ---------- last shots (GET /shots: newest first, s seconds, g grams or null, at UTC seconds or 0) ----------
-let shots = null;
+let shots = null, bfCount = 0;
 async function loadShots() {
-  try { const r = await call("/shots"); if (r.ok) shots = (await r.json()).shots; } catch (e) {}
-  paintShots();
+  try { const r = await call("/shots"); if (r.ok) { const j = await r.json(); shots = j.shots; bfCount = j.bf ?? 0; } } catch (e) {}
+  paintShots(); paintBf();
+  suggest();
+}
+function paintRatio() {
+  const r = $("#ratio"), d = P["brew.dose"]?.value, g = P["brew.by_weight.target_weight"]?.value;
+  if (r) r.textContent = d && g ? `${t("ratio")} 1:${num(g / d, 1)}` : "";
+}
+function paintBf() { // shots since the last backflush; a note on the machine tab once the reminder is due
+  const every = P["backflush.remind_after"]?.value ?? 0, note = $("#bfNote"), since = $("#bfSince");
+  if (note) { note.hidden = !(every > 0 && bfCount >= every); note.textContent = t("bfDue").replace("{n}", bfCount); }
+  if (since) since.textContent = t("bfSince").replace("{n}", bfCount);
 }
 function whenText(at) {
   if (!at) return "";
@@ -519,6 +630,7 @@ function shotsCard() {
 // The list with a bar chart of the five above it; a tap on a shot opens its curve (GET /shot?i=)
 const curves = {};     // curve per shot, by "time,seconds"
 let openShot = null;   // key of the shot whose curve is open
+let compareShot = null; // key of the shot drawn behind it
 const shotKey = x => x.at + "," + x.s;
 function paintShots(box = $("#shotList")) {
   if (!box) return;
@@ -527,41 +639,84 @@ function paintShots(box = $("#shotList")) {
   if (!shots.length) { box.append(el("p", "empty", t("noShots"))); return; }
   const hasW = shots.some(x => x.g != null);
   box.append(el("canvas", "bars"), el("div", "legend", `<span><i style="background:var(--heat)"></i>${t("shotTime")}</span>` + (hasW ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "")));
+  const top = aiBox(shots[0], true);
+  if (top) box.append(top);
   shots.forEach((x, i) => {
     const r = el("div", "shot" + (shotKey(x) === openShot ? " open" : "")), cv = el("div", "curve");
     r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), el("small", null, whenText(x.at)), el("i", null, "›"));
     cv.hidden = shotKey(x) !== openShot;
+    if (!cv.hidden) fillDetail(cv, x, i);
     r.onclick = () => toggleCurve(x, i);
     box.append(r, cv);
   });
   drawShotCharts();
 }
+const curveOf = async (x, i) => {
+  if (!curves[shotKey(x)]) try { const r = await call("/shot?i=" + i); curves[shotKey(x)] = r.ok ? await r.json() : "none"; } catch (e) { curves[shotKey(x)] = "none"; }
+  return curves[shotKey(x)];
+};
 async function toggleCurve(x, i) {
   openShot = openShot === shotKey(x) ? null : shotKey(x);
-  if (openShot && !curves[openShot]) {
-    try { const r = await call("/shot?i=" + i); curves[shotKey(x)] = r.ok ? await r.json() : "none"; } catch (e) { curves[shotKey(x)] = "none"; }
-  }
+  compareShot = null;
+  if (openShot) await curveOf(x, i);
   paintShots();
+}
+async function toggleCompare(o) {
+  compareShot = compareShot === shotKey(o) ? null : shotKey(o);
+  if (compareShot) await curveOf(o, shots.indexOf(o));
+  paintShots();
+}
+async function rateShot(x, i, taste) {
+  const r = await post(`/shot/rate?i=${i}&t=${taste}`);
+  if (!r.ok) { toast(t("failed")); return; }
+  x.r = taste;
+  paintShots();
+  if (i === 0) suggest(); // a new suggestion with the taste
+}
+// recipe, curve, taste, comparison and Claude's word on one shot
+function fillDetail(cv, x, i) {
+  const info = [], d = curves[shotKey(x)];
+  if (x.d) info.push(num(x.d, 1) + " " + t("coffeeG"));
+  if (x.m) info.push(t("brew.grind") + " " + x.m);
+  if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
+  if (info.length) { const line = el("div", "shotinfo"); line.textContent = info.join(" · "); cv.append(line); } // typed by the user: text, not HTML
+  if (d === "none") cv.append(el("p", "empty", t("noCurve")));
+  else if (d) {
+    cv.append(el("canvas"), el("div", "legend", (d.w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "") + `<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span>`));
+  }
+  const ts = el("div", "taste"), seg = el("div", "seg");
+  for (const [v, key] of [[1, "sour"], [2, "good"], [3, "bitter"]]) {
+    const b = el("button", x.r === v ? "on" : "", t(key));
+    b.onclick = () => rateShot(x, i, x.r === v ? 0 : v);
+    seg.append(b);
+  }
+  ts.append(el("span", null, t("tasteQ")), seg); cv.append(ts);
+  const others = shots.filter(o => o !== x);
+  if (d && d !== "none" && others.length) {
+    const cmp = el("div", "cmp"); cmp.append(el("span", null, t("compareWith")));
+    for (const o of others) {
+      const b = el("button", shotKey(o) === compareShot ? "on" : "", num(o.s, 1) + " s" + (o.g != null ? " · " + num(o.g, 1) + " g" : ""));
+      b.onclick = () => toggleCompare(o);
+      cmp.append(b);
+    }
+    cv.append(cmp);
+  }
+  if (i > 0) { const a = aiBox(x, false); if (a) cv.append(a); } // the newest one has its box above the list
 }
 function drawShotCharts() {
   const box = $("#shotList");
   if (!box || !shots?.length) return;
   drawShotBars(box.querySelector(".bars"));
   const k = shots.findIndex(x => shotKey(x) === openShot), cv = k < 0 ? null : box.querySelectorAll(".curve")[k];
-  if (cv && curves[openShot]) {
-    if (curves[openShot] === "none") cv.innerHTML = `<p class="empty">${t("noCurve")}</p>`;
-    else {
-      if (!cv.querySelector("canvas")) cv.innerHTML = `<canvas></canvas><div class="legend">${curves[openShot].w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : ""}<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span></div>`;
-      drawCurve(cv.querySelector("canvas"), curves[openShot]);
-    }
-  }
+  const other = compareShot && curves[compareShot] !== "none" ? curves[compareShot] : null;
+  if (cv && curves[openShot] && curves[openShot] !== "none") drawCurve(cv.querySelector("canvas"), curves[openShot], other);
 }
 function canvas2d(c) { // sharp on high-density screens; null while hidden
   if (!c || !c.clientWidth) return null;
   const dpr = devicePixelRatio || 1;
   c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
   const g = c.getContext("2d"); g.scale(dpr, dpr);
-  g.font = "11px -apple-system,sans-serif";
+  g.font = "12px 'Barlow SC',sans-serif";
   return g;
 }
 // time and weight of the last shots side by side, oldest on the left: how even were they?
@@ -585,37 +740,181 @@ function drawShotBars(c) {
     g.fillText(x.at ? new Date(x.at * 1000).toLocaleTimeString(lang === "de" ? "de-DE" : "en-GB", {hour: "2-digit", minute: "2-digit"}) : "", cx, h - 3);
   });
 }
-// one shot: weight (left scale) and brew temperature (right scale) over the seconds, dashed line where the pump stopped
-function drawCurve(c, d) {
+// one shot: weight (left scale) and brew temperature (right scale) over the seconds, dashed line where
+// the pump stopped; another shot (o) dashed and paler behind it, on the same scales
+function drawCurve(c, d, o) {
   const g = canvas2d(c);
-  if (!g) return;
-  const w = c.clientWidth, h = c.clientHeight, n = d.t.length, dt = d.dt / 1000, L = 30, R = w - 34, T = 10, B = h - 20;
-  const x = k => L + (n > 1 ? k / (n - 1) : 0) * (R - L);
-  if (n < 2) return;
-  const temps = d.t.filter(v => v != null).map(v => v / 10), wts = (d.w || []).filter(v => v != null).map(v => v / 10);
+  if (!g || d.t.length < 2) return;
+  const w = c.clientWidth, h = c.clientHeight, L = 30, R = w - 34, T = 10, B = h - 20, all = o ? [d, o] : [d];
+  const total = Math.max(...all.map(s => (s.t.length - 1) * s.dt / 1000)), X = (s, k) => L + k * s.dt / 1000 / total * (R - L);
+  const temps = all.flatMap(s => s.t.filter(v => v != null).map(v => v / 10)), wts = all.flatMap(s => (s.w || []).filter(v => v != null).map(v => v / 10));
   let tLo = temps.length ? Math.min(...temps) : 90, tHi = temps.length ? Math.max(...temps) : 94;
   if (tHi - tLo < 4) { const m = (tHi + tLo) / 2; tLo = m - 2; tHi = m + 2; }
   const gHi = Math.max(10, ...wts) * 1.1, yG = v => B - v / gHi * (B - T), yT = v => B - (v - tLo) / (tHi - tLo) * (B - T);
   g.strokeStyle = "#26262a"; g.lineWidth = 1; g.fillStyle = "#56565c";
-  const total = (n - 1) * dt, step = total > 40 ? 20 : total > 16 ? 10 : 5;
+  const step = total > 40 ? 20 : total > 16 ? 10 : 5;
   g.textAlign = "center";
   for (let s = 0; s <= total + .01; s += step) { const px = L + s / total * (R - L); g.beginPath(); g.moveTo(px, T); g.lineTo(px, B); g.stroke(); g.fillText(s + " s", px, h - 4); }
   g.textAlign = "right";
   if (wts.length) for (const f of [0, .5, 1]) g.fillText(Math.round(gHi / 1.1 * f) + " g", L - 4, yG(gHi / 1.1 * f) + 4);
   g.textAlign = "left";
   g.fillText(num(tHi, 1) + "°", R + 4, T + 8); g.fillText(num(tLo, 1) + "°", R + 4, B);
-  if (d.stop >= 0 && d.stop < n) { g.setLineDash([4, 4]); g.strokeStyle = "#56565c"; g.beginPath(); g.moveTo(x(d.stop), T); g.lineTo(x(d.stop), B); g.stroke(); g.setLineDash([]); }
-  const line = (vals, y, col) => {
-    g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); let on = false;
-    vals.forEach((v, k) => { if (v == null) { on = false; return; } on ? g.lineTo(x(k), y(v / 10)) : g.moveTo(x(k), y(v / 10)); on = true; });
+  if (d.stop >= 0 && d.stop < d.t.length) { g.setLineDash([4, 4]); g.strokeStyle = "#56565c"; g.beginPath(); g.moveTo(X(d, d.stop), T); g.lineTo(X(d, d.stop), B); g.stroke(); }
+  const line = (s, vals, y, col, dash) => {
+    g.setLineDash(dash); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); let on = false;
+    vals.forEach((v, k) => { if (v == null) { on = false; return; } on ? g.lineTo(X(s, k), y(v / 10)) : g.moveTo(X(s, k), y(v / 10)); on = true; });
     g.stroke();
   };
+  if (o) { if (o.w) line(o, o.w, yG, "rgba(236,226,208,.45)", [5, 4]); line(o, o.t, yT, "rgba(255,146,38,.45)", [5, 4]); }
+  g.setLineDash([]);
   if (d.w) { // weight with a soft fill under it
-    g.fillStyle = "rgba(236,226,208,.10)"; g.beginPath(); g.moveTo(x(0), B);
-    d.w.forEach((v, k) => g.lineTo(x(k), yG((v ?? 0) / 10))); g.lineTo(x(n - 1), B); g.fill();
-    line(d.w, yG, "#ece2d0");
+    g.fillStyle = "rgba(236,226,208,.10)"; g.beginPath(); g.moveTo(X(d, 0), B);
+    d.w.forEach((v, k) => g.lineTo(X(d, k), yG((v ?? 0) / 10))); g.lineTo(X(d, d.w.length - 1), B); g.fill();
+    line(d, d.w, yG, "#ece2d0", []);
   }
-  line(d.t, yT, "#ff9226");
+  line(d, d.t, yT, "#ff9226", []);
+}
+
+// ---------- Claude: suggestions on the shots, asked by this browser directly (the machine never sees the key) ----------
+const AI_MODEL = "claude-sonnet-5", AI_URL = "https://api.anthropic.com/v1/messages";
+const store = { // localStorage can be missing or throw (private mode): then simply no Claude
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
+};
+const aiKey = () => store.get("orione.claude.key");
+const aiCache = x => `orione.ai.${shotKey(x)}.${x.r || 0}`; // the taste is part of it: rated anew, asked anew
+const aiBusy = {}, aiLive = {};
+// streams the answer; onText gets the text so far. Without "think" the model answers right away:
+// its thinking block would otherwise come first and can use up a small token budget, leaving no text
+async function claude(key, system, user, maxTokens, onText, think = false) {
+  const r = await fetch(AI_URL, {method: "POST", headers: {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true"},
+    body: JSON.stringify({model: AI_MODEL, max_tokens: maxTokens, stream: true, ...(think ? {} : {thinking: {type: "disabled"}}), system, messages: [{role: "user", content: user}]})});
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw Object.assign(new Error(j.error?.message || "HTTP " + r.status), {status: r.status, type: j.error?.type || ""});
+  }
+  const rd = r.body.getReader(), dec = new TextDecoder();
+  let buf = "", text = "";
+  for (;;) {
+    const {value, done} = await rd.read();
+    if (done) break;
+    buf += dec.decode(value, {stream: true});
+    for (let i; (i = buf.indexOf("\n\n")) >= 0; buf = buf.slice(i + 2)) {
+      const data = buf.slice(0, i).split("\n").find(l => l.startsWith("data:"));
+      if (!data) continue;
+      const ev = JSON.parse(data.slice(5));
+      if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") { text += ev.delta.text; onText?.(text); }
+      else if (ev.type === "error") throw Object.assign(new Error(ev.error?.message || "error"), {status: 500});
+    }
+  }
+  if (!text.trim()) throw Object.assign(new Error("no text"), {status: 0}); // treated like no connection: no suggestion
+  return text.trim();
+}
+const AI_SYSTEM = () => `Du bist ein erfahrener Barista und kennst Siebträgermaschinen auch technisch. Du bekommst die Daten der letzten Espresso-Bezüge einer Maschine. Antworte ${lang === "de" ? "auf Deutsch" : "in English"}, ohne Einleitung, ohne Aufzählungszeichen und ohne Markdown.`;
+const AI_SHORT = "Bewerte den neuesten Bezug in höchstens 35 Wörtern und nenne genau einen konkreten nächsten Schritt (zum Beispiel Mahlgrad eine Stufe feiner oder gröber, Dosis ±0,5 g, anderes Verhältnis, Temperatur ±1 °C). Ein Espresso läuft meist 25–30 s bei etwa 1:2; sauer spricht eher für feiner, heißer oder ein längeres Verhältnis, bitter für gröber, kühler oder ein kürzeres. Passt alles, sag das und schlag nichts vor.";
+const AI_LONG = "Werte die Bezüge gründlich aus: was Zeit, Gewichtsverlauf (Durchfluss, Anlauf, Kanalbildung), Temperaturverlauf und die Konstanz über die letzten Bezüge zeigen, mögliche Ursachen und eine Reihenfolge von höchstens drei Schritten. Höchstens 150 Wörter in kurzen Absätzen.";
+function coffeeContext() {
+  const v = id => P[id]?.value, m = stopMode(), out = [];
+  out.push("Maschine: Quick Mill Orione 3000, Einkreiser mit Thermoblock, Vibrationspumpe (Ulka), 3-Wege-Magnetventil, kein Überdruckventil, kein Druckprofil; Steuerung CleverCoffee mit PID.");
+  out.push(`Brühtemperatur-Soll ${v("brew.setpoint")} °C${v("brew.temp_offset") ? `, Offset ${v("brew.temp_offset")} K` : ""}.`);
+  if (v("brew.grinder")) out.push("Mühle: " + v("brew.grinder"));
+  if (v("brew.beans")) out.push("Bohne: " + v("brew.beans"));
+  out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
+  out.push("Letzte Bezüge, neuester zuerst:");
+  shots.forEach((x, i) => {
+    const p = [num(x.s, 1) + " s"];
+    if (x.g != null) p.push(num(x.g, 1) + " g in der Tasse");
+    if (x.d) p.push(num(x.d, 1) + " g Kaffee");
+    if (x.d && x.g != null) p.push("Verhältnis 1:" + num(x.g / x.d, 2));
+    if (x.m) p.push("Mahlgrad " + x.m);
+    if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
+    out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
+  });
+  const c = curves[shotKey(shots[0])];
+  if (c && c !== "none") {
+    const step = Math.max(1, Math.round(1000 / c.dt)), sec = a => a.filter((_, k) => k % step === 0).map(v => v == null ? "-" : num(v / 10, 1)).join(" ");
+    out.push(`Verlauf des neuesten Bezugs je Sekunde (Pumpe aus nach ${num(c.stop * c.dt / 1000, 1)} s):`);
+    if (c.w) out.push("Gewicht in g: " + sec(c.w));
+    out.push("Temperatur in °C: " + sec(c.t));
+  }
+  return out.join("\n");
+}
+async function ask(x, long) {
+  const key = aiKey(), k = aiCache(x) + (long ? ".long" : "");
+  if (!key || aiBusy[k] || store.get(k)) return;
+  aiBusy[k] = true; paintShots();
+  try {
+    await curveOf(shots[0], 0);
+    const text = await claude(key, AI_SYSTEM(), coffeeContext() + "\n\n" + (long ? AI_LONG : AI_SHORT), long ? 4000 : 300, s => { aiLive[k] = s; document.querySelectorAll(`[data-ai="${CSS.escape(k)}"]`).forEach(e => e.textContent = s); }, long);
+    if (text) store.set(k, text);
+    store.set("orione.claude.err", null);
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) { store.set("orione.claude.key", null); store.set("orione.claude.bad", "1"); }
+    else if (e.status && e.status !== 429 && e.status !== 529 && e.status < 500) store.set("orione.claude.err", claudeError(e)); // e.g. credit used up: told in the settings
+    dirty.add("settings");
+    // no suggestion then, and nothing in the shot views (offline, Anthropic busy: quietly)
+  }
+  delete aiBusy[k]; delete aiLive[k];
+  paintShots();
+}
+const suggest = () => { if (shots?.length) ask(shots[0], false); };
+// what went wrong, in words; a network failure (fetch throws without a status) is "not reachable"
+function claudeError(e) {
+  if (!e.status) return t("claudeNet");
+  if (e.status === 401 || e.status === 403) return t("claudeBad");
+  if (/credit balance/i.test(e.message)) return t("claudeCredit");
+  if (e.status === 404 || e.type === "not_found_error") return t("claudeModel");
+  if (e.status === 429 || e.status === 529 || e.status >= 500) return t("claudeBusy");
+  return t("claudeOther") + e.message;
+}
+// Claude's word on a shot, or null: nothing without a connection, nothing before the first word
+function aiBox(x, newest) {
+  if (!aiKey()) return null; // not connected: no suggestions at all
+  const k = aiCache(x), long = store.get(k + ".long") || aiLive[k + ".long"], short = store.get(k) || aiLive[k];
+  const text = long || short || (aiBusy[k] ? "…" : null);
+  if (!text) return null;
+  const b = el("div", "ai"), body = el("div", null, "");
+  body.textContent = text; body.dataset.ai = long ? k + ".long" : k;
+  b.append(el("b", null, t(long ? "analysis" : newest ? "suggestion" : "suggestionOf")), body);
+  if (!long && short && aiKey() && x === shots[0]) {
+    const more = el("button", "linkbtn", aiBusy[k + ".long"] ? "…" : t("analyze"));
+    more.onclick = () => ask(x, true);
+    b.append(more);
+  }
+  return b;
+}
+function claudeCard() {
+  const c = el("section", "card claude"), body = el("div");
+  c.append(el("h2", null, t("sClaude")), body);
+  const paint = msg => {
+    body.innerHTML = "";
+    if (aiKey()) {
+      const r = el("div", "row"), l = el("div", "lbl"), off = el("button", "btn", t("claudeOff"));
+      l.append(el("div", null, "✓ " + t("claudeOn")), el("p", null, t("claudeOnHint")));
+      off.onclick = () => { store.set("orione.claude.key", null); store.set("orione.claude.err", null); paint(); paintShots(); };
+      r.append(l, off); body.append(r);
+      if (store.get("orione.claude.err")) { const e = el("p", "err"); e.textContent = store.get("orione.claude.err"); body.append(e); } // the last suggestion failed
+      return;
+    }
+    const get = el("a", "linkbtn", t("claudeGet")), inp = el("input", "txt"), go = el("button", "btn pri", t("claudeConnect"));
+    get.href = "https://console.anthropic.com/settings/keys"; get.target = "_blank"; get.rel = "noopener";
+    inp.type = "password"; inp.placeholder = "sk-ant-…"; inp.autocomplete = "off"; inp.setAttribute("aria-label", "API key");
+    go.onclick = async () => {
+      const key = inp.value.trim();
+      if (!key.startsWith("sk-ant-")) return paint(t("claudeForm"));
+      go.disabled = true; go.textContent = t("claudeChecking");
+      try {
+        await claude(key, "Antworte nur mit OK.", "Test", 5);
+        store.set("orione.claude.key", key); store.set("orione.claude.bad", null); store.set("orione.claude.err", null);
+        paint(); suggest();
+      } catch (e) { paint(claudeError(e)); }
+    };
+    body.append(el("p", null, t("claudeIntro")), get, inp, go);
+    const err = msg || (store.get("orione.claude.bad") ? t("claudeBad") : "");
+    if (err) { const e = el("p", "err"); e.textContent = err; body.append(e); } // may hold Anthropic's own words
+  };
+  paint();
+  return c;
 }
 
 function stateText() {
@@ -629,9 +928,86 @@ function stateText() {
   if (d <= band) return [t("ready"), "var(--ready)"];
   return live.temp < live.target ? [t("heating"), "var(--heat)"] : [t("cooling"), "var(--cool)"];
 }
+function paintAlarm() {
+  const a = $("#alarm"), k = live.ok ? {100: ["alarmOver", "err"], 110: ["alarmSensor", "err"], 70: ["alarmTank", "info"]}[live.state] : null;
+  if (!a) return;
+  a.hidden = !k;
+  if (k) { a.className = "alarm " + k[1]; a.innerHTML = `${t(k[0])}<p>${t(k[0] + "Hint")}</p>`; }
+}
+function paintShotLive() {
+  const ls = $("#liveShot"), st = $("#scaleSt");
+  if (st) {
+    st.classList.toggle("on", live.scale === 2);
+    st.lastChild.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : t("scaleOff");
+  }
+  const brewing = live.ok && live.state === 20;
+  if (brewing) lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, until: 0};
+  else if (lastShot && !lastShot.until) { // the first value after the shot carries its final time; the result stays a little
+    lastShot.t = Math.max(lastShot.t, live.brewTime || 0); lastShot.until = Date.now() + 15000;
+  }
+  if (!ls) return;
+  const x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
+  ls.hidden = !x;
+  if (!x) return;
+  const m = stopMode(), id = m === "weight" ? "brew.by_weight.target_weight" : m === "time" ? "brew.by_time.target_time" : null, goal = id ? P[id]?.value : null;
+  $("#lsLab").textContent = t(brewing ? "liveBrew" : "liveDone");
+  $("#lsTime").textContent = num(x.t, 1) + " s";
+  $("#lsWeight").textContent = x.w == null ? "" : num(x.w, 1) + " g";
+  $("#lsBarBox").hidden = !goal;
+  if (goal) $("#lsBar").style.transform = `scaleX(${Math.max(0, Math.min(1, (m === "weight" ? x.w ?? 0 : x.t) / goal))})`;
+  $("#lsGoal").textContent = goal ? `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}` : t("stopHand");
+}
+// During a shot (and for a moment after it) the machine tab shows what the round display shows:
+// the ring fills with the time, or with the weight when the scale stops the shot (lib/RoundDisplay drawBrew)
+function paintDial() {
+  const card = $("#dialCard"), hero = $("#tNow")?.closest(".card");
+  if (!card) return;
+  const brewing = live.ok && live.state === 20, x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
+  card.hidden = !x;
+  if (hero) hero.hidden = !!x;
+  if (!x) return;
+  const m = stopMode(), goalT = P["brew.by_time.target_time"]?.value, goalW = P["brew.by_weight.target_weight"]?.value;
+  drawDial($("#dial"), {time: x.t, weight: x.w, done: !brewing, byWeight: m === "weight" && x.w != null && goalW > 0, goalT: m === "time" ? goalT : 0, goalW});
+}
+function drawDial(c, d) {
+  const g = canvas2d(c);
+  if (!g) return;
+  const k = c.clientWidth / 240, F = "'Barlow SC',sans-serif", rgb = (a, b, f) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * f)).join(",")})`;
+  const TEXT = [242, 242, 244], DIM = [142, 142, 148], BREW = [240, 180, 92], BREWDARK = [110, 62, 24], READY = [52, 211, 153], WEIGHT = [236, 226, 208], BG = [0, 0, 0];
+  g.scale(k, k);
+  const rad = deg => (deg - 90) * Math.PI / 180, ring = (a0, a1, col) => { g.strokeStyle = col; g.beginPath(); g.arc(120, 120, 111, rad(a0), rad(a1)); g.stroke(); };
+  g.fillStyle = "#000"; g.beginPath(); g.arc(120, 120, 120, 0, 2 * Math.PI); g.fill();
+  g.lineWidth = 9; g.lineCap = "butt"; ring(0, 360, "rgb(34,34,36)");
+  const scale = d.byWeight ? d.goalW : d.goalT > 0 ? d.goalT : 30, val = d.byWeight ? d.weight : d.time, fill = Math.max(0, val / scale);
+  const tick = (a, r0, w, col) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(120 + r0 * Math.cos(rad(a)), 120 + r0 * Math.sin(rad(a))); g.lineTo(120 + 100 * Math.cos(rad(a)), 120 + 100 * Math.sin(rad(a))); g.stroke(); };
+  const ticks = d.byWeight ? 4 : Math.floor(scale / 5);
+  for (let i = 1; i < ticks; i++) tick(360 * i / ticks, 95, 1.6, "rgb(78,78,82)");
+  tick(0, 90, 2.6, "rgb(210,210,214)");
+  g.lineWidth = 9;
+  const end = 360 * Math.min(fill, 1), n = Math.max(1, Math.ceil(end / 4)); // the display's gradient along the ring, in 4 degree pieces
+  for (let i = 0; i < n; i++) ring(end * i / n, end * (i + 1) / n + .3, rgb(BREWDARK, BREW, i / n));
+  if (fill > 1) ring(0, 360 * Math.min(fill - 1, 1), rgb(BREW, TEXT, .5)); // second lap
+  if (!d.done) { g.fillStyle = rgb(BREW, TEXT, .4); g.beginPath(); g.arc(120 + 111 * Math.cos(rad(360 * (fill % 1))), 120 + 111 * Math.sin(rad(360 * (fill % 1))), 6.5, 0, 2 * Math.PI); g.fill(); }
+  g.textAlign = "center"; g.textBaseline = "alphabetic";
+  g.font = `600 19px ${F}`; if ("letterSpacing" in g) g.letterSpacing = "2px";
+  g.fillStyle = rgb(d.done ? READY : BREW, BREW, 0); g.fillText(t(d.done ? "dialDone" : "dialBrew"), 120, 64);
+  if ("letterSpacing" in g) g.letterSpacing = "0px";
+  const big = num(val, 1), unit = d.byWeight ? "g" : "s";
+  g.font = `500 80px ${F}`; const wb = g.measureText(big).width; g.font = `500 34px ${F}`; const wu = g.measureText(unit).width;
+  const left = 120 - (wb + 4 + wu) / 2;
+  g.textAlign = "left"; g.fillStyle = rgb(TEXT, TEXT, 0);
+  g.font = `500 80px ${F}`; g.fillText(big, left, 139); g.font = `500 34px ${F}`; g.fillStyle = rgb(DIM, DIM, 0); g.fillText(unit, left + wb + 4, 139);
+  g.textAlign = "center";
+  if (d.byWeight) { g.font = `600 32px ${F}`; g.fillStyle = rgb(TEXT, BG, .25); g.fillText(num(d.time, 1) + " s", 120, 177); }
+  else if (d.weight != null) { g.font = `600 32px ${F}`; g.fillStyle = rgb(WEIGHT, WEIGHT, 0); g.fillText(num(d.weight, 1) + " g", 120, 177); }
+  else if (d.goalT > 0) { g.font = `500 19px ${F}`; g.fillStyle = rgb(DIM, DIM, 0); g.fillText(`${t("goal")} ${fmt(d.goalT)} s`, 120, 172); }
+}
 function paintLive() {
   const [txt, col] = stateText();
   $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip").style.color = col === "var(--faint)" ? "" : col;
+  const title = txt + " · Orione"; // also in the tab and app switcher
+  if (document.title !== title) document.title = title;
+  paintAlarm(); paintShotLive(); paintDial();
   const n = $("#tNow");
   if (!n) return;
   n.innerHTML = (live.temp == null ? "–" : num(live.temp, 1)) + "<small>°C</small>";
@@ -654,7 +1030,7 @@ function drawChart() {
   const stepC = hi - lo > 40 ? 20 : hi - lo > 15 ? 10 : 5;
   lo = Math.floor((lo - 1) / stepC) * stepC; hi = Math.ceil((hi + 1) / stepC) * stepC;
   const y = v => h - 18 - (v - lo) / (hi - lo) * (h - 26);
-  g.font = "11px -apple-system,sans-serif"; g.fillStyle = "#56565c"; g.strokeStyle = "#26262a"; g.lineWidth = 1;
+  g.font = "12px 'Barlow SC',sans-serif"; g.fillStyle = "#56565c"; g.strokeStyle = "#26262a"; g.lineWidth = 1;
   for (let v = lo; v <= hi; v += stepC) { g.beginPath(); g.moveTo(0, y(v)); g.lineTo(w - 30, y(v)); g.stroke(); g.fillText(v + "°", w - 26, y(v) + 4); }
   g.fillStyle = "rgba(255,146,38,.18)"; g.beginPath(); g.moveTo(x(pts[0][0]), h - 18);
   for (const p of pts) g.lineTo(x(p[0]), h - 18 - p[3] / 100 * (h - 26) * .35);
@@ -662,18 +1038,27 @@ function drawChart() {
   const line = (i, col, dash) => { g.setLineDash(dash); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(x(p[0]), y(p[i])) : g.moveTo(x(p[0]), y(p[i]))); g.stroke(); };
   line(2, "#56565c", [4, 4]); line(1, "#ff9226", []); g.setLineDash([]);
 }
+let es = null, started = false;
 function connectLive() {
-  const es = new EventSource("/events");
+  if (es) return;
+  started = true;
+  es = new EventSource("/events");
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
     if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
   });
   es.onerror = () => { live.ok = false; paintLive(); };
 }
+// A hidden page (phone locked, other tab) stops reading but would keep the connection, and the
+// machine would keep sending into it: close it, open it again when the page is back
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { es?.close(); es = null; } else if (started) connectLive();
+});
+addEventListener("pagehide", () => { es?.close(); es = null; });
 async function loadHistory() {
   try {
     const d = await (await call("/timeseries")).json(), n = d.currentTemps.length, now = Date.now();
@@ -709,7 +1094,10 @@ let version = "";
 
 // ---------- tabs ----------
 let tab = (location.hash || "#status").slice(1);
-function setLang() { lang = P["display.language"] && P["display.language"].value !== 0 ? "en" : "de"; document.documentElement.lang = lang; }
+function setLang() {
+  lang = P["display.language"] && P["display.language"].value !== 0 ? "en" : "de"; document.documentElement.lang = lang;
+  if (pendingRestart.size) needRestart(); // the bar's text too
+}
 function renderNav() {
   const n = $("#nav"); n.innerHTML = "";
   for (const x of TABS) {
@@ -726,8 +1114,11 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : card(title, ids, closed); if (c) m.append(c); }
-  if (def.id === "care") careExtras(m);
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : card(title, ids, closed); if (c) m.append(c); }
+  if (def.id === "care") {
+    const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector(".card")?.append(since);
+    careExtras(m); paintBf();
+  }
 }
 function refresh() { for (const x of TABS) dirty.add(x.id); render(); }
 async function render() {
@@ -743,6 +1134,7 @@ async function render() {
     if (v) v.replaceWith(nv); else $("#main").append(nv);
     views[def.id] = v = nv;
     dirty.delete(def.id);
+    paintBf(); // its lines exist only now that the view is in the page
   }
   for (const [id, e] of Object.entries(views)) e.hidden = id !== def.id;
   shown = def.id;
@@ -751,7 +1143,19 @@ async function render() {
   if (def.shot) drawShotCharts(); // canvases have no size while their tab is hidden
 }
 addEventListener("hashchange", () => { tab = location.hash.slice(1); render(); });
-addEventListener("resize", () => { drawChart(); drawShotCharts(); });
+addEventListener("resize", () => { drawChart(); drawShotCharts(); paintDial(); });
+// The display's font, through the request chain like everything else (the browser would fetch
+// @font-face files in parallel with the page's requests); from the browser cache after the first time
+async function loadFonts() {
+  if (!window.FontFace) return;
+  for (const [file, weight] of [["barlow-sc-500.woff2", "100 550"], ["barlow-sc-600.woff2", "551 900"]]) {
+    try {
+      const r = await call("/fonts/" + file, {cache: "default"});
+      if (r.ok) { const f = new FontFace("Barlow SC", r.buf, {weight}); await f.load(); document.fonts.add(f); }
+    } catch (e) {} // the system font stays
+  }
+  drawChart(); drawShotCharts(); paintDial(); // canvases draw with it from now on
+}
 (async () => {
   try { await load(TABS[0].names); } catch (e) {}
   setLang();
@@ -759,6 +1163,7 @@ addEventListener("resize", () => { drawChart(); drawShotCharts(); });
   await loadHistory();
   paintLive();
   connectLive();
+  await loadFonts();
   for (const x of TABS) { try { await load(needOf(x)); } catch (e) {} } // the other tabs' values, one request after another
   loadShots();
 })();

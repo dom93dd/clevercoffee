@@ -67,10 +67,20 @@ namespace web_gate {
             return;
         }
 
-        AsyncWebServerResponse* response = request->beginResponse(503, "text/plain", "busy, retry");
+        // a page load gets a small page that tries again by itself instead of a bare "busy, retry"
+        const bool page = request->hasHeader("Accept") && request->header("Accept").indexOf("text/html") >= 0;
+        AsyncWebServerResponse* response = page ? request->beginResponse(503, "text/html",
+                                                                          "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><meta http-equiv=refresh content=3>"
+                                                                          "<body style='background:#0b0b0c;color:#8e8e94;font:16px -apple-system,sans-serif;text-align:center;padding-top:40vh'>"
+                                                                          "Orione ist kurz beschäftigt …")
+                                                : request->beginResponse(503, "text/plain", "busy, retry");
         response->addHeader("Retry-After", "2");
         request->send(response);
     }
+
+    // live values (embeddedWebserver.h, live_events): connections and their backlog, for the timing build
+    inline volatile uint8_t sseClients = 0;
+    inline volatile uint8_t sseWaiting = 0;
 
     inline void finished();
 

@@ -394,6 +394,11 @@ class Config {
             _configDefs.emplace("brew.by_weight.auto_tare", ConfigDef::forBool(false));
 #ifdef CC_ORIONE
             _configDefs.emplace("brew.presets", ConfigDef::forString(BREW_PRESETS, BREW_PRESETS_MAX_LENGTH)); // only the web page reads it
+            _configDefs.emplace("brew.dose", ConfigDef::forDouble(BREW_DOSE, BREW_DOSE_MIN, BREW_DOSE_MAX));
+            _configDefs.emplace("brew.grind", ConfigDef::forString("", BREW_GRIND_MAX_LENGTH));
+            _configDefs.emplace("brew.grinder", ConfigDef::forString("", GRINDER_MAX_LENGTH));
+            _configDefs.emplace("brew.beans", ConfigDef::forString("", GRINDER_MAX_LENGTH));
+            _configDefs.emplace("backflush.remind_after", ConfigDef::forInt(BACKFLUSH_REMIND_AFTER, 0, BACKFLUSH_REMIND_MAX));
 #endif
 
             // Pre-infusion

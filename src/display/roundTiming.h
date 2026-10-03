@@ -96,8 +96,8 @@ namespace round_timing {
                              static_cast<unsigned>(lowHeap / 1024), static_cast<unsigned>(ESP.getMinFreeHeap() / 1024), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
 
 #ifdef CC_ORIONE
-            n += snprintf(line + n, sizeof(line) - n, " web %d/%u q%u r%u b%u |", web_gate::active, static_cast<unsigned>(web_gate::waiting.size()), static_cast<unsigned>(web_gate::queuedTotal),
-                          static_cast<unsigned>(web_gate::rejectedTotal), static_cast<unsigned>(web_gate::brakedTotal));
+            n += snprintf(line + n, sizeof(line) - n, " web %d/%u q%u r%u b%u sse %u/%u |", web_gate::active, static_cast<unsigned>(web_gate::waiting.size()), static_cast<unsigned>(web_gate::queuedTotal),
+                          static_cast<unsigned>(web_gate::rejectedTotal), static_cast<unsigned>(web_gate::brakedTotal), static_cast<unsigned>(web_gate::sseClients), static_cast<unsigned>(web_gate::sseWaiting));
 #endif
 
             for (int i = 0; i < kCount && n > 0 && n < static_cast<int>(sizeof(line)); ++i) {
@@ -131,7 +131,7 @@ namespace round_timing {
         char line[400];
         int n = snprintf(line, sizeof(line), "TIMING stack free");
 
-        for (const char* name : {"loopTask", "async_tcp", "scale", "nimble_host", "btController", "arduino_events", "mdns", "tiT", "wifi", "esp_timer", "Tmr Svc", "sys_evt", "ipc0", "ipc1", "IDLE"}) {
+        for (const char* name : {"loopTask", "async_tcp", "sse", "scale", "nimble_host", "btController", "arduino_events", "mdns", "tiT", "wifi", "esp_timer", "Tmr Svc", "sys_evt", "ipc0", "ipc1", "IDLE"}) {
             if (TaskHandle_t t = xTaskGetHandle(name); t != nullptr && n > 0 && n < static_cast<int>(sizeof(line))) {
                 n += snprintf(line + n, sizeof(line) - n, " %s %u", name, static_cast<unsigned>(uxTaskGetStackHighWaterMark(t)));
             }

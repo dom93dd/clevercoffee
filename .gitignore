@@ -24,3 +24,4 @@ frontend-orione/test/package-lock.json
 frontend-orione/test/out/
 frontend-orione/test/__pycache__/
 frontend/package-lock.json
+__pycache__/

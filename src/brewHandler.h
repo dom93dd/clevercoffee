@@ -75,7 +75,11 @@ inline void checkBrewSwitch() {
     }
 
     static bool loggedEmptyWaterTank = false;
+#ifdef CC_FAKE_TEMP_SENSOR
+    brewSwitchReading = bench::brewSwitchOn() ? HIGH : LOW; // bench: GPIO34 floats without the PCB
+#else
     brewSwitchReading = brewSwitch->isPressed();
+#endif
 
     // Block brewSwitch input when water tank is empty
     if (machineState == kWaterTankEmpty) {
@@ -511,6 +515,9 @@ inline void backflush() {
         case kBackflushEnding:
             if (millis() - startingTime > backflushFlushTime * 1000) {
                 currBackflushState = kBackflushFinished;
+#ifdef CC_ORIONE
+                shot_history::backflushDone(); // all cycles run: the reminder starts counting again
+#endif
             }
 
             break;

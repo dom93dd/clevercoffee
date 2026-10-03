@@ -83,6 +83,67 @@ inline String getTempString() {
     return jsonTemps;
 }
 
+#ifdef CC_ORIONE
+/**
+ * Live values go out from their own task on core 0, where the web server runs: writing to a client
+ * waits for the TCP/IP task, measured up to 134 ms (02.10.2026), and loop() must not wait for it
+ * (display, brew stop by time or weight, scale). loop() only leaves a copy and a notification.
+ */
+namespace live_events {
+
+    struct Values {
+            double temp;
+            double target;
+            double power;
+            int state;
+            double brewTime;
+            int scale;     // 0 no scale, 1 not connected, 2 connected
+            double weight; // brew weight while brewing, the scale's reading otherwise
+    };
+
+    inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
+    inline Values latest{};
+    inline TaskHandle_t task = nullptr;
+
+    inline void run(void*) {
+        char json[200];
+
+        for (;;) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            portENTER_CRITICAL(&lock);
+            const Values v = latest;
+            portEXIT_CRITICAL(&lock);
+
+            web_gate::sseClients = static_cast<uint8_t>(events.count());
+            web_gate::sseWaiting = static_cast<uint8_t>(events.avgPacketsWaiting());
+
+            if (events.count() > 0) {
+                int n = snprintf(json, sizeof(json), R"({"currentTemp":%.2f,"targetTemp":%.2f,"heaterPower":%.1f,"state":%d,"brewTime":%.1f,"scale":%d)", v.temp, v.target, v.power, v.state, v.brewTime, v.scale);
+                snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f})" : R"(,"weight":null})", v.weight);
+                events.send(json, "new_temps", millis());
+            }
+        }
+    }
+
+    inline void begin() {
+        if (task == nullptr) {
+            xTaskCreatePinnedToCore(run, "sse", 3072, nullptr, 1, &task, 0);
+        }
+    }
+
+    inline void publish(const Values& v) {
+        portENTER_CRITICAL(&lock);
+        latest = v;
+        portEXIT_CRITICAL(&lock);
+
+        if (task != nullptr) {
+            xTaskNotifyGive(task);
+        }
+    }
+
+} // namespace live_events
+#endif
+
 // proper modulo function (% is remainder, so will return negatives)
 inline int mod(const int a, const int b) {
     const int r = a % b;
@@ -351,8 +412,15 @@ inline void serverSetup() {
 
             const auto requestParams = request->params();
 
+#ifdef CC_ORIONE
+            // grind, grinder and beans may be emptied; everything else (host name, passwords, numbers) not
+            const auto mayBeEmpty = [](const String& name) { return name == "brew.grind" || name == "brew.grinder" || name == "brew.beans"; };
+#else
+            const auto mayBeEmpty = [](const String&) { return false; };
+#endif
+
             for (auto i = 0u; i < requestParams; ++i) {
-                if (auto* p = request->getParam(i); p && p->name().length() > 0 && p->value().length() > 0) {
+                if (auto* p = request->getParam(i); p && p->name().length() > 0 && (p->value().length() > 0 || mayBeEmpty(p->name()))) {
                     const String& varName = p->name();
                     const String& value = p->value();
 
@@ -437,12 +505,41 @@ inline void serverSetup() {
         request->send(response);
     });
 
+#ifdef CC_FAKE_TEMP_SENSOR
+    // bench build only: virtual brew switch (src/benchSwitch.h)
+    server.on("/bench/brew", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const long s = request->hasParam("s") ? request->getParam("s")->value().toInt() : 25;
+        bench::holdBrewSwitch(static_cast<uint32_t>(constrain(s, 0L, 120L)));
+        request->send(200, "text/plain", s > 0 ? "brew switch on" : "brew switch off");
+    });
+
+    server.on("/bench/wifi-outage", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const long s = request->hasParam("s") ? request->getParam("s")->value().toInt() : 180;
+        bench::wifiOutageUntilMs = millis() + static_cast<uint32_t>(constrain(s, 10L, 1800L)) * 1000;
+        bench::wifiOutageStart = true;
+        request->send(200, "text/plain", "router off");
+    });
+
+#endif
 #ifdef CC_ORIONE
     server.on("/shots", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         shot_history::writeJson(*response);
         request->send(response);
     }));
+
+    server.on("/shot/rate", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const long i = request->hasParam("i") ? request->getParam("i")->value().toInt() : -1;
+        const long t = request->hasParam("t") ? request->getParam("t")->value().toInt() : -1;
+
+        if (i < 0 || i >= shot_history::shotLog.count() || t < 0 || t > orione::kBitter) {
+            request->send(400, "text/plain", "bad rating");
+            return;
+        }
+
+        shot_history::requestRating(static_cast<int>(i), static_cast<uint8_t>(t));
+        request->send(200, "text/plain", "OK");
+    });
 
     server.on("/shot", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         const int i = request->hasParam("i") ? request->getParam("i")->value().toInt() : 0;
@@ -657,9 +754,17 @@ inline void serverSetup() {
         }
 
         client->send("hello", nullptr, millis(), 10000);
+#ifdef CC_ORIONE
+        // A phone that keeps the connection but stops reading (locked, tab in the background) would
+        // tie up to 16 KB here; heap ran down to an 11 KB block with the brake on (02.10.2026)
+        client->set_max_inflight_bytes(SSE_MIN_INFLIGH);
+#endif
     });
 
     server.addHandler(&events);
+#ifdef CC_ORIONE
+    live_events::begin();
+#endif
 
     // The four pages became tabs of one page, addressed by hash. Redirect the old URLs
     // so existing bookmarks still land on the right tab.
@@ -676,6 +781,7 @@ inline void serverSetup() {
 #ifdef CC_ORIONE
     // The Orione page is one gzipped file (frontend-orione/, built by orione_frontend.py). no-cache:
     // the browser asks every time but gets a 304 by ETag as long as the file did not change.
+    web_gate::serveStatic(server, "/fonts/", LittleFS, "/html/fonts/", "max-age=31536000, immutable"); // a new font gets a new name
     web_gate::serveStatic(server, "/", LittleFS, "/html/", "no-cache").setDefaultFile("index.html");
 #else
     server.serveStatic("/css", LittleFS, "/css/", "max-age=604800"); // cache for one week
@@ -720,8 +826,15 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
         skippedValues++;
     }
 
+#ifdef CC_ORIONE
+    // the values themselves keep the connection alive, no extra "ping"
+    const int scaleState = scale == nullptr || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : scale->isConnected() ? 2 : 1;
+    live_events::publish({currentTemp, targetTemp, heaterPower, static_cast<int>(machineState), round(currBrewTime / 100.0) / 10.0, scaleState,
+                          checkBrewActive() ? currBrewWeight : currReadingWeight});
+#else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());
         events.send(getTempString().c_str(), "new_temps", millis());
     }
+#endif
 }

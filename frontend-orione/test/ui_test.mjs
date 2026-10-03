@@ -31,14 +31,16 @@ const values = async base => (await mock(base, "/__state")).values;
 
 // ---------- page helpers ----------
 const contexts = []; // closed by the runner after each test, also when it failed halfway
-async function open(browser, base, {width = 390, hash = "", route} = {}) {
+async function open(browser, base, {width = 390, hash = "", route, init} = {}) {
   const ctx = await browser.newContext({viewport: {width, height: 844}, locale: "de-DE"});
   contexts.push(ctx);
+  if (init) await ctx.addInitScript(init);
   const page = await ctx.newPage();
   const errors = [], inflight = new Set();
   let maxInflight = 0;
   // the page itself is fully sent before its script runs; Playwright only reports it finished later
-  const counted = r => !r.url().endsWith("/events") && !r.url().startsWith("data:") && !r.isNavigationRequest();
+  // the browser fetches the manifest by itself, small and once
+  const counted = r => !r.url().endsWith("/events") && !r.url().startsWith("data:") && !r.isNavigationRequest() && !r.url().endsWith("/manifest.json");
   page.on("pageerror", e => errors.push(e.message));
   page.on("console", m => { if (m.type() === "error" && !/503|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on("request", r => { if (counted(r)) { inflight.add(r); maxInflight = Math.max(maxInflight, inflight.size); } });
@@ -70,6 +72,26 @@ async function noOverflow(page, what) {
   assert.ok(sw <= w, `${what}: page ${sw}px wide in a ${w}px window`);
 }
 
+// Stand-in for api.anthropic.com in this page: answers like the Messages API with "stream": true,
+// records what the page sent. status other than 200: an error answer (e.g. 401 for a bad key).
+async function fakeClaude(page, reply, {status = 200, abort = false, message = "invalid x-api-key"} = {}) {
+  const seen = [];
+  await page.route("https://api.anthropic.com/**", async r => {
+    const cors = {"access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "POST, OPTIONS"};
+    if (r.request().method() === "OPTIONS") return r.fulfill({status: 204, headers: cors});
+    seen.push({headers: r.request().headers(), body: JSON.parse(r.request().postData())});
+    if (abort) return r.abort();
+    if (status !== 200) return r.fulfill({status, headers: cors, contentType: "application/json", body: JSON.stringify({type: "error", error: {type: status === 401 ? "authentication_error" : "invalid_request_error", message}})});
+    const text = typeof reply === "function" ? reply(seen.at(-1).body) : reply;
+    const ev = o => `event: ${o.type}\ndata: ${JSON.stringify(o)}\n\n`;
+    const body = ev({type: "message_start", message: {}}) + ev({type: "content_block_start", index: 0, content_block: {type: "text", text: ""}}) +
+      text.match(/.{1,12}/gs).map(c => ev({type: "content_block_delta", index: 0, delta: {type: "text_delta", text: c}})).join("") + ev({type: "message_stop"});
+    return r.fulfill({status: 200, headers: {...cors, "content-type": "text/event-stream"}, body});
+  });
+  return seen;
+}
+const withKey = () => localStorage.setItem("orione.claude.key", "sk-ant-test");
+
 // ---------- tests ----------
 test("Start: Live-Werte, Soll, keine Fehler, eine Anfrage zur Zeit", async ({browser}) => {
   const p = await open(browser, BASE);
@@ -87,7 +109,7 @@ test("Start: Live-Werte, Soll, keine Fehler, eine Anfrage zur Zeit", async ({bro
   await p.ctx.close();
 });
 
-test("Soll-Temperatur: +/− und Eingabe speichern einmal, gerundet und begrenzt", async ({browser}) => {
+test("Soll-Temperatur: +/− in Schritten, Eingabe genau, einmal gespeichert und begrenzt", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   const step = view(page).locator(".hero .step");
   await step.locator("button", {hasText: "+"}).click();
@@ -98,7 +120,7 @@ test("Soll-Temperatur: +/− und Eingabe speichern einmal, gerundet und begrenzt
   await step.locator("input").fill("93,7");
   await step.locator("input").press("Enter");
   await settle(page);
-  assert.equal((await values(BASE))["brew.setpoint"], 93.5, "rounded to the 0.5 step");
+  assert.equal((await values(BASE))["brew.setpoint"], 93.7, "typed: kept with the shown decimal, not rounded to the 0.5 step");
   await step.locator("input").fill("150");
   await step.locator("input").press("Enter");
   await settle(page);
@@ -257,6 +279,27 @@ test("Text: Gerätename speichern mit Neustart-Hinweis", async ({browser}) => {
   await ctx.close();
 });
 
+test("Neustart-Hinweis: verschwindet beim Zurückstellen, spricht die Seitensprache, verdeckt nichts", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE, {hash: "#settings"});
+  const bar = page.locator("#rebootBar");
+  await row(page, "Füllstandssensor").locator(".sw").click(); // needs a restart
+  await page.locator("#rebootBar:not([hidden])", {hasText: "Wirkt nach einem Neustart"}).waitFor();
+  await row(page, "Sprache").locator("button", {hasText: "English"}).click();
+  await page.locator("#rebootBar", {hasText: "Takes effect after a restart"}).waitFor();
+  await row(page, "Language").locator("button", {hasText: "Deutsch"}).click();
+  await page.locator("#rebootBar", {hasText: "Wirkt nach einem Neustart"}).waitFor();
+  // the last row stays reachable above bar and tab bar
+  const last = view(page).locator("summary", {hasText: "System"});
+  await last.evaluate(e => e.scrollIntoView({block: "end"}));
+  await page.evaluate(() => scrollTo(0, document.scrollingElement.scrollHeight));
+  const [lb, bb] = [await last.boundingBox(), await bar.boundingBox()];
+  assert.ok(lb.y + lb.height <= bb.y, `last row ${Math.round(lb.y + lb.height)} under the bar ${Math.round(bb.y)}`);
+  await row(page, "Füllstandssensor").locator(".sw").click(); // back to the start value
+  await settle(page);
+  assert.equal(await bar.isHidden(), true, "nothing left to restart for");
+  await ctx.close();
+});
+
 test("Sicherung einspielen: Upload, dann Neustart übernimmt die Werte", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#care"});
   await view(page).locator("input[type=file]").setInputFiles({name: "config.json", mimeType: "application/json",
@@ -304,9 +347,9 @@ test("Letzte Bezüge: Zeit, Gewicht, wann; neuer Bezug erscheint von selbst", as
   const list = view(page).locator("#shotList .shot");
   await list.first().waitFor();
   const rows = await list.evaluateAll(rs => rs.map(r => [...r.children].slice(0, 3).map(c => c.textContent)));
-  // a day and a minute ago is "gestern", except around a change of daylight saving time
-  const day = new Date((now - 86460) * 1000), older = day.toDateString() === new Date(Date.now() - 864e5).toDateString() ? "gestern" : day.toLocaleDateString("de-DE", {day: "2-digit", month: "2-digit"});
-  assert.deepEqual(rows, [["25,3 s", "36,1 g", "heute " + hm(now - 600)], ["24,8 s", "–", older + " " + hm(now - 86460)]]);
+  // "heute", "gestern" or the date, as the page decides it (shortly after midnight 10 minutes ago is yesterday)
+  const label = at => { const d = new Date(at * 1000), day = x => x.toDateString(); return day(d) === day(new Date()) ? "heute" : day(d) === day(new Date(Date.now() - 864e5)) ? "gestern" : d.toLocaleDateString("de-DE", {day: "2-digit", month: "2-digit"}); };
+  assert.deepEqual(rows, [["25,3 s", "36,1 g", label(now - 600) + " " + hm(now - 600)], ["24,8 s", "–", label(now - 86460) + " " + hm(now - 86460)]]);
   await page.screenshot({path: OUT + "brew-shots.png", fullPage: true});
 
   // a shot runs and ends: the page asks again once the firmware has counted the drops
@@ -406,6 +449,243 @@ test("Letzte Bezüge: Balken-Übersicht und Kurve je Bezug", async ({browser}) =
   await curves.nth(0).locator("canvas").waitFor();
   assert.equal((await page.evaluate(() => performance.getEntriesByType("resource").map(e => e.name))).filter(u => u.includes("/shot?")).length, 3);
   assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Live-Bezug: Zeit, Gewicht, Fortschritt zum Ziel, danach Ergebnis", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
+  await view(page).locator(".chips button").nth(1).click(); // Doppio: by weight, 45 g
+  await row(page, "Zielgewicht").waitFor();
+  await settle(page);
+  assert.equal(await page.locator("#liveShot").isHidden(), true, "no shot, no live card");
+  await mock(BASE, "/__live", {state: 20, brewTime: 12.3, weight: 18, scale: 2});
+  await page.locator("#liveShot:not([hidden]) #lsLab", {hasText: "Bezug läuft"}).waitFor();
+  assert.equal(await page.locator("#lsTime").textContent(), "12,3 s");
+  assert.equal(await page.locator("#lsWeight").textContent(), "18,0 g");
+  assert.equal(await page.locator("#lsGoal").textContent(), "Ziel 45 g");
+  assert.match(await page.locator("#lsBar").getAttribute("style"), /scaleX\(0\.4\)/);
+  assert.equal(await page.title(), "Bezug 12,3 s · Orione");
+  await page.screenshot({path: OUT + "brew-live.png", fullPage: true});
+  await mock(BASE, "/__live", {brewTime: 12.8}); // the firmware's first value after the shot: the final time
+  await page.locator("#lsLab", {hasText: "Fertig"}).waitFor();
+  assert.equal(await page.locator("#lsTime").textContent(), "12,8 s", "final time, and it stays");
+  await ctx.close();
+});
+
+test("Waagen-Status im Reiter Bezug", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
+  await page.locator("#scaleSt.on", {hasText: "Waage verbunden · 0,0 g"}).waitFor();
+  await mock(BASE, "/__live", {scale: 1, weight: null});
+  await page.locator("#scaleSt:not(.on)", {hasText: "nicht verbunden"}).waitFor();
+  await ctx.close();
+});
+
+test("Alarm: Banner auf der Startseite und im Titel", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE);
+  assert.equal(await page.locator("#alarm").isHidden(), true);
+  await mock(BASE, "/__live", {state: 110});
+  await page.locator("#alarm.err:not([hidden])", {hasText: "Sensorfehler"}).waitFor();
+  assert.match(await page.locator("#alarm").textContent(), /Temperaturfühler und Kabel prüfen/);
+  assert.equal(await page.title(), "Sensorfehler · Orione");
+  await mock(BASE, "/__live", {state: 70});
+  await page.locator("#alarm.info", {hasText: "Wassertank leer"}).waitFor();
+  await page.screenshot({path: OUT + "status-alarm.png"});
+  await mock(BASE, "/__live", {});
+  await page.locator("#alarm[hidden]").waitFor({state: "attached"});
+  await ctx.close();
+});
+
+test("Bedienbarkeit: Schalter mit Zustand, ganze Zeile tippbar, 44-px-Tasten, 16-px-Felder", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE, {hash: "#settings"});
+  const sw = row(page, "Standby").locator(".sw");
+  assert.equal(await sw.getAttribute("aria-checked"), "false");
+  assert.equal(await sw.getAttribute("aria-label"), "Standby");
+  await row(page, "Standby").locator(".lbl p").click(); // the hint text, not the switch
+  await settle(page);
+  assert.equal((await values(BASE))["standby.enabled"], 1);
+  assert.equal(await row(page, "Standby").locator(".sw").getAttribute("aria-checked"), "true");
+  const b = await row(page, "Offset").locator(".step button").first().boundingBox();
+  assert.ok(b.width >= 44 && b.height >= 44, `stepper button ${b.width}x${b.height}`);
+  assert.equal(await row(page, "Offset").locator(".step button").first().getAttribute("aria-label"), "weniger");
+  await view(page).locator("summary", {hasText: "System"}).click();
+  assert.equal(await row(page, "Gerätename").locator("input").evaluate(e => getComputedStyle(e).fontSize), "16px");
+  await ctx.close();
+});
+
+test("Rezept: Dosis, Mahlgrad und Verhältnis im nächsten Bezug", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
+  const rc = view(page).locator(".recipe");
+  assert.deepEqual(await rc.locator("label").allTextContents(), ["Dosis", "Mahlgrad"]);
+  assert.equal(await rc.locator(".step input").inputValue(), "18,0 g");
+  assert.equal(await rc.locator(".txt").inputValue(), "12");
+  await rc.locator(".txt").fill("14"); await rc.locator(".txt").press("Enter");
+  await settle(page);
+  assert.equal((await values(BASE))["brew.grind"], "14");
+  await rc.locator(".txt").fill(""); await rc.locator(".txt").press("Enter"); // emptied again
+  await settle(page);
+  assert.equal((await values(BASE))["brew.grind"], "");
+  await view(page).locator(".chips button").nth(1).click(); // Doppio, by weight: 45 g
+  await page.locator("#ratio", {hasText: "Verhältnis 1:2,5"}).waitFor();
+  await view(page).locator(".recipe .step input").fill("15"); await view(page).locator(".recipe .step input").press("Enter");
+  await page.locator("#ratio", {hasText: "1:3,0"}).waitFor();
+  await page.screenshot({path: OUT + "brew-recipe.png", fullPage: true});
+  await ctx.close();
+});
+
+test("Bezug aufklappen: Rezept, Bewertung, Vergleich mit einem anderen", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 22.0, g: 33.0, at: now - 3600, d: 18.0, m: "13"});
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600, d: 18.0, m: "12"});
+  const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
+  await view(page).locator("#shotList .shot").first().click();
+  const cv = view(page).locator("#shotList .curve:not([hidden])");
+  await cv.locator("canvas").waitFor();
+  assert.equal(await cv.locator(".shotinfo").textContent(), "18,0 g Kaffee · Mahlgrad 12 · 1:2,0");
+  await cv.locator(".taste button", {hasText: "sauer"}).click();
+  await page.locator("#shotList .curve:not([hidden]) .taste button.on", {hasText: "sauer"}).waitFor();
+  await settle(page);
+  assert.equal((await mock(BASE, "/shots")).shots[0].r, 1);
+  await view(page).locator("#shotList .curve:not([hidden]) .cmp button").first().click();
+  await page.locator("#shotList .curve:not([hidden]) .cmp button.on").waitFor();
+  const gets = (await page.evaluate(() => performance.getEntriesByType("resource").map(e => e.name))).filter(u => u.includes("/shot?"));
+  assert.equal(gets.length, 2, "the other curve fetched for the comparison");
+  await page.screenshot({path: OUT + "brew-compare.png", fullPage: true});
+  await ctx.close();
+});
+
+test("Claude verbinden: ein Schritt, Schlüssel bleibt im Browser", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE, {hash: "#settings"});
+  const seen = await fakeClaude(page, "OK");
+  const card = view(page).locator(".card.claude");
+  assert.equal(await card.locator("a.linkbtn").getAttribute("href"), "https://console.anthropic.com/settings/keys");
+  await card.locator("input").fill("abc"); await card.locator("button", {hasText: "Verbinden"}).click();
+  await card.locator(".err", {hasText: "sk-ant-"}).waitFor();
+  assert.equal(seen.length, 0, "nothing sent for an obviously wrong key");
+  await card.locator("input").fill("sk-ant-test"); await card.locator("button", {hasText: "Verbinden"}).click();
+  await card.locator(".lbl", {hasText: "Verbunden"}).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("orione.claude.key")), "sk-ant-test");
+  const h = seen[0].headers;
+  assert.equal(h["x-api-key"], "sk-ant-test"); assert.equal(h["anthropic-dangerous-direct-browser-access"], "true"); assert.ok(h["anthropic-version"]);
+  assert.equal(seen[0].body.model, "claude-sonnet-5");
+  assert.equal((await posts(BASE)).length, 0, "the machine never sees the key");
+  await page.screenshot({path: OUT + "settings-claude.png", fullPage: true});
+  await card.locator("button", {hasText: "Trennen"}).click();
+  await card.locator("button", {hasText: "Verbinden"}).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("orione.claude.key")), null);
+  await ctx.close();
+});
+
+test("Claude: kein API-Guthaben wird verständlich gemeldet, beim Verbinden und später", async ({browser}) => {
+  const credit = "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.";
+  let p = await open(browser, BASE, {hash: "#settings"});
+  await fakeClaude(p.page, "x", {status: 400, message: credit});
+  const card = view(p.page).locator(".card.claude");
+  await card.locator("input").fill("sk-ant-test"); await card.locator("button", {hasText: "Verbinden"}).click();
+  await card.locator(".err", {hasText: "API-Guthaben ist leer"}).waitFor();
+  assert.equal(await p.page.evaluate(() => localStorage.getItem("orione.claude.key")), null, "not connected");
+  await p.ctx.close();
+  // connected earlier, credit used up since: no suggestion, the reason in the settings
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: Math.floor(Date.now() / 1000) - 600});
+  p = await open(browser, BASE, {hash: "#brew", init: withKey, route: pg => fakeClaude(pg, "x", {status: 400, message: credit})});
+  await settle(p.page);
+  assert.equal(await p.page.locator(".ai").count(), 0);
+  await tab(p.page, "Einstellungen");
+  await view(p.page).locator(".card.claude .err", {hasText: "API-Guthaben ist leer"}).waitFor();
+  assert.equal(await view(p.page).locator(".card.claude .lbl", {hasText: "Verbunden"}).count(), 1, "still connected");
+  await p.ctx.close();
+});
+
+test("Claude: Vorschlag zum neuesten Bezug, einmal; Bewertung fragt neu; ausführlich", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600, d: 18.0, m: "12"});
+  let seen;
+  const {page, ctx} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, b => b.max_tokens > 300 ? "Zeit und Verhältnis passen, die Temperatur fällt kaum ab." : "Etwas zu schnell – eine Stufe feiner."); }});
+  const box = view(page).locator("#shotList > .ai");
+  await box.locator("div", {hasText: "eine Stufe feiner"}).waitFor();
+  assert.equal(await box.locator("b").textContent(), "Vorschlag zum letzten Bezug");
+  const b0 = seen[0].body, user = b0.messages[0].content;
+  assert.match(b0.system, /Barista/); assert.match(b0.system, /auf Deutsch/);
+  for (const part of ["Quick Mill Orione", "25,3 s", "36,1 g in der Tasse", "18,0 g Kaffee", "Mahlgrad 12", "Temperatur in °C"]) assert.ok(user.includes(part), part);
+  assert.equal(b0.stream, true);
+  await page.screenshot({path: OUT + "brew-claude.png", fullPage: true});
+  await page.reload(); await settle(page);
+  await view(page).locator("#shotList > .ai div", {hasText: "eine Stufe feiner"}).waitFor();
+  assert.equal(seen.length, 1, "kept in the browser, not asked again");
+  await view(page).locator("#shotList .shot").first().click();
+  await view(page).locator("#shotList .curve:not([hidden]) .taste button", {hasText: "sauer"}).click();
+  await page.waitForFunction(() => true); await settle(page);
+  assert.equal(seen.length, 2); assert.ok(seen[1].body.messages[0].content.includes("Geschmack sauer"));
+  await view(page).locator("#shotList > .ai .linkbtn", {hasText: "Ausführlich"}).click();
+  await view(page).locator("#shotList > .ai b", {hasText: "Auswertung"}).waitFor();
+  assert.equal(seen[2].body.max_tokens, 4000);
+  assert.equal(seen[2].body.thinking, undefined, "the long analysis may think");
+  assert.deepEqual(seen[0].body.thinking, {type: "disabled"}, "the short one answers right away");
+  await ctx.close();
+});
+
+test("Claude: ohne Verbindung keine Vorschläge, abgelehnter Schlüssel wird getrennt", async ({browser}) => {
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: Math.floor(Date.now() / 1000) - 600});
+  let seen;
+  let p = await open(browser, BASE, {hash: "#brew", route: async pg => { seen = await fakeClaude(pg, "x"); }}); // no key
+  await p.page.locator("#shotList .shot").first().waitFor(); await settle(p.page);
+  assert.equal(await p.page.locator(".ai").count(), 0); assert.equal(seen.length, 0);
+  await p.ctx.close();
+  p = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, "x", {abort: true}); }}); // no internet
+  await settle(p.page);
+  assert.equal(seen.length, 1); assert.equal(await p.page.locator(".ai").count(), 0);
+  assert.equal(await p.page.locator("#toast.show").count(), 0, "no error message either");
+  assert.equal(await p.page.evaluate(() => localStorage.getItem("orione.claude.key")), "sk-ant-test", "kept for later");
+  await p.ctx.close();
+  p = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, "x", {status: 401}); }}); // key revoked
+  await settle(p.page);
+  assert.equal(await p.page.locator(".ai").count(), 0);
+  assert.equal(await p.page.evaluate(() => localStorage.getItem("orione.claude.key")), null);
+  await tab(p.page, "Einstellungen");
+  await view(p.page).locator(".card.claude .err", {hasText: "abgelehnt"}).waitFor();
+  await p.ctx.close();
+});
+
+test("Backflush-Erinnerung: Hinweis auf der Startseite, Zähler in Wartung", async ({browser}) => {
+  await mock(BASE, "/__bf", {bf: 52});
+  await mock(BASE, "/__shot", {s: 25.0, g: null, at: Math.floor(Date.now() / 1000)}); // loads the counter with the shots
+  const {page, ctx} = await open(browser, BASE);
+  await page.locator("#bfNote:not([hidden])", {hasText: "Backflush fällig: 52 Bezüge"}).waitFor();
+  await tab(page, "Wartung");
+  await page.locator("#bfSince", {hasText: "Letzter Backflush vor 52 Bezügen"}).waitFor();
+  assert.equal(await row(page, "Erinnern nach").locator("input").inputValue(), "50");
+  const inp = row(page, "Erinnern nach").locator("input"); // typed 2 stays 2 (+/- go in fives)
+  await inp.fill("2"); await inp.press("Enter"); await settle(page);
+  assert.equal((await values(BASE))["backflush.remind_after"], 2);
+  await ctx.close();
+});
+
+test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE);
+  assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");
+  const m = await (await fetch(BASE + "/manifest.json")).json();
+  assert.equal(m.display, "standalone"); assert.equal(m.icons.length, 2);
+  for (const f of ["/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"]) {
+    const r = await fetch(BASE + f); assert.equal(r.status, 200, f); assert.equal(r.headers.get("content-type"), "image/png");
+  }
+  await ctx.close();
+});
+
+test("Startseite zeigt beim Bezug, was das Display zeigt; danach FERTIG", async ({browser}) => {
+  const {page, ctx} = await open(browser, BASE);
+  await page.evaluate(() => document.fonts.ready);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body).fontFamily.split(",")[0].replace(/"/g, "")), "Barlow SC");
+  assert.ok(await page.evaluate(() => document.fonts.check("500 16px 'Barlow SC'") && document.fonts.check("600 16px 'Barlow SC'")), "both weights loaded");
+  assert.equal(await page.locator("#dialCard").isHidden(), true);
+  await mock(BASE, "/__live", {state: 20, brewTime: 12.3, weight: null, scale: 0});
+  await page.locator("#dialCard:not([hidden])").waitFor();
+  assert.equal(await page.locator("#tNow").isVisible(), false, "the temperature makes room");
+  const painted = await page.evaluate(() => { const c = document.querySelector("#dial"); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) n += d[i] > 200 && d[i + 1] > 140; return n; });
+  assert.ok(painted > 500, "ring and digits drawn: " + painted);
+  await page.screenshot({path: OUT + "status-dial.png"});
+  await mock(BASE, "/__live", {brewTime: 12.8});
+  await page.waitForTimeout(1500);
+  await page.screenshot({path: OUT + "status-dial-done.png"});
+  assert.equal(await page.locator("#dialCard").isHidden(), false, "the result stays a moment");
   await ctx.close();
 });
 
