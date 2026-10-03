@@ -114,8 +114,14 @@ details[open] summary:after{content:"−"}
 .cmp button{border:0;border-radius:9px;background:var(--bg);color:var(--text);padding:7px 10px;font-size:13px;font-weight:600;cursor:pointer}
 .cmp button.on{box-shadow:inset 0 0 0 2px var(--heat)}
 .ai{margin:12px 0 6px;padding:12px 14px;border-radius:14px;background:rgba(168,140,255,.11);color:#ddd2ff;font-size:15px;line-height:1.45}
-.ai b{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#b9a6ff;margin-bottom:4px}
-.ai div{white-space:pre-wrap}
+.ai b{flex:none;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#b9a6ff}
+.ai div{white-space:pre-wrap;margin-top:4px}
+details.ai>summary{align-items:center;justify-content:flex-start;gap:8px;min-height:24px;font-size:inherit;font-weight:inherit;letter-spacing:normal;text-transform:none;color:inherit} /* not the folded cards' title style */
+details.ai>summary::-webkit-details-marker{display:none}
+details.ai>summary::after,details.ai[open]>summary::after{content:"";flex:none;margin-left:auto;width:7px;height:7px;border-right:2px solid #b9a6ff;border-bottom:2px solid #b9a6ff;transform:translateY(-2px) rotate(45deg);transition:transform .2s} /* points down: unfold */
+details.ai[open]>summary::after{transform:translateY(2px) rotate(225deg)} /* points up: fold */
+.ai .teaser{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:14px;opacity:.8}
+.ai[open] .teaser{display:none}
 .ai .linkbtn{margin-top:8px;color:#b9a6ff}
 .linkbtn{display:inline-block;background:none;border:0;color:var(--heat);font-weight:600;font-size:15px;padding:0;cursor:pointer;text-decoration:none}
 .claude p{margin:6px 0 12px;color:var(--mute);font-size:14px}
@@ -879,6 +885,7 @@ function coffeeContext() {
 async function ask(x, long) {
   const key = aiKey(), k = aiCache(x) + (long ? ".long" : "");
   if (!key || aiBusy[k] || store.get(k)) return;
+  if (long) aiOpen[k] = true; // asked for: shown open while it is written
   aiBusy[k] = true; paintShots();
   try {
     await curveOf(shots[0], 0);
@@ -905,14 +912,20 @@ function claudeError(e) {
   return t("claudeOther") + e.message;
 }
 // Claude's word on a shot, or null: nothing without a connection, nothing before the first word
+// Folds: the short suggestion starts open, the long analysis closed (it is long), unless it was just
+// asked for; what the user opens or closes stays so while the page is open
+const aiOpen = {};
 function aiBox(x, newest) {
   if (!aiKey()) return null; // not connected: no suggestions at all
   const k = aiCache(x), long = store.get(k + ".long") || aiLive[k + ".long"], short = store.get(k) || aiLive[k];
   const text = long || short || (aiBusy[k] ? "…" : null);
   if (!text) return null;
-  const b = el("div", "ai"), body = el("div", null, "");
-  body.textContent = text; body.dataset.ai = long ? k + ".long" : k;
-  b.append(el("b", null, t(long ? "analysis" : newest ? "suggestion" : "suggestionOf")), body);
+  const kk = long ? k + ".long" : k, b = el("details", "ai"), sum = el("summary"), teaser = el("span", "teaser"), body = el("div", null, "");
+  body.textContent = text; body.dataset.ai = kk; teaser.textContent = text;
+  sum.append(el("b", null, t(long ? "analysis" : newest ? "suggestion" : "suggestionOf")), teaser);
+  b.open = aiOpen[kk] ?? !long;
+  b.ontoggle = () => { aiOpen[kk] = b.open; };
+  b.append(sum, body);
   if (!long && short && aiKey() && x === shots[0]) {
     const more = el("button", "linkbtn", aiBusy[k + ".long"] ? "…" : t("analyze"));
     more.onclick = () => ask(x, true);

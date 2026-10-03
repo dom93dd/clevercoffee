@@ -634,6 +634,19 @@ test("Claude: Vorschlag zum neuesten Bezug, einmal; Bewertung fragt neu; ausfüh
   assert.equal(seen.length, 2); assert.ok(seen[1].body.messages[0].content.includes("Geschmack sauer"));
   await view(page).locator("#shotList > .ai .linkbtn", {hasText: "Ausführlich"}).click();
   await view(page).locator("#shotList > .ai b", {hasText: "Auswertung"}).waitFor();
+  const ai = view(page).locator("#shotList > details.ai");
+  await ai.locator("div", {hasText: "Zeit und Verhältnis passen"}).waitFor({state: "visible"}); // just asked for: open
+  await ai.locator("summary").click(); // folds away
+  assert.equal(await ai.locator("div").isVisible(), false);
+  assert.equal(await ai.locator(".teaser").textContent(), "Zeit und Verhältnis passen, die Temperatur fällt kaum ab.");
+  assert.ok(await ai.locator(".teaser").isVisible(), "one line of it while folded");
+  await page.screenshot({path: OUT + "brew-claude-folded.png", fullPage: true});
+  await page.reload(); await settle(page);
+  const again = view(page).locator("#shotList > details.ai");
+  await again.locator("b", {hasText: "Auswertung"}).waitFor();
+  assert.equal(await again.evaluate(d => d.open), false, "the long analysis starts folded");
+  await again.locator("summary").click();
+  await again.locator("div", {hasText: "Zeit und Verhältnis passen"}).waitFor({state: "visible"});
   assert.equal(seen[2].body.max_tokens, 4000);
   assert.equal(seen[2].body.thinking, undefined, "the long analysis may think");
   assert.deepEqual(seen[0].body.thinking, {type: "disabled"}, "the short one answers right away");
