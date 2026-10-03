@@ -1,0 +1,10 @@
+# Orione builds (CC_ORIONE): LittleFS only holds the Orione page (~84 KB: page, fonts, icons, config)
+# instead of the stock web interface (475 KB), and there is no core dump partition, so each app slot
+# grows by 192 KB (0x1A0000 -> 0x1D0000). App slots start on 64 KB boundaries. Moving to this table
+# from partitions_4M.csv takes one USB flash with erase (WiFi and settings are gone afterwards).
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x5000,
+otadata,  data, ota,     0xe000,  0x2000,
+app0,     app,  ota_0,   0x10000, 0x1D0000,
+app1,     app,  ota_1,   0x1E0000,0x1D0000,
+spiffs,   data, spiffs,  0x3B0000,0x50000,
