@@ -137,6 +137,7 @@ class AcaiaArduinoBLE {
         void notifyCallback(const uint8_t *pData, size_t length);
         void cleanup();
         void clearScanResults();
+        void releaseClient(); // Orione: hands a client back to NimBLE
 
         // Debug functions
         void printData(const uint8_t data[], size_t length);

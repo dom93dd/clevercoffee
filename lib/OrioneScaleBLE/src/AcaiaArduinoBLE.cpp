@@ -135,6 +135,8 @@ void AcaiaArduinoBLE::cleanup() {
     if (_pBLEScan) {
         _pBLEScan->stop();
         clearScanResults();
+        // Orione: the scan object outlives this and still pointed at the callbacks deleted below
+        _pBLEScan->setScanCallbacks(nullptr);
         _pBLEScan = nullptr;
     }
 
@@ -151,8 +153,8 @@ void AcaiaArduinoBLE::cleanup() {
         _pWriteCharacteristic = nullptr;
         _pReadCharacteristic = nullptr;
 
-        // Let NimBLE handle the client cleanup
-        _pClient = nullptr;
+        // Orione: give the client back (see releaseClient())
+        releaseClient();
     }
 
     // Clean up callbacks
@@ -250,8 +252,18 @@ bool AcaiaArduinoBLE::updateConnection() {
             // Reduced timeout for scanning - 15 seconds instead of 30
             if (millis() - _connectionStartTime > 15000) {
                 if (_debug) Serial.println("Scan timeout - no scales found");
-                _connectionState = FAILED;
+                // Orione: no scale around is not a failed connection. Going to FAILED here ended in a
+                // NimBLE stack reset after every scan (see FAILED below): ~50 bytes of heap lost each
+                // time and ~33 KB needed at once (measured with simulator/esp32-bench env ble_leak).
+                // Restarting the scan loses nothing.
+                clearScanResults();
+
+                if (_pBLEScan) {
+                    _pBLEScan->start(0);
+                }
+
                 _connectionStartTime = millis();
+                _lastScanClear = millis();
                 break;
             }
 
@@ -290,7 +302,7 @@ bool AcaiaArduinoBLE::updateConnection() {
                     }
 
                     delay(100);
-                    _pClient = nullptr;
+                    releaseClient();
                 }
 
                 // Create client
@@ -356,7 +368,7 @@ bool AcaiaArduinoBLE::updateConnection() {
 
                     // Connection failed - properly clean up
                     if (_pClient) {
-                        _pClient = nullptr;
+                        releaseClient();
                     }
 
                     _connectionState = FAILED;
@@ -620,15 +632,20 @@ bool AcaiaArduinoBLE::updateConnection() {
             break;
 
         case FAILED: {
-            _connectionAttempts++;
+            // Orione: one attempt per failure. Counting every call (the scale task calls every 250 ms)
+            // passed 8 while waiting for the first backoff, so every single failure ended in the NimBLE
+            // stack reset below (with no scale around: every ~21 s, ~50 bytes of heap lost each time).
+            const int attempt = _connectionAttempts + 1;
 
             // More aggressive reconnection timing
             unsigned long backoffTime = 1000; // Start with 1 second
-            if (_connectionAttempts > 3) backoffTime = 2000; // 2s after 3 attempts
-            if (_connectionAttempts > 6) backoffTime = 3000; // 3s after 6 attempts
-            if (_connectionAttempts > 10) backoffTime = 5000; // 5s after 10 attempts
+            if (attempt > 3) backoffTime = 2000; // 2s after 3 attempts
+            if (attempt > 6) backoffTime = 3000; // 3s after 6 attempts
+            if (attempt > 10) backoffTime = 5000; // 5s after 10 attempts
 
             if (millis() - _connectionStartTime > backoffTime) {
+                _connectionAttempts = attempt;
+
                 if (_debug) {
                     Serial.print("Auto-reconnecting (attempt ");
                     Serial.print(_connectionAttempts);
@@ -659,7 +676,7 @@ bool AcaiaArduinoBLE::updateConnection() {
                         }
 
                         delay(100);
-                        _pClient = nullptr;
+                        releaseClient();
                     }
 
                     // Reset NimBLE stack
@@ -690,7 +707,7 @@ bool AcaiaArduinoBLE::updateConnection() {
                             _pClient->disconnect();
                         }
                         delay(100);
-                        _pClient = nullptr;
+                        releaseClient();
                     }
                 }
 
@@ -1103,6 +1120,22 @@ void AcaiaArduinoBLE::notifyCallback(const uint8_t *pData, size_t length) {
             }
         }
     }
+}
+
+// Orione: the library used to only forget the client (_pClient = nullptr). NimBLE keeps every client it
+// created until deleteClient(), and the Orione build allows one (CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1):
+// after a failed or lost connection createClient() returned nullptr until the stack reset after 9
+// failures. deleteClient() also copes with a client still connected or connecting (it deletes itself
+// once that is over); until then it must not call back into _pClientCallback, which cleanup() deletes.
+void AcaiaArduinoBLE::releaseClient() {
+    if (_pClient) {
+        _pClient->setClientCallbacks(nullptr);
+        NimBLEDevice::deleteClient(_pClient);
+        _pClient = nullptr;
+    }
+
+    _pWriteCharacteristic = nullptr;
+    _pReadCharacteristic = nullptr;
 }
 
 void AcaiaArduinoBLE::clearScanResults() {

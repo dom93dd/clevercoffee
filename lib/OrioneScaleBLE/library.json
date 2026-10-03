@@ -1,0 +1,10 @@
+{
+  "name": "OrioneScaleBLE",
+  "version": "4.0.2-orione.1",
+  "description": "AcaiaArduinoBLE v4.0.2 (rancilio-pid/AcaiaArduinoBLE, 9afd589) with fixes for the Orione build: no NimBLE stack reset while no scale is around (heap leak), clients handed back to NimBLE, callbacks detached before they are deleted. Only the esp32_round_* envs use it; the others keep the upstream library.",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "dependencies": {
+    "h2zero/NimBLE-Arduino": "2.5.1"
+  }
+}

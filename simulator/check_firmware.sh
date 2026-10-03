@@ -51,7 +51,7 @@ fi
 
 echo "== Stock firmware free of round display / Orione code"
 NM=$(ls ~/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm)
-LEAK=$("$NM" -C .pio/build/esp32_usb/firmware.elf | grep -E 'web_gate::|round_timing::|[ (]rd::|RoundUi|roundDisplay|loopGuard|pruneUnknownKeys|fixedValue|freeConfigDefs|TempSensorFake|shot_history|orione_portal' | head -3)
+LEAK=$("$NM" -C .pio/build/esp32_usb/firmware.elf | grep -E 'web_gate::|round_timing::|[ (]rd::|RoundUi|roundDisplay|loopGuard|pruneUnknownKeys|fixedValue|freeConfigDefs|TempSensorFake|shot_history|orione_portal|AcaiaArduinoBLE::releaseClient' | head -3)
 [ -z "$LEAK" ] || fail "round/Orione code in the stock build: $LEAK"
 echo "OK"
 
