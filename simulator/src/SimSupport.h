@@ -251,6 +251,18 @@ namespace sim {
             {"scale-8", "Waage, Bezug 8 s", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 8.0f); }},
             {"scale-18", "Waage, Bezug 18 s", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 18.0f); }},
             {"scale-done", "Waage, Bezug fertig", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 27.8f); }},
+            {"scale-done-over", "Waage, fertig, 2,5 g über dem Ziel",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.settle();
+                 m.setBrewDone(28.4f, 38.5f);
+             }},
+            {"scale-done-under", "Waage, fertig, knapp unter dem Ziel",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.settle();
+                 m.setBrewDone(26.9f, 35.2f);
+             }},
             {"done", "Bezug fertig",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.settle();

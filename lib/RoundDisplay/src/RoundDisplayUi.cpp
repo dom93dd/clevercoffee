@@ -1463,6 +1463,12 @@ namespace rd {
         p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
         p.arcGradient(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill, 1.0f), kBrewDark, kBrew, false); // flat: starts exactly at the zero mark
 
+        if (fill > 1.0f) {
+            // Over the target (the drops after the stop, or a late stop): on past the target mark, in the
+            // heat colour, at the same scale as the ring (Dominik, 07.10.2026)
+            p.arc(kCx, kCy, kRingRadius, kRingWidth, 0.0f, 360.0f * std::min(fill - 1.0f, 1.0f), kHeat, false);
+        }
+
         if (!done) {
             drawShimmer(p, 360.0f * std::min(fill, 1.0f));
 
@@ -1479,16 +1485,22 @@ namespace rd {
         snprintf(buf, sizeof(buf), "%s s", num);
         p.text(fonts::midSmall(), buf, kCx, kSecondNumberY, mix(kText, kBackground, 0.25f));
 
-        if (done && shotAverage_ > 0.0f) {
-            formatNumber(num, sizeof(num), shotAverage_, 1, m.language);
-            snprintf(buf, sizeof(buf), "Ø %s°", num);
+        Color rowColor = kTextDim;
+
+        if (done) {
+            // After the shot: how far from the target the cup ended up, green within a gram, else in the
+            // heat colour (the average temperature of the time ring's done screen is on the web page)
+            const float off = std::round((m.brewWeight - m.brewTargetWeight) * 10.0f) / 10.0f;
+            formatNumber(num, sizeof(num), std::fabs(off), 1, m.language);
+            snprintf(buf, sizeof(buf), "%s%s g", off > 0.0f ? "+" : off < 0.0f ? "-" : "", num); // "Target +0.6 g" came too close to the ring
+            rowColor = std::fabs(off) <= 1.0f ? kReady : kHeat;
         }
         else {
             formatNumber(num, sizeof(num), m.brewTargetWeight, 0, m.language);
             snprintf(buf, sizeof(buf), "%s %s g", s.target, num);
         }
 
-        p.text(fonts::textSmall(), buf, kCx, kRowBY + 6.0f, kTextDim);
+        p.text(fonts::textSmall(), buf, kCx, kRowBY + 6.0f, rowColor);
     }
 
     void RoundUi::drawShimmer(Painter& p, const float fillAngle) const {

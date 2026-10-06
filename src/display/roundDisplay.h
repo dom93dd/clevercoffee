@@ -85,7 +85,22 @@ inline rd::Model roundDisplayModel() {
         m.bleScale = config.get<int>("hardware.sensors.scale.type") == 2;
 #endif
         m.bleScaleConnected = scale->isConnected();
+#ifdef CC_ORIONE
+        // After the stop: what is in the cup with the drops, as the web page shows it; the highest reading
+        // while they are counted (shotHistory.h), so lifting the cup afterwards does not take it back
+        static float cup = 0.0f;
+
+        if (checkBrewActive()) {
+            cup = currBrewWeight;
+        }
+        else if (shot_history::shotLog.settling()) {
+            cup = std::max(cup, static_cast<float>(currReadingWeight - preBrewWeight));
+        }
+
+        m.brewWeight = cup;
+#else
         m.brewWeight = currBrewWeight;
+#endif
 
         if (config.get<bool>("brew.by_weight.enabled") && config.get<int>("brew.mode") != 0) {
             m.brewTargetWeight = config.get<float>("brew.by_weight.target_weight");
