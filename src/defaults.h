@@ -55,7 +55,7 @@
 #define BACKFLUSH_FILL_TIME      5.0               // time in seconds the pump is running during backflush
 #define BACKFLUSH_FLUSH_TIME     10.0              // time in seconds the 3-way valve is open during backflush
 #ifdef CC_ORIONE
-#define POST_BREW_TIMER_DURATION 6.0               // the drops after a shot by weight are counted for 4 s (shotHistory.h): show the end of it
+#define POST_BREW_TIMER_DURATION 10.0              // after the switch is off (a shot that stopped by itself stays while it is on); the drops are counted for 4 s
 #else
 #define POST_BREW_TIMER_DURATION 3.0               // time in seconds that brew timer will be shown after brew finished
 #endif

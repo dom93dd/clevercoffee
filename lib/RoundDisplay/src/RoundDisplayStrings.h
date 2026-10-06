@@ -50,6 +50,7 @@ namespace rd {
             const char* scaleFault;
             const char* noWifi;
             const char* scaleDisconnected;
+            const char* switchReminder; // short: the bottom row of the done screen
     };
 
     inline constexpr Strings kGerman = {
@@ -87,6 +88,7 @@ namespace rd {
         "Waage gestört",
         "Kein WLAN",
         "Waage getrennt",
+        "Schalter aus",
     };
 
     inline constexpr Strings kEnglish = {
@@ -124,6 +126,7 @@ namespace rd {
         "Scale fault",
         "No WiFi",
         "Scale not connected",
+        "Switch off",
     };
 
     inline const Strings& strings(const Language lang) {

@@ -1437,6 +1437,11 @@ namespace rd {
             p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
         }
 
+        if (done && m.brewSwitchReminder) {
+            p.text(fonts::hint(), s.switchReminder, kCx, kRowBY + 2.0f, kHeat);
+            return;
+        }
+
         if (done && shotAverage_ > 0.0f) {
             formatNumber(num, sizeof(num), shotAverage_, 1, m.language);
             snprintf(buf, sizeof(buf), "Ø %s°", num);
@@ -1486,6 +1491,11 @@ namespace rd {
         p.text(fonts::midSmall(), buf, kCx, kSecondNumberY, mix(kText, kBackground, 0.25f));
 
         Color rowColor = kTextDim;
+
+        if (done && m.brewSwitchReminder) {
+            p.text(fonts::hint(), s.switchReminder, kCx, kRowBY + 6.0f, kHeat);
+            return;
+        }
 
         if (done) {
             // After the shot: how far from the target the cup ended up, green within a gram, else in the

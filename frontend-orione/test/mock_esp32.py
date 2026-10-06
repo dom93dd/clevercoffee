@@ -63,7 +63,7 @@ BASE = {
     "standby.time": dict(type=2, value=35, min=5, max=300),
     "display.language": dict(type=5, value=0, min=0, max=2, options=["Deutsch", "English", "Español"]),
     "display.blescale_brew_timer": dict(type=1, value=0, min=0, max=1),
-    "display.post_brew_timer_duration": dict(type=2, value=3.0, min=0, max=60),
+    "display.post_brew_timer_duration": dict(type=2, value=10.0, min=0, max=60),
     "display.blinking.delta": dict(type=2, value=0.3, min=0, max=10),
     "system.hostname": dict(type=4, value="orione", min=0, max=32, reboot=True),
     "system.ota_password": dict(type=4, value="otapass", min=0, max=32),
@@ -235,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None}
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()

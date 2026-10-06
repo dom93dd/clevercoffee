@@ -855,6 +855,30 @@ test("Nach Gewicht: Nachlauf und Abweichung vom Ziel, Pumpe stoppt vorher", asyn
   await ctx.close();
 });
 
+test("Fertig bleibt, solange der Bezugsschalter noch an ist; danach die Displayzeit; Hinweis nach 1 min", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  await page.clock.install();
+  await mock(BASE, "/__live", {state: 20, brewTime: 26.4, weight: 35.0, scale: 2});
+  await page.locator("#lsLab", {hasText: "Bezug läuft"}).waitFor();
+  await mock(BASE, "/__live", {state: 10, brewTime: 26.4, weight: 0.5, scale: 2, cup: 36.6, held: true});
+  await page.locator("#lsLab", {hasText: "Fertig"}).waitFor();
+  await page.clock.fastForward(45000);
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator("#liveShot").isVisible(), true, "45 s later, switch still on: still there");
+  assert.equal(await page.locator("#lsHint").isHidden(), true, "no reminder yet");
+  await page.clock.fastForward(20000);
+  await page.locator("#lsHint", {hasText: "Bezugsschalter wieder auf AUS stellen"}).waitFor();
+  await mock(BASE, "/__live", {state: 10, brewTime: 26.4, weight: 0.5, scale: 2, held: false}); // switched off
+  await page.waitForTimeout(800);
+  await page.clock.fastForward(8000);
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator("#liveShot").isVisible(), true, "8 s after switching off: still shown (10 s)");
+  await page.clock.fastForward(4000);
+  await page.locator("#liveShot").waitFor({state: "hidden"});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");

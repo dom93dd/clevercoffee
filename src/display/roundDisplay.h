@@ -52,7 +52,9 @@ inline rd::BandFilter roundBandFilter; // bands the panel already shows are not 
  * @brief determines if brew timer should be visible; postBrewTimerDuration defines how long the timer after the brew is shown
  */
 inline bool shouldDisplayBrewTimer() {
-    return roundBrewTimer.update(checkBrewActive(), static_cast<float>(currBrewTime / 1000), millis(), static_cast<float>(postBrewTimerDuration));
+    // a shot that stopped by itself stays on the display while the brew switch is still on (Dominik, 07.10.2026)
+    return roundBrewTimer.update(checkBrewActive(), static_cast<float>(currBrewTime / 1000), millis(), static_cast<float>(postBrewTimerDuration),
+                                 currBrewSwitchState == kBrewSwitchWaitForRelease);
 }
 
 inline rd::Model roundDisplayModel() {
@@ -72,6 +74,7 @@ inline rd::Model roundDisplayModel() {
     m.brewTime = static_cast<float>(currBrewTime / 1000);
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);
     m.lastBrewTime = roundBrewTimer.lastShotSeconds();
+    m.brewSwitchReminder = roundBrewTimer.remind(millis());
     m.flushTime = static_cast<float>(currBrewTime / 1000);
     m.hotWaterTime = static_cast<float>(currPumpOnTime / 1000);
 

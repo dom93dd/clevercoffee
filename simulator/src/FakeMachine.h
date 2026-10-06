@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <RoundDisplayControl.h>
 #include <RoundDisplayModel.h>
 
 #include <algorithm>
@@ -82,6 +83,10 @@ class FakeMachine {
                 if (brewing_) {
                     finishBrew();
                 }
+                else if (phase_ == rd::BrewPhase::Finished) {
+                    holdLeft_ = postBrewHold; // switched off after a shot that stopped by itself
+                }
+                heldFor_ = 0;
                 phase_ = rd::BrewPhase::Idle;
             }
         }
@@ -192,10 +197,17 @@ class FakeMachine {
                 }
             }
             else if (holdLeft_ > 0.0f) {
-                holdLeft_ -= dt;
+                // Done with the switch still on: the result stays until it is switched off (as the firmware)
+                if (brewSwitch_ && phase_ == rd::BrewPhase::Finished) {
+                    heldFor_ += dt;
+                }
+                else {
+                    holdLeft_ -= dt;
+                }
 
                 // Drips after the pump stopped
-                if (scale && holdLeft_ > postBrewHold - 1.5f) {
+                if (scale && dripLeft_ > 0.0f) {
+                    dripLeft_ -= dt;
                     weight_ += 0.4f * dt;
                 }
             }
@@ -240,6 +252,7 @@ class FakeMachine {
             m.emergencyResetTemp = brewSetpoint + 5.0f;
 
             m.brewTimerVisible = brewing_ || holdLeft_ > 0.0f;
+            m.brewSwitchReminder = !brewing_ && brewSwitch_ && phase_ == rd::BrewPhase::Finished && heldFor_ >= rd::BrewTimer::kRemindMs / 1000.0f;
             m.brewPhase = phase_;
             m.brewTime = brewTime_;
             m.brewTargetTime = targetBrewTime;
@@ -355,6 +368,8 @@ class FakeMachine {
             brewing_ = false;
             lastShot_ = brewTime_;
             holdLeft_ = postBrewHold;
+            dripLeft_ = 1.5f;
+            heldFor_ = 0;
         }
 
         float block_ = 22.0f;
@@ -366,6 +381,8 @@ class FakeMachine {
         bool brewing_ = false;
         float brewTime_ = 0;
         float holdLeft_ = 0;
+        float dripLeft_ = 0; // drops still coming after the pump stopped
+        float heldFor_ = 0;  // done, switch still on: for how long
         rd::BrewPhase phase_ = rd::BrewPhase::Idle;
         float weight_ = 0;
         float lastShot_ = 0;

@@ -91,6 +91,32 @@ void test_brew_timer_next_shot_during_hold() {
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 28.0f, t.lastShotSeconds());
 }
 
+void test_brew_timer_stays_while_the_switch_is_left_on() {
+    BrewTimer t;
+    t.update(true, 1, 0, 10, false);
+    TEST_ASSERT_TRUE(t.update(false, 26.4f, 26400, 10, true));         // stopped by weight, switch still on
+    TEST_ASSERT_TRUE(t.update(false, 26.4f, 60000, 10, true));         // long after the hold time: still shown
+    TEST_ASSERT_FALSE(t.remind(60000));
+    TEST_ASSERT_TRUE(t.update(false, 26.4f, 86400, 10, true));
+    TEST_ASSERT_TRUE_MESSAGE(t.remind(86400), "a minute with the switch on: remind");
+    TEST_ASSERT_TRUE(t.update(false, 26.4f, 90000, 10, false));        // switched off: 10 s more, no reminder
+    TEST_ASSERT_FALSE(t.remind(90000));
+    TEST_ASSERT_TRUE(t.update(false, 26.4f, 100000, 10, false));
+    TEST_ASSERT_FALSE(t.update(false, 26.4f, 100001, 10, false));
+}
+
+void test_brew_timer_stopped_by_hand_holds_as_before() {
+    BrewTimer t;
+    t.update(true, 1, 0, 10, true);
+    TEST_ASSERT_TRUE(t.update(false, 22.0f, 22000, 10, false)); // stopped by switching off
+    TEST_ASSERT_TRUE(t.update(false, 22.0f, 32000, 10, false));
+    TEST_ASSERT_FALSE(t.update(false, 22.0f, 32001, 10, false));
+    BrewTimer u; // the switch going on again after the hold started (a new shot follows as brewActive)
+    u.update(true, 1, 0, 10, false);
+    u.update(false, 20.0f, 20000, 10, false);
+    TEST_ASSERT_FALSE_MESSAGE(u.update(false, 20.0f, 31000, 10, true), "held only counts from the end of the shot");
+}
+
 void test_brew_timer_zero_hold() {
     BrewTimer t;
     t.update(true, 1, 0, 0);
@@ -406,6 +432,8 @@ int main() {
     RUN_TEST(test_brew_timer_hidden_while_idle);
     RUN_TEST(test_brew_timer_holds_after_the_shot);
     RUN_TEST(test_brew_timer_next_shot_during_hold);
+    RUN_TEST(test_brew_timer_stays_while_the_switch_is_left_on);
+    RUN_TEST(test_brew_timer_stopped_by_hand_holds_as_before);
     RUN_TEST(test_brew_timer_zero_hold);
     RUN_TEST(test_message_split_into_title_and_lines);
     RUN_TEST(test_message_title_capitals_with_umlauts_and_accents);

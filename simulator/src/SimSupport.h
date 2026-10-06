@@ -251,6 +251,15 @@ namespace sim {
             {"scale-8", "Waage, Bezug 8 s", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 8.0f); }},
             {"scale-18", "Waage, Bezug 18 s", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 18.0f); }},
             {"scale-done", "Waage, Bezug fertig", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 27.8f); }},
+            {"scale-done-remind", "Waage, fertig, Schalter seit 1 min an",
+             [](FakeMachine& m, rd::RoundUi& ui) {
+                 runScaleShot(m, ui, 27.8f);
+
+                 for (float t = 27.8f; t < 95.0f; t += 0.1f) { // switch left on
+                     m.step(0.1f);
+                     ui.update(m.model(), static_cast<uint32_t>(t * 1000.0f));
+                 }
+             }},
             {"scale-done-over", "Waage, fertig, 2,5 g über dem Ziel",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.scale = true;

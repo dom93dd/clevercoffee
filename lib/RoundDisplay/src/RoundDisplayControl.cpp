@@ -68,7 +68,7 @@ namespace rd {
         }
     }
 
-    bool BrewTimer::update(const bool brewActive, const float brewTimeSeconds, const uint32_t nowMs, const float holdSeconds) {
+    bool BrewTimer::update(const bool brewActive, const float brewTimeSeconds, const uint32_t nowMs, const float holdSeconds, const bool switchHeld) {
         switch (state_) {
             case State::Idle:
                 if (brewActive) {
@@ -81,6 +81,8 @@ namespace rd {
                     state_ = State::Hold;
                     endMs_ = nowMs;
                     lastShot_ = brewTimeSeconds; // the firmware keeps the final time until the next shot
+                    held_ = switchHeld;
+                    heldSince_ = nowMs;
                 }
                 break;
 
@@ -88,8 +90,18 @@ namespace rd {
                 if (brewActive) {
                     state_ = State::Running; // next shot during the hold time
                 }
-                else if (nowMs - endMs_ > static_cast<uint32_t>(holdSeconds * 1000.0f)) {
-                    state_ = State::Idle;
+                else if (held_ && switchHeld) {
+                    endMs_ = nowMs; // switch still on: the hold time starts once it is off
+                }
+                else {
+                    if (held_) {
+                        held_ = false;
+                        endMs_ = nowMs; // switched off just now: the hold time counts from here
+                    }
+
+                    if (nowMs - endMs_ > static_cast<uint32_t>(holdSeconds * 1000.0f)) {
+                        state_ = State::Idle;
+                    }
                 }
                 break;
         }

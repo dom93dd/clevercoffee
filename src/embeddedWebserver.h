@@ -104,6 +104,7 @@ namespace live_events {
             int warmup;    // warm-up flush: orione::WarmupFlush::Phase
             int pulse;     // its pulse, 0 when not running
             double cup;    // while the drops after a shot are counted: in the cup since the start, < 0 otherwise
+            bool held;     // the shot stopped by itself and the brew switch is still on
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -128,7 +129,8 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f)" : R"(,"flow":null)", v.flow);
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
-                snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f})" : R"(,"cup":null})", v.cup);
+                n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
+                snprintf(json + n, sizeof(json) - n, R"(,"held":%s})", v.held ? "true" : "false");
                 events.send(json, "new_temps", millis());
             }
         }
@@ -929,7 +931,8 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
     live_events::publish({currentTemp, targetTemp, heaterPower, static_cast<int>(machineState), round(currBrewTime / 100.0) / 10.0, scaleState,
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
                           warmup_flush::livePhase(), warmup_flush::flush.pulse(),
-                          scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0});
+                          scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
+                          !checkBrewActive() && currBrewSwitchState == kBrewSwitchWaitForRelease});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

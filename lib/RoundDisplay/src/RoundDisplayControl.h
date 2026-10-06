@@ -57,10 +57,22 @@ namespace rd {
      */
     class BrewTimer {
         public:
-            bool update(bool brewActive, float brewTimeSeconds, uint32_t nowMs, float holdSeconds);
+            static constexpr uint32_t kRemindMs = 60000; // brew switch still on this long after the shot: remind
+
+            /**
+             * @param switchHeld the brew switch is still on after a shot that stopped by itself (time or
+             *        weight): the result stays until it is switched off, then holdSeconds more (Dominik,
+             *        07.10.2026). A shot stopped by switching off holds holdSeconds as before.
+             */
+            bool update(bool brewActive, float brewTimeSeconds, uint32_t nowMs, float holdSeconds, bool switchHeld = false);
 
             float lastShotSeconds() const {
                 return lastShot_;
+            }
+
+            /** The switch has been left on for kRemindMs after the shot: show a hint to switch it off */
+            bool remind(const uint32_t nowMs) const {
+                return state_ == State::Hold && held_ && nowMs - heldSince_ >= kRemindMs;
             }
 
         private:
@@ -73,6 +85,8 @@ namespace rd {
             State state_ = State::Idle;
             uint32_t endMs_ = 0;
             float lastShot_ = 0;
+            bool held_ = false;
+            uint32_t heldSince_ = 0;
     };
 
     /**
