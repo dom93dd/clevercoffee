@@ -39,6 +39,36 @@ namespace orione {
             uint8_t taste = kNotRated;
             int16_t startTenths = 0;      // brew temperature at the start, 0.1 degrees, 0 = unknown
             uint16_t firstDropTenths = 0; // seconds until the first drops, 0.1 s, 0 = no scale
+            uint16_t targetTenths = 0;    // target weight when stopped by weight, 0.1 g, 0 = not by weight
+            uint16_t stopTenths = 0;      // in the cup when the pump stopped, 0.1 g (grams: after the drops)
+            uint8_t leadTenths = 0;       // the pump stopped this far before the target, 0.1 g
+    };
+
+    /**
+     * Brew by weight: the pump stops a lead before the target, because the scale reports late and drops
+     * follow. The lead learns from each shot stopped by weight, after tatemazer's shotStopper
+     * (AcaiaArduinoBLE, examples/shotStopper: offset += final weight - goal, unchanged if the error is
+     * over 5 g), but gentler: half the error per shot and nothing from errors over 3 g. Taking the whole
+     * error, one shot 3.5 g over (poured on by hand at the bench) moved the lead from 1.5 to its 5 g
+     * limit (Dominik, 06.10.2026: "ja bitte entschärfen"); half of it settles a steady drip in a few shots.
+     */
+    struct BrewLead {
+            static constexpr float kStart = 1.5f; // shotStopper's default
+            static constexpr float kMax = 5.0f;
+            static constexpr float kMaxError = 3.0f;
+            static constexpr float kGain = 0.5f;
+
+            /** @return the lead for the next shot after one that ended with finalGrams in the cup */
+            static float learn(const float lead, const float target, const float finalGrams) {
+                const float error = finalGrams - target;
+
+                if (!std::isfinite(lead) || !std::isfinite(error) || target <= 0.0f || std::fabs(error) > kMaxError) {
+                    return lead;
+                }
+
+                const float next = lead + kGain * error;
+                return next < 0.0f ? 0.0f : next > kMax ? kMax : next;
+            }
     };
 
     class ShotLog {
@@ -112,6 +142,22 @@ namespace orione {
                 const float t = startCelsius * 10.0f, d = firstDropSeconds * 10.0f;
                 shots_[0].startTenths = std::isfinite(t) && t > 0.0f && t < 3000.0f ? static_cast<int16_t>(t + 0.5f) : 0;
                 shots_[0].firstDropTenths = std::isfinite(d) && d > 0.0f && d < 65535.0f ? static_cast<uint16_t>(d + 0.5f) : 0;
+            }
+
+            /** Brew by weight of the newest shot: its target (<= 0: not stopped by weight), what was in the
+             *  cup when the pump stopped, and the lead it stopped with */
+            void noteWeights(const float target, const float atStop, const float lead) {
+                if (count_ == 0) {
+                    return;
+                }
+
+                const auto tenths = [](const float g, const float max) {
+                    const float t = g * 10.0f;
+                    return std::isfinite(t) && t > 0.0f && t < max ? static_cast<int>(t + 0.5f) : 0;
+                };
+                shots_[0].targetTenths = static_cast<uint16_t>(tenths(target, 65535.0f));
+                shots_[0].stopTenths = static_cast<uint16_t>(tenths(atStop, 65535.0f));
+                shots_[0].leadTenths = static_cast<uint8_t>(tenths(lead, 255.0f));
             }
 
             /** @return false if there is no such shot or no such taste */
@@ -195,7 +241,7 @@ namespace orione {
             }
 
         private:
-            static constexpr uint8_t kVersion = 4; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops
+            static constexpr uint8_t kVersion = 5; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead
 
             Shot shots_[kSize];
             int count_ = 0;

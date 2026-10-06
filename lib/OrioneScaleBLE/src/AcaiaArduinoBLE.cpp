@@ -44,7 +44,18 @@ AcaiaArduinoBLE *AcaiaArduinoBLE::_instance = nullptr;
 void MyAdvertisedDeviceCallbacks::onResult(const NimBLEAdvertisedDevice *advertisedDevice) {
     // Check if this is a supported scale
     if (isSupportedScale(advertisedDevice->getName().c_str())) {
-        if (_targetMac != "" && String(advertisedDevice->getAddress().toString().c_str()) != _targetMac) {
+        // Orione: while searching, every supported scale goes into the list for the web page
+        const std::string name = advertisedDevice->getName(), address = advertisedDevice->getAddress().toString();
+        char target[sizeof(_target)];
+        portENTER_CRITICAL(&_lock);
+        if (discovering()) {
+            _found.seen(name.c_str(), address.c_str(), advertisedDevice->getRSSI(), millis());
+        }
+        std::memcpy(target, _target, sizeof(target));
+        portEXIT_CRITICAL(&_lock);
+
+        // Orione: only the chosen scale (addresses compared in lower case), none without a choice
+        if (target[0] == '\0' ? _requireTarget : strcasecmp(address.c_str(), target) != 0) {
             return;
         }
 
@@ -200,6 +211,7 @@ bool AcaiaArduinoBLE::init(const String &mac) {
     // Create callbacks
     _pAdvertisedDeviceCallbacks = new MyAdvertisedDeviceCallbacks();
     _pAdvertisedDeviceCallbacks->setTargetMac(_targetMac);
+    _pAdvertisedDeviceCallbacks->setRequireTarget(_requireTarget); // Orione
     _pAdvertisedDeviceCallbacks->setDebug(_debug);
 
     _pClientCallback = new MyClientCallback();
@@ -1142,6 +1154,53 @@ void AcaiaArduinoBLE::releaseClient() {
     _pWriteCharacteristic = nullptr;
     _pReadCharacteristic = nullptr;
     _battery = -1;
+}
+
+// Orione: choosing the scale from the web page. Called by the scale task, like updateConnection().
+void AcaiaArduinoBLE::setTarget(const String &mac) {
+    _targetMac = mac;
+
+    if (_pAdvertisedDeviceCallbacks) {
+        _pAdvertisedDeviceCallbacks->setTargetMac(mac);
+        _pAdvertisedDeviceCallbacks->clearFoundDevice();
+    }
+
+    // connected or connecting to some scale: drop it, the next scan looks for the new one
+    if (_connectionState != IDLE && _connectionState != SCANNING) {
+        releaseClient();
+        _connected = false;
+        _connectionState = FAILED;
+        _connectionStartTime = millis();
+    }
+}
+
+void AcaiaArduinoBLE::requireTarget(const bool require) {
+    _requireTarget = require;
+
+    if (_pAdvertisedDeviceCallbacks) {
+        _pAdvertisedDeviceCallbacks->setRequireTarget(require);
+    }
+}
+
+void AcaiaArduinoBLE::discover(const uint32_t ms) {
+    if (!_pAdvertisedDeviceCallbacks) {
+        return;
+    }
+
+    _pAdvertisedDeviceCallbacks->discover(millis() + ms);
+
+    // a search needs a running scan; while connected there is none (and the chosen scale is known)
+    if (_connectionState == SCANNING && _pBLEScan && !_pBLEScan->isScanning()) {
+        _pBLEScan->start(0);
+    }
+}
+
+bool AcaiaArduinoBLE::discovering() const {
+    return _pAdvertisedDeviceCallbacks && _pAdvertisedDeviceCallbacks->discovering();
+}
+
+int AcaiaArduinoBLE::found(orione::FoundScale *out, const int max) {
+    return _pAdvertisedDeviceCallbacks ? _pAdvertisedDeviceCallbacks->found(out, max) : 0;
 }
 
 int AcaiaArduinoBLE::getBattery() const {

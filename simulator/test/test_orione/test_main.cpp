@@ -13,6 +13,7 @@
 #include <OrioneShots.h>
 #include <OrioneWebGate.h>
 #include <OrioneWarmupFlush.h>
+#include <OrioneScaleList.h>
 
 #include <cstring>
 #include <set>
@@ -630,6 +631,101 @@ void test_flush_by_hand_needs_water_and_a_free_machine() {
     TEST_ASSERT_FALSE(f.update(300, 93.0, 94.0, empty));
 }
 
+// ---------- found scales ----------
+
+void test_scales_one_entry_per_address_strongest_first() {
+    orione::ScaleList l;
+    l.seen("BOOKOO_SC U 1234", "C8:2E:18:AA:01:02", -70, 1000);
+    l.seen("BOOKOO_SC 5678", "c8:2e:18:aa:03:04", -55, 1100);
+    l.seen("BOOKOO_SC U 1234", "c8:2e:18:aa:01:02", -50, 1200); // same scale again, now closer
+    orione::FoundScale out[orione::ScaleList::kMax];
+    TEST_ASSERT_EQUAL(2, l.list(out, orione::ScaleList::kMax, 1300));
+    TEST_ASSERT_EQUAL_STRING("BOOKOO_SC U 1234", out[0].name);
+    TEST_ASSERT_EQUAL_STRING("c8:2e:18:aa:01:02", out[0].address);
+    TEST_ASSERT_EQUAL(-50, out[0].rssi);
+    TEST_ASSERT_EQUAL_STRING("BOOKOO_SC 5678", out[1].name);
+}
+
+void test_scales_forgotten_when_not_seen_and_room_made_when_full() {
+    orione::ScaleList l;
+    l.seen("A", "00:00:00:00:00:01", -60, 0);
+    orione::FoundScale out[orione::ScaleList::kMax];
+    TEST_ASSERT_EQUAL(1, l.list(out, orione::ScaleList::kMax, orione::ScaleList::kForgetMs));
+    TEST_ASSERT_EQUAL_MESSAGE(0, l.list(out, orione::ScaleList::kMax, orione::ScaleList::kForgetMs + 1), "switched off");
+    for (int i = 0; i < orione::ScaleList::kMax; ++i) {
+        char addr[18];
+        snprintf(addr, sizeof(addr), "00:00:00:00:01:%02x", i);
+        l.seen("B", addr, -60, 20000 + i);
+    }
+    l.seen("NEW", "00:00:00:00:02:00", -40, 30000); // full: replaces the one seen longest ago
+    TEST_ASSERT_EQUAL(orione::ScaleList::kMax, l.list(out, orione::ScaleList::kMax, 30000));
+    TEST_ASSERT_EQUAL_STRING("NEW", out[0].name);
+    l.clear();
+    TEST_ASSERT_EQUAL(0, l.list(out, orione::ScaleList::kMax, 30000));
+}
+
+void test_scale_addresses_normalized_or_refused() {
+    char out[18];
+    orione::ScaleList::normalize("C8-2E-18-AA-01-02", out);
+    TEST_ASSERT_EQUAL_STRING("c8:2e:18:aa:01:02", out);
+    orione::ScaleList::normalize("c8:2e:18:aa:01", out);
+    TEST_ASSERT_EQUAL_STRING("", out);
+    orione::ScaleList::normalize("c8:2e:18:aa:01:02:03", out);
+    TEST_ASSERT_EQUAL_STRING("", out);
+    orione::ScaleList::normalize("c8:2e:18:aa:01:0g", out);
+    TEST_ASSERT_EQUAL_STRING("", out);
+    orione::ScaleList::normalize("<script>", out);
+    TEST_ASSERT_EQUAL_STRING("", out);
+    orione::ScaleList l; // a name too long for the list is cut, an empty one does not overwrite
+    l.seen("A_VERY_LONG_SCALE_NAME_THAT_GOES_ON", "00:00:00:00:00:01", -60, 0);
+    l.seen("", "00:00:00:00:00:01", -61, 1);
+    orione::FoundScale f[1];
+    l.list(f, 1, 2);
+    TEST_ASSERT_EQUAL_STRING("A_VERY_LONG_SCALE_NAME_", f[0].name);
+}
+
+// ---------- brew by weight: lead and drops ----------
+
+void test_lead_learns_half_the_error_and_ignores_outliers() {
+    using L = orione::BrewLead;
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.9f, L::learn(1.5f, 36.0f, 36.8f));  // 0.8 g over: stop 0.4 g earlier
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.25f, L::learn(1.5f, 36.0f, 35.5f)); // 0.5 g short: 0.25 g later
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, 39.5f));  // 3.5 g over (the bench test that took it to 5 g)
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, 41.4f));  // cup lifted, poured by hand
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, 32.9f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, L::learn(0.5f, 36.0f, 34.0f));  // never below 0
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, L::learn(4.5f, 36.0f, 38.5f));  // never over 5 g
+    float lead = L::kStart; // a steady 1.2 g too much each time: settles within a few shots
+    for (int shot = 0; shot < 4; ++shot) {
+        const float atStop = 36.0f - lead;
+        lead = L::learn(lead, 36.0f, atStop + 2.7f); // drops of 2.7 g after the stop
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 2.7f, lead);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 0.0f, 36.0f));   // no target: nothing to learn
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, NAN));
+}
+
+void test_shot_keeps_target_weight_at_stop_and_lead() {
+    orione::ShotLog log;
+    log.record(26.0f, 34.6f, 0, 0);
+    log.noteWeights(36.0f, 34.6f, 1.5f);
+    log.settle(1000, 36.4f); // drops
+    TEST_ASSERT_TRUE(log.settle(orione::ShotLog::kSettleMs, 36.4f));
+    const auto& x = log.at(0);
+    TEST_ASSERT_EQUAL(360, x.targetTenths);
+    TEST_ASSERT_EQUAL(346, x.stopTenths);
+    TEST_ASSERT_EQUAL(15, x.leadTenths);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 36.4f, x.grams);
+    log.record(25.0f, -1.0f, 0, 10000); // by time, no scale
+    log.noteWeights(0.0f, -1.0f, 1.5f);
+    TEST_ASSERT_EQUAL(0, log.at(0).targetTenths);
+    TEST_ASSERT_EQUAL(0, log.at(0).stopTenths);
+    orione::ShotLog back; // saved and restored with the new fields
+    const auto stored = log.stored();
+    TEST_ASSERT_TRUE(back.restore(&stored, sizeof(stored)));
+    TEST_ASSERT_EQUAL(346, back.at(1).stopTenths);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -681,5 +777,10 @@ int main() {
     RUN_TEST(test_flush_automatic_off_but_by_hand_any_time);
     RUN_TEST(test_flush_stopped_by_hand);
     RUN_TEST(test_flush_by_hand_needs_water_and_a_free_machine);
+    RUN_TEST(test_scales_one_entry_per_address_strongest_first);
+    RUN_TEST(test_scales_forgotten_when_not_seen_and_room_made_when_full);
+    RUN_TEST(test_scale_addresses_normalized_or_refused);
+    RUN_TEST(test_lead_learns_half_the_error_and_ignores_outliers);
+    RUN_TEST(test_shot_keeps_target_weight_at_stop_and_lead);
     return UNITY_END();
 }

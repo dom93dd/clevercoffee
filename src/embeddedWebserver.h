@@ -103,6 +103,7 @@ namespace live_events {
             int battery;   // the scale's battery in percent, < 0 unknown
             int warmup;    // warm-up flush: orione::WarmupFlush::Phase
             int pulse;     // its pulse, 0 when not running
+            double cup;    // while the drops after a shot are counted: in the cup since the start, < 0 otherwise
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -126,7 +127,8 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f)" : R"(,"weight":null)", v.weight);
                 n += snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f)" : R"(,"flow":null)", v.flow);
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
-                snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d})", v.warmup, v.pulse);
+                n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
+                snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f})" : R"(,"cup":null})", v.cup);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -534,6 +536,75 @@ inline void serverSetup() {
 
 #endif
 #ifdef CC_ORIONE
+    // Bluetooth scale chosen on the web page (Einstellungen → Waage). state: 0 off, 1 chosen but not
+    // connected, 2 connected, 3 none chosen. Names come from any scale around: ArduinoJson escapes them.
+    server.on("/scale", HTTP_GET, [](AsyncWebServerRequest* request) {
+        auto* ble = isBluetoothScale && scale != nullptr ? static_cast<BluetoothScale*>(scale) : nullptr;
+        JsonDocument doc;
+        doc["state"] = !ble || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : ble->isConnected() ? 2 : ble->hasTarget() ? 1 : 3;
+        const auto setting = [](const char* key) { // never saved yet: Config answers "null"
+            const String v = config.get<String>(key);
+            return v == "null" ? String() : v;
+        };
+        doc["address"] = setting("hardware.sensors.scale.address");
+        doc["name"] = setting("hardware.sensors.scale.name");
+        const int battery = ble ? ble->getBattery() : -1;
+        if (battery >= 0) {
+            doc["battery"] = battery;
+        }
+        doc["searching"] = ble != nullptr && ble->discovering();
+        JsonArray list = doc["found"].to<JsonArray>();
+        orione::FoundScale found[orione::ScaleList::kMax];
+        for (int i = 0, n = ble ? ble->found(found, orione::ScaleList::kMax) : 0; i < n; ++i) {
+            JsonObject f = list.add<JsonObject>();
+            f["name"] = found[i].name;
+            f["address"] = found[i].address;
+            f["rssi"] = found[i].rssi;
+        }
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/scale/discover", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!isBluetoothScale || scale == nullptr) {
+            return request->send(409, "text/plain", "scale off");
+        }
+        static_cast<BluetoothScale*>(scale)->requestDiscover();
+        request->send(202, "text/plain", "ok");
+    });
+
+    // ?address=aa:bb:cc:dd:ee:ff&name=...: remembered (setting) and connected from now on
+    server.on("/scale/select", HTTP_POST, [](AsyncWebServerRequest* request) {
+        char address[18];
+        orione::ScaleList::normalize(request->hasParam("address") ? request->getParam("address")->value().c_str() : "", address);
+        if (!isBluetoothScale || scale == nullptr || address[0] == '\0') {
+            return request->send(400, "text/plain", "no such scale");
+        }
+        String name;
+        for (const char c : request->hasParam("name") ? request->getParam("name")->value() : String()) {
+            if (c >= 0x20 && c < 0x7f && name.length() < 23) {
+                name += c; // printable ASCII, as scales advertise themselves
+            }
+        }
+        auto& registry = ParameterRegistry::getInstance();
+        registry.setParameterValue<String>("hardware.sensors.scale.address", String(address));
+        registry.setParameterValue<String>("hardware.sensors.scale.name", name);
+        static_cast<BluetoothScale*>(scale)->requestTarget(address);
+        request->send(202, "text/plain", "ok");
+    });
+
+    server.on("/scale/forget", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!isBluetoothScale || scale == nullptr) {
+            return request->send(409, "text/plain", "scale off");
+        }
+        auto& registry = ParameterRegistry::getInstance();
+        registry.setParameterValue<String>("hardware.sensors.scale.address", String());
+        registry.setParameterValue<String>("hardware.sensors.scale.name", String());
+        static_cast<BluetoothScale*>(scale)->requestTarget("");
+        request->send(202, "text/plain", "ok");
+    });
+
     // warm-up flush by hand (Wartung): ?start=1 or ?stop=1, applied by loop(); only with a water level sensor
     server.on("/flush", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!warmup_flush::sensorEnabled()) {
@@ -850,10 +921,15 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
 
 #ifdef CC_ORIONE
     // the values themselves keep the connection alive, no extra "ping"
-    const int scaleState = scale == nullptr || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : scale->isConnected() ? 2 : 1;
+    // 0 off, 1 not connected, 2 connected, 3 no scale chosen (GET /scale)
+    const int scaleState = scale == nullptr || !config.get<bool>("hardware.sensors.scale.enabled") ? 0
+                         : scale->isConnected()                                                ? 2
+                         : isBluetoothScale && !static_cast<BluetoothScale*>(scale)->hasTarget() ? 3
+                                                                                                 : 1;
     live_events::publish({currentTemp, targetTemp, heaterPower, static_cast<int>(machineState), round(currBrewTime / 100.0) / 10.0, scaleState,
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
-                          warmup_flush::livePhase(), warmup_flush::flush.pulse()});
+                          warmup_flush::livePhase(), warmup_flush::flush.pulse(),
+                          scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

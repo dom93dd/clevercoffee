@@ -394,6 +394,9 @@ class Config {
             _configDefs.emplace("brew.by_weight.auto_tare", ConfigDef::forBool(false));
 #ifdef CC_ORIONE
             _configDefs.emplace("brew.presets", ConfigDef::forString(BREW_PRESETS, BREW_PRESETS_MAX_LENGTH)); // only the web page reads it
+            // brew by weight: the pump stops this far before the target, learned from each shot (shotHistory.h)
+            _configDefs.emplace("brew.by_weight.lead", ConfigDef::forDouble(1.5, 0.0, 5.0));
+            _configDefs.emplace("brew.by_weight.learn", ConfigDef::forBool(true));
             _configDefs.emplace("brew.dose", ConfigDef::forDouble(BREW_DOSE, BREW_DOSE_MIN, BREW_DOSE_MAX));
             _configDefs.emplace("brew.grind", ConfigDef::forString("", BREW_GRIND_MAX_LENGTH));
             _configDefs.emplace("brew.grinder", ConfigDef::forString("", GRINDER_MAX_LENGTH));
@@ -595,6 +598,11 @@ class Config {
 
             // Scale
             _configDefs.emplace("hardware.sensors.scale.enabled", ConfigDef::forBool(false));
+#ifdef CC_ORIONE
+            // the Bluetooth scale chosen on the web page (Einstellungen → Waage), "" = none
+            _configDefs.emplace("hardware.sensors.scale.address", ConfigDef::forString("", 17));
+            _configDefs.emplace("hardware.sensors.scale.name", ConfigDef::forString("", 23));
+#endif
 #ifndef CC_ORIONE
             _configDefs.emplace("hardware.sensors.scale.samples", ConfigDef::forInt(SCALE_SAMPLES, 1, 20));
 #endif

@@ -107,9 +107,12 @@ namespace shot_history {
         LOG(INFO, "Backflush done: shot counter reset");
     }
 
+    inline void learnFromShot(); // below
+
     inline void brewStarted(const double celsius) {
         if (shotLog.settleNow()) {
             save(); // the previous shot was still counting drops
+            learnFromShot();
         }
 
         startCelsius = static_cast<float>(celsius);
@@ -122,13 +125,41 @@ namespace shot_history {
         return scaleConnected && flowMeter.running() ? flowMeter.flow() : -1.0f;
     }
 
-    /** @param grams brew weight, < 0 without a connected scale */
-    inline void brewEnded(const double seconds, const float grams) {
+    // brew by weight: what the lead is learned from once the drops are counted
+    inline bool learnPending = false;
+    inline float learnTarget = 0.0f;
+    inline float learnLead = 0.0f;
+
+    /** After the drops: correct the lead by what ended up in the cup (orione::BrewLead, as the shotStopper) */
+    inline void learnFromShot() {
+        if (!learnPending || shotLog.count() == 0) {
+            return;
+        }
+
+        learnPending = false;
+        const auto& x = shotLog.at(0);
+        const float next = std::round(orione::BrewLead::learn(learnLead, learnTarget, x.grams) * 10.0f) / 10.0f;
+        LOGF(INFO, "Brew by weight: target %.1f g, %.1f g at the stop, %.1f g in the cup, lead %.1f -> %.1f g", learnTarget, x.stopTenths / 10.0f, x.grams, learnLead, next);
+
+        if (config.get<bool>("brew.by_weight.learn") && std::fabs(next - learnLead) >= 0.05f) {
+            ParameterRegistry::getInstance().setParameterValue("brew.by_weight.lead", static_cast<double>(next));
+        }
+    }
+
+    /**
+     * @param grams in the cup when the pump stopped, < 0 without a connected scale
+     * @param byWeight the shot stopped at its target weight (minus the lead)
+     */
+    inline void brewEnded(const double seconds, const float grams, const bool byWeight) {
         shotCurve.stopped();
 
         if (shotLog.record(static_cast<float>(seconds), grams, nowUtc(), millis())) {
             shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str());
             shotLog.noteFacts(startCelsius, grams < 0 ? -1.0f : flowMeter.firstDropSeconds());
+            learnTarget = byWeight && grams >= 0 ? config.get<float>("brew.by_weight.target_weight") : 0.0f;
+            learnLead = config.get<float>("brew.by_weight.lead");
+            learnPending = learnTarget > 0.0f;
+            shotLog.noteWeights(learnTarget, grams, learnLead);
             LOGF(INFO, "Shot logged: %.1f s, %.1f g", seconds, grams);
         }
         else {
@@ -162,13 +193,15 @@ namespace shot_history {
 
         if (shotLog.settle(millis(), grams)) {
             save();
+            learnFromShot();
         }
     }
 
     /**
      * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","r":2,"t0":93.4,"fd":6.2},...]},
      * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
-     * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown)
+     * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown); brew by weight:
+     * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with
      */
     inline void writeJson(Print& out) {
         out.printf(R"({"now":%u,"bf":%u,"shots":[)", static_cast<unsigned>(nowUtc()), static_cast<unsigned>(shotLog.sinceBackflush()));
@@ -209,7 +242,11 @@ namespace shot_history {
             s.startTenths ? (void)out.printf("%d.%d", s.startTenths / 10, s.startTenths % 10) : (void)out.print("null");
             out.print(R"(,"fd":)");
             s.firstDropTenths ? (void)out.printf("%u.%u", s.firstDropTenths / 10u, s.firstDropTenths % 10u) : (void)out.print("null");
-            out.print("}");
+            out.print(R"(,"tw":)");
+            s.targetTenths ? (void)out.printf("%u.%u", s.targetTenths / 10u, s.targetTenths % 10u) : (void)out.print("null");
+            out.print(R"(,"sw":)");
+            s.stopTenths ? (void)out.printf("%u.%u", s.stopTenths / 10u, s.stopTenths % 10u) : (void)out.print("null");
+            out.printf(R"(,"ld":%u.%u})", s.leadTenths / 10u, s.leadTenths % 10u);
         }
 
         out.print("]}");

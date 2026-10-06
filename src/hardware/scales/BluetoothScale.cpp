@@ -7,6 +7,37 @@
 #include "Logger.h"
 #include <Arduino.h>
 
+#ifdef CC_ORIONE
+#include "Config.h"
+#include <cstring>
+
+extern Config config; // the chosen scale is a setting (hardware.sensors.scale.address)
+#endif
+
+#ifdef CC_ORIONE
+void BluetoothScale::requestTarget(const char* address) {
+    char normalized[sizeof(pendingTarget_)];
+    orione::ScaleList::normalize(address, normalized);
+    portENTER_CRITICAL(&requestLock_);
+    std::memcpy(pendingTarget_, normalized, sizeof(pendingTarget_));
+    targetPending_ = true;
+    portEXIT_CRITICAL(&requestLock_);
+}
+
+void BluetoothScale::requestDiscover() {
+    portENTER_CRITICAL(&requestLock_);
+    discoverPending_ = true;
+    portEXIT_CRITICAL(&requestLock_);
+}
+
+bool BluetoothScale::hasTarget() {
+    portENTER_CRITICAL(&requestLock_);
+    const bool chosen = target_[0] != '\0';
+    portEXIT_CRITICAL(&requestLock_);
+    return chosen;
+}
+#endif
+
 #ifdef CC_FAKE_SCALE
 #ifndef ROUND_TIMING
 #error "CC_FAKE_SCALE is for the bench build esp32_round_bench only, never for the machine"
@@ -29,9 +60,11 @@ namespace {
 }
 
 BluetoothScale::BluetoothScale(bool debug) :
-    bleScale(nullptr), currentWeight(0), lastUpdateTime(0), connected(true), bleInitialized(true), lastConnectionAttempt(0), connectionAttemptInterval(5000), isUpdatingConnection(false),
+    bleScale(nullptr), currentWeight(0), lastUpdateTime(0), connected(false), bleInitialized(true), lastConnectionAttempt(0), connectionAttemptInterval(5000), isUpdatingConnection(false),
     maxConnectionAttemptInterval(30000) {
     LOG(WARNING, "SIMULATED SCALE: bench build only, no Bluetooth");
+    orione::ScaleList::normalize(config.get<String>("hardware.sensors.scale.address").c_str(), target_);
+    connected = target_[0] != '\0'; // like the real one: connected only to a chosen scale
 }
 
 BluetoothScale::~BluetoothScale() = default;
@@ -48,6 +81,7 @@ bool BluetoothScale::isConnecting() const {
 
 bool BluetoothScale::update() {
     const unsigned long now = millis();
+    applyRequests();
 
     if (now - simLastMs < 100) {
         return false;
@@ -101,13 +135,43 @@ void BluetoothScale::resetTimer() const {}
 void BluetoothScale::setSamples(int samples) {}
 
 bool BluetoothScale::isConnected() const {
-    return true;
+    return connected;
 }
 
 void BluetoothScale::startConnectionTask() {}
 
 int BluetoothScale::getBattery() const {
-    return 76;
+    return connected ? 76 : -1;
+}
+
+void BluetoothScale::applyRequests() {
+    portENTER_CRITICAL(&requestLock_);
+    if (targetPending_) {
+        std::memcpy(target_, pendingTarget_, sizeof(target_));
+        connected = target_[0] != '\0';
+        targetPending_ = false;
+    }
+    if (discoverPending_) {
+        fakeDiscoverUntil_ = millis() + kDiscoverMs;
+        discoverPending_ = false;
+    }
+    portEXIT_CRITICAL(&requestLock_);
+}
+
+int BluetoothScale::found(orione::FoundScale* out, const int max) {
+    if (!discovering() || max < 1) {
+        return 0;
+    }
+
+    out[0] = orione::FoundScale{};
+    std::strcpy(out[0].name, "BOOKOO_SC SIM");
+    std::strcpy(out[0].address, "02:00:00:00:00:01");
+    out[0].rssi = -55;
+    return 1;
+}
+
+bool BluetoothScale::discovering() {
+    return static_cast<int32_t>(fakeDiscoverUntil_ - millis()) > 0;
 }
 
 void BluetoothScale::connectionTask(void* self) {}
@@ -164,7 +228,14 @@ BluetoothScale::~BluetoothScale() {
 bool BluetoothScale::init() {
     LOG(INFO, "Starting Bluetooth scale initialization");
 
+#ifdef CC_ORIONE
+    // only the scale chosen on the web page, none without a choice
+    orione::ScaleList::normalize(config.get<String>("hardware.sensors.scale.address").c_str(), target_);
+    bleScale->requireTarget(true);
+    const bool success = bleScale->init(target_);
+#else
     const bool success = bleScale->init();
+#endif
 
     if (success) {
         bleInitialized = true;
@@ -185,6 +256,9 @@ void BluetoothScale::updateConnection() {
     }
 
     SCALE_LOCK(portMAX_DELAY, return);
+#ifdef CC_ORIONE
+    applyRequests();
+#endif
 
     const unsigned long currentTime = millis();
 
@@ -308,6 +382,42 @@ void BluetoothScale::startConnectionTask() {
 
 int BluetoothScale::getBattery() const {
     return connected ? bleScale->getBattery() : -1;
+}
+
+// scale task, holding the scale lock
+void BluetoothScale::applyRequests() {
+    char target[sizeof(pendingTarget_)];
+    portENTER_CRITICAL(&requestLock_);
+    const bool newTarget = targetPending_, discover = discoverPending_;
+    std::memcpy(target, pendingTarget_, sizeof(target));
+    targetPending_ = discoverPending_ = false;
+    portEXIT_CRITICAL(&requestLock_);
+
+    if (newTarget) {
+        bleScale->setTarget(target);
+        portENTER_CRITICAL(&requestLock_);
+        std::memcpy(target_, target, sizeof(target_));
+        portEXIT_CRITICAL(&requestLock_);
+        LOGF(INFO, "Bluetooth scale: %s", target[0] ? target : "none chosen");
+    }
+
+    if (discover) {
+        bleScale->discover(kDiscoverMs);
+        LOG(INFO, "Bluetooth scale: searching");
+    }
+}
+
+int BluetoothScale::found(orione::FoundScale* out, const int max) {
+    SCALE_LOCK(pdMS_TO_TICKS(50), return 0);
+    return bleScale->found(out, max);
+}
+
+bool BluetoothScale::discovering() {
+    portENTER_CRITICAL(&requestLock_);
+    const bool pending = discoverPending_;
+    portEXIT_CRITICAL(&requestLock_);
+    SCALE_LOCK(pdMS_TO_TICKS(50), return pending);
+    return pending || bleScale->discovering();
 }
 
 void BluetoothScale::connectionTask(void* self) {

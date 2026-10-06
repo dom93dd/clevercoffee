@@ -98,6 +98,11 @@ details[open] summary:after{content:"−"}
 .scalest i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
 .scalest.on i{background:var(--ready)}
 .scalest .low{color:var(--heat)}
+.shot .dev{margin-left:6px;font-size:13px;font-weight:600;color:var(--mute)}
+.shot .dev.off{color:var(--heat)}
+.scalenow{margin:14px 0 0;font-size:15px}
+.scalenow.on{color:var(--ready)}
+.foundscale{border-top:1px solid var(--line)}
 .dialcard{display:flex;justify-content:center;padding:16px}
 .dialcard canvas{width:min(100%,300px);height:auto;aspect-ratio:1;margin:0}
 .recipe{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0 4px;border-top:1px solid var(--line)}
@@ -190,6 +195,10 @@ const T = {
     flushNote: "Gleich wird automatisch gespült (3 × kurz), sobald die Temperatur 2 min stabil am Soll ist. Siebträger leer eingespannt lassen, Tasse unterstellen.",
     sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
     scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?", battery: "Akku", batteryLow: "bitte laden",
+    scaleNone: "Keine Waage gewählt – unter Einstellungen → Waage suchen", scaleWith: "Verbunden mit {n}", scaleWaiting: "{n} gewählt, nicht verbunden – Waage einschalten",
+    scaleNoneChosen: "Keine Waage gewählt", scaleFind: "Waage suchen", scaleSearching: "Suche …", scaleForget: "Vergessen", scaleConnect: "Verbinden", scaleChosen: "gewählt",
+    signal: ["Signal schwach", "Signal mittel", "Signal gut"], scaleHint: "Waage einschalten und die Bookoo-App trennen: Die Waage nimmt nur eine Verbindung an.",
+    scaleNoneFound: "Keine Waage gefunden. Ist sie eingeschaltet und nicht mit dem Handy verbunden?",
     dialBrew: "BEZUG", dialDone: "FERTIG", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
     compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
     sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor, etwa beim Mahlgrad. Dafür brauchst du einen API-Schlüssel von Anthropic. Er bleibt nur in diesem Browser; am sichersten ist ein eigener Schlüssel mit Monatslimit.",
@@ -206,6 +215,9 @@ const T = {
     "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
     "hardware.sensors.scale.enabled": "Bluetooth-Waage", "hardware.sensors.scale.enabledHint": "Änderung wirkt nach einem Neustart",
     "brew.by_weight.enabled": "Nach Gewicht stoppen", "brew.by_weight.target_weight": "Zielgewicht",
+    "brew.by_weight.lead": "Pumpe stoppt vorher", "brew.by_weight.leadHint": "so viel vor dem Ziel, der Nachlauf füllt auf; lernt aus jedem Bezug",
+    "brew.by_weight.learn": "Stopp automatisch lernen", "brew.by_weight.learnHint": "nach jedem Bezug nach Gewicht aus dem, was in der Tasse landet",
+    target: "Ziel", atStop: "Pumpe aus bei", drip: "Nachlauf", overTarget: "über Ziel", underTarget: "unter Ziel",
     "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
     "display.blescale_brew_timer": "Timer der Waage mitlaufen lassen",
     "display.post_brew_timer_duration": "Bezugszeit stehen lassen", "display.post_brew_timer_durationHint": "nach dem Bezug auf dem Display",
@@ -244,6 +256,10 @@ const T = {
     flushNote: "The machine will flush by itself (3 × briefly) once the temperature has been steady at the setpoint for 2 min. Leave the empty portafilter in, put a cup under it.",
     sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
     scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?", battery: "Battery", batteryLow: "please charge",
+    scaleNone: "No scale chosen – search under Settings → Scale", scaleWith: "Connected to {n}", scaleWaiting: "{n} chosen, not connected – switch the scale on",
+    scaleNoneChosen: "No scale chosen", scaleFind: "Find scale", scaleSearching: "Searching …", scaleForget: "Forget", scaleConnect: "Connect", scaleChosen: "chosen",
+    signal: ["weak signal", "medium signal", "good signal"], scaleHint: "Switch the scale on and disconnect the Bookoo app: the scale takes one connection only.",
+    scaleNoneFound: "No scale found. Is it switched on and not connected to the phone?",
     dialBrew: "BREW", dialDone: "DONE", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
     compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
     sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step, e.g. the grind. It needs an API key from Anthropic. The key stays in this browser only; safest is a key of its own with a monthly limit.",
@@ -260,6 +276,9 @@ const T = {
     "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
     "hardware.sensors.scale.enabled": "Bluetooth scale", "hardware.sensors.scale.enabledHint": "Takes effect after a restart",
     "brew.by_weight.enabled": "Stop by weight", "brew.by_weight.target_weight": "Target weight",
+    "brew.by_weight.lead": "Pump stops early by", "brew.by_weight.leadHint": "this much before the target, the drops fill up; learned from each shot",
+    "brew.by_weight.learn": "Learn the stop", "brew.by_weight.learnHint": "after each shot by weight, from what ends up in the cup",
+    target: "Target", atStop: "pump off at", drip: "drops", overTarget: "over target", underTarget: "under target",
     "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
     "display.blescale_brew_timer": "Run the scale's timer",
     "display.post_brew_timer_duration": "Keep brew time shown", "display.post_brew_timer_durationHint": "on the display after the shot",
@@ -288,10 +307,10 @@ const optLabel = l => lang === "de" ? (OPTION_DE[l] ?? l) : l;
 
 // ---------- what the tabs show (ids of the firmware's parameters) ----------
 const UNIT = {"brew.setpoint": "°C", "brew.temp_offset": "°C", "display.blinking.delta": "°C", "brew.by_time.target_time": "s",
-  "brew.by_weight.target_weight": "g", "display.post_brew_timer_duration": "s", "standby.time": "min",
+  "brew.by_weight.target_weight": "g", "brew.by_weight.lead": "g", "display.post_brew_timer_duration": "s", "standby.time": "min",
   "backflush.fill_time": "s", "backflush.flush_time": "s", "pid.regular.tn": "s", "pid.regular.tv": "s"};
 const STEP = {"brew.setpoint": .5, "brew.temp_offset": .1, "display.blinking.delta": .1, "brew.by_time.target_time": .5,
-  "brew.by_weight.target_weight": .5, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
+  "brew.by_weight.target_weight": .5, "brew.by_weight.lead": .1, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
 UNIT["brew.dose"] = "g";
@@ -303,7 +322,7 @@ const TABS = [
     ["sPresets", ["brew.presets"]], // presetCard()
     ["sCoffee", ["brew.grinder", "brew.beans"]],
     ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
-    ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "display.blescale_brew_timer"]],
+    ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn", "display.blescale_brew_timer"]],
     ["sTemp", ["brew.temp_offset", "display.blinking.delta"]],
     ["sStandby", ["standby.enabled", "standby.time"]],
     ["sDisplay", ["display.language", "display.post_brew_timer_duration"]],
@@ -318,7 +337,7 @@ const TABS = [
 // rows shown only while their switch is on
 const SHOWN_IF = {"standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
   "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled"};
-const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind"];
+const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lead", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind"];
 // settings the firmware only shows depending on another one (ParameterRegistry show conditions)
 const DEPENDS = {"brew.mode": /^brew\.by_|^display\.blescale/, "hardware.sensors.scale.enabled": /^brew\.by_weight|^TARE_ON|^display\.blescale/};
 function forget(id) { for (const k of Object.keys(P)) if (DEPENDS[id]?.test(k)) delete P[k]; }
@@ -609,6 +628,7 @@ function shotCard() {
   if (id && P[id]) {
     const v = el("div", "row"); v.append(lbl(id), stepCtl(id)); c.append(v);
     if (cur === "weight") { const q = el("p"); q.id = "ratio"; v.firstChild.append(q); setTimeout(paintRatio); }
+    if (cur === "weight" && P["brew.by_weight.lead"]) { const s = el("div", "row"); s.append(lbl("brew.by_weight.lead"), stepCtl("brew.by_weight.lead")); c.append(s); }
   }
   if (P["TARE_ON"]) { // only with the scale
     const b = el("button", "btn", t("tare"));
@@ -674,7 +694,9 @@ function paintShots(box = $("#shotList")) {
     const r = el("div", "shot" + (shotKey(x) === openShot ? " open" : "")), cv = el("div", "curve");
     const when = el("small", null, whenText(x.at));
     if (coldStart(x)) when.append(" · ", el("span", "cold", t("coldStart")));
-    r.append(el("b", null, num(x.s, 1) + " s"), el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), when, el("i", null, "›"));
+    const g = el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), dev = deviation(x);
+    if (dev != null) g.append(el("small", "dev" + (Math.abs(dev) > 1 ? " off" : ""), signed(dev)));
+    r.append(el("b", null, num(x.s, 1) + " s"), g, when, el("i", null, "›"));
     cv.hidden = shotKey(x) !== openShot;
     if (!cv.hidden) fillDetail(cv, x, i);
     r.onclick = () => toggleCurve(x, i);
@@ -704,6 +726,9 @@ async function rateShot(x, i, taste) {
   paintShots();
   if (i === 0) suggest(); // a new suggestion with the taste
 }
+// brew by weight: what ended up in the cup against the target (null if not stopped by weight)
+const deviation = x => x.tw != null && x.g != null ? Math.round((x.g - x.tw) * 10) / 10 : null;
+const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "±") + num(Math.abs(v), 1);
 // recipe, curve, taste, comparison and Claude's word on one shot
 function fillDetail(cv, x, i) {
   const info = [], d = curves[shotKey(x)];
@@ -712,6 +737,10 @@ function fillDetail(cv, x, i) {
   if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
   if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
   if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
+  if (x.tw != null) info.push(`${t("target")} ${num(x.tw, 1)} g`);
+  if (x.sw != null) info.push(`${t("atStop")} ${num(x.sw, 1)} g`);
+  if (x.sw != null && x.g != null) info.push(`${t("drip")} ${num(Math.max(0, x.g - x.sw), 1)} g`);
+  if (deviation(x) != null) info.push(`${signed(deviation(x))} g ${t(deviation(x) < 0 ? "underTarget" : "overTarget")}`);
   if (info.length) { // typed by the user: text, not HTML
     const line = el("div", "shotinfo"); line.textContent = info.join(" · ");
     cv.append(line);
@@ -745,7 +774,7 @@ function drawShotCharts() {
   drawShotBars(box.querySelector(".bars"));
   const k = shots.findIndex(x => shotKey(x) === openShot), cv = k < 0 ? null : box.querySelectorAll(".curve")[k];
   const other = compareShot && curves[compareShot] !== "none" ? curves[compareShot] : null;
-  if (cv && curves[openShot] && curves[openShot] !== "none") drawCurve(cv.querySelector("canvas"), curves[openShot], other);
+  if (cv && curves[openShot] && curves[openShot] !== "none") drawCurve(cv.querySelector("canvas"), curves[openShot], other, shots[k].tw);
 }
 function canvas2d(c) { // sharp on high-density screens; null while hidden
   if (!c || !c.clientWidth) return null;
@@ -778,7 +807,7 @@ function drawShotBars(c) {
 }
 // one shot: weight (left scale) and brew temperature (right scale) over the seconds, dashed line where
 // the pump stopped; another shot (o) dashed and paler behind it, on the same scales
-function drawCurve(c, d, o) {
+function drawCurve(c, d, o, target) {
   const g = canvas2d(c);
   if (!g || d.t.length < 2) return;
   const w = c.clientWidth, h = c.clientHeight, L = 30, R = w - 34, T = 10, B = h - 20, all = o ? [d, o] : [d];
@@ -786,7 +815,7 @@ function drawCurve(c, d, o) {
   const temps = all.flatMap(s => s.t.filter(v => v != null).map(v => v / 10)), wts = all.flatMap(s => (s.w || []).filter(v => v != null).map(v => v / 10));
   let tLo = temps.length ? Math.min(...temps) : 90, tHi = temps.length ? Math.max(...temps) : 94;
   if (tHi - tLo < 4) { const m = (tHi + tLo) / 2; tLo = m - 2; tHi = m + 2; }
-  const gHi = Math.max(10, ...wts) * 1.1, yG = v => B - v / gHi * (B - T), yT = v => B - (v - tLo) / (tHi - tLo) * (B - T);
+  const gHi = Math.max(10, target ?? 0, ...wts) * 1.1, yG = v => B - v / gHi * (B - T), yT = v => B - (v - tLo) / (tHi - tLo) * (B - T);
   g.strokeStyle = "#26262a"; g.lineWidth = 1; g.fillStyle = "#56565c";
   const step = total > 40 ? 20 : total > 16 ? 10 : 5;
   g.textAlign = "center";
@@ -796,6 +825,10 @@ function drawCurve(c, d, o) {
   g.textAlign = "left";
   g.fillText(num(tHi, 1) + "°", R + 4, T + 8); g.fillText(num(tLo, 1) + "°", R + 4, B);
   if (d.stop >= 0 && d.stop < d.t.length) { g.setLineDash([4, 4]); g.strokeStyle = "#56565c"; g.beginPath(); g.moveTo(X(d, d.stop), T); g.lineTo(X(d, d.stop), B); g.stroke(); }
+  if (target && d.w) { // the target weight: how far the drops carried it over
+    g.setLineDash([2, 3]); g.strokeStyle = "rgba(236,226,208,.55)"; g.beginPath(); g.moveTo(L, yG(target)); g.lineTo(R, yG(target)); g.stroke();
+    g.fillStyle = "rgba(236,226,208,.7)"; g.textAlign = "right"; g.fillText(`${t("target")} ${fmt(target)} g`, R - 4, yG(target) - 4); // right: the flow scale sits top left
+  }
   const line = (s, vals, y, col, dash) => {
     g.setLineDash(dash); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); let on = false;
     vals.forEach((v, k) => { if (v == null) { on = false; return; } on ? g.lineTo(X(s, k), y(v / 10)) : g.moveTo(X(s, k), y(v / 10)); on = true; });
@@ -869,6 +902,7 @@ function coffeeContext() {
     if (x.m) p.push("Mahlgrad " + x.m);
     if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
     if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
+    if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
     if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
     out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
   });
@@ -990,14 +1024,15 @@ function paintShotLive() {
   if (st) {
     st.classList.toggle("on", live.scale === 2);
     const [txt, bat] = st.lastChild.children, b = live.scale === 2 ? live.battery : null; // battery: only scales that report it
-    txt.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : t("scaleOff");
+    txt.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : live.scale === 3 ? t("scaleNone") : t("scaleOff");
     bat.replaceChildren(...(b == null ? [] : [" · ", el("span", b <= 20 ? "low" : "", `${t("battery")} ${b} %` + (b <= 20 ? " – " + t("batteryLow") : ""))]));
   }
   const brewing = live.ok && live.state === 20;
   if (brewing) lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, until: 0};
   else if (lastShot && !lastShot.until) { // the first value after the shot carries its final time; the result stays a little
-    lastShot.t = Math.max(lastShot.t, live.brewTime || 0); lastShot.until = Date.now() + 15000;
+    lastShot.t = Math.max(lastShot.t, live.brewTime || 0); lastShot.until = Date.now() + 15000; lastShot.sw = lastShot.w;
   }
+  if (!brewing && lastShot?.until && live.cup != null) lastShot.w = Math.max(lastShot.w ?? 0, live.cup); // the drops after the stop
   if (!ls) return;
   const x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
   ls.hidden = !x;
@@ -1008,7 +1043,8 @@ function paintShotLive() {
   $("#lsWeight").textContent = x.w == null ? "" : num(x.w, 1) + " g";
   $("#lsBarBox").hidden = !goal;
   if (goal) $("#lsBar").style.transform = `scaleX(${Math.max(0, Math.min(1, (m === "weight" ? x.w ?? 0 : x.t) / goal))})`;
-  $("#lsGoal").textContent = (goal ? `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}` : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "");
+  $("#lsGoal").textContent = (goal ? `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}` : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "")
+    + (!brewing && m === "weight" && goal && x.sw != null && x.w != null ? ` · ${t("atStop")} ${num(x.sw, 1)} g · ${signed(Math.round((x.w - goal) * 10) / 10)} g` : "");
 }
 // During a shot (and for a moment after it) the machine tab shows what the round display shows:
 // the ring fills with the time, or with the weight when the scale stops the shot (lib/RoundDisplay drawBrew)
@@ -1061,6 +1097,7 @@ function paintLive() {
   const title = txt + " · Orione"; // also in the tab and app switcher
   if (document.title !== title) document.title = title;
   paintAlarm(); paintShotLive(); paintDial(); paintFlush();
+  if (live.ok && live.scale !== lastScaleState) { const was = lastScaleState; lastScaleState = live.scale; if (was !== null && $("#scaleNow")) loadScale(); } // connected or lost: the settings card too
   const n = $("#tNow");
   if (!n) return;
   n.innerHTML = (live.temp == null ? "–" : num(live.temp, 1)) + "<small>°C</small>";
@@ -1099,7 +1136,7 @@ function connectLive() {
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
     if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1146,6 +1183,74 @@ function paintFlush() {
   b.disabled = !run && !(live.ok && live.state === 10); // the firmware starts only from "ready" (kPidNormal)
   st.textContent = run ? t(live.warmup === 2 ? "flushPulse" : "flushPause").replace("{n}", live.warmup === 2 ? live.pulse : live.pulse + 1)
     : live.ok && live.warmup === 1 ? t("flushPending") : b.disabled && live.ok ? t("flushBusy") : "";
+}
+// Bluetooth scale (src/hardware/scales/BluetoothScale.h): only the scale chosen here is connected.
+// GET /scale {state: 0 off, 1 chosen not connected, 2 connected, 3 none chosen, name, address, battery,
+// searching, found: [{name, address, rssi}]}; POST /scale/discover, /scale/select?address=&name=, /scale/forget
+let scaleInfo = null, scaleFound = [], scaleSearching = false, scaleSearched = false, scaleRun = 0, lastScaleState = null;
+const pause = ms => new Promise(r => setTimeout(r, ms));
+function scaleCard(title, ids) {
+  const c = card(title, ids);
+  if (!c || !P["hardware.sensors.scale.enabled"]?.value) return c;
+  const b = el("div", "scalepair");
+  b.innerHTML = '<p class="scalenow" id="scaleNow">…</p><div class="btns"><button class="btn" id="scaleFind"></button><button class="btn" id="scaleForget"></button></div><div id="scaleFound"></div><p class="shotinfo" id="scaleHint"></p>';
+  b.querySelector("#scaleFind").onclick = findScales;
+  b.querySelector("#scaleForget").onclick = async () => { scaleRun++; scaleFound = []; scaleSearched = false; await post("/scale/forget").catch(() => {}); await loadScale(); };
+  c.append(b);
+  setTimeout(() => { paintScale(); loadScale(); });
+  return c;
+}
+async function loadScale() {
+  try {
+    const r = await call("/scale");
+    if (r.status === 404) { $(".scalepair")?.remove(); return; } // firmware without the choice
+    if (r.ok) { scaleInfo = await r.json(); if (scaleSearching && scaleInfo.found?.length) scaleFound = scaleInfo.found; } // the list only from a search
+  } catch (e) {}
+  paintScale();
+}
+async function findScales() {
+  const run = ++scaleRun;
+  scaleFound = []; scaleSearching = true; paintScale();
+  const r = await post("/scale/discover").catch(() => null);
+  if (!r?.ok) { scaleSearching = false; paintScale(); toast(t("failed")); return; }
+  for (const end = Date.now() + 14000; run === scaleRun && Date.now() < end;) {
+    await pause(1000); await loadScale();
+    if (scaleInfo && !scaleInfo.searching && Date.now() > end - 11000) break; // the firmware searches 12 s
+  }
+  if (run === scaleRun) { scaleSearching = false; scaleSearched = true; paintScale(); }
+}
+async function chooseScale(f) {
+  const run = ++scaleRun;
+  scaleSearching = false;
+  const r = await post(`/scale/select?address=${encodeURIComponent(f.address)}&name=${encodeURIComponent(f.name)}`).catch(() => null);
+  if (!r?.ok) { toast(t("failed")); return; }
+  scaleFound = []; scaleSearched = false;
+  for (const end = Date.now() + 30000; run === scaleRun && Date.now() < end;) { // connecting takes ~10 s
+    await loadScale();
+    if (scaleInfo?.state === 2) break;
+    await pause(1500);
+  }
+}
+function paintScale() {
+  const now = $("#scaleNow");
+  if (!now) return;
+  const s = scaleInfo, find = $("#scaleFind"), forget = $("#scaleForget"), list = $("#scaleFound");
+  now.textContent = !s ? "…" : s.state === 2 ? t("scaleWith").replace("{n}", s.name || "BOOKOO") + (s.battery != null ? ` · ${t("battery")} ${s.battery} %` : "")
+    : s.state === 1 ? t("scaleWaiting").replace("{n}", s.name || "") : t("scaleNoneChosen");
+  now.className = "scalenow" + (s?.state === 2 ? " on" : "");
+  find.textContent = t(scaleSearching ? "scaleSearching" : "scaleFind"); find.disabled = scaleSearching;
+  forget.textContent = t("scaleForget"); forget.hidden = !s?.address;
+  list.innerHTML = "";
+  for (const f of scaleFound) { // the names come from any scale around: text, not HTML
+    const row = el("div", "row foundscale"), l = el("div", "lbl"), n = el("div"), go = el("button", "btn", t("scaleConnect"));
+    const mine = f.address === s?.address;
+    n.textContent = f.name;
+    l.append(n, el("p", null, t("signal")[f.rssi >= -65 ? 2 : f.rssi >= -80 ? 1 : 0] + (mine ? " · " + t("scaleChosen") : "")));
+    go.disabled = mine && s?.state === 2;
+    go.onclick = () => chooseScale(f);
+    row.append(l, go); list.append(row);
+  }
+  $("#scaleHint").textContent = t(!scaleSearching && scaleSearched && !scaleFound.length ? "scaleNoneFound" : "scaleHint");
 }
 function careExtras(m) {
   const b = el("section", "card");
@@ -1216,7 +1321,7 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sScale" ? scaleCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
     const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
     careExtras(m); paintBf();

@@ -46,6 +46,8 @@ BASE = {
     "brew.by_weight.enabled": dict(type=1, value=0, min=0, max=1),
     "brew.by_weight.target_weight": dict(type=2, value=36.0, min=0, max=500),
     "brew.by_weight.auto_tare": dict(type=1, value=1, min=0, max=1),
+    "brew.by_weight.lead": dict(type=2, value=1.5, min=0, max=5),
+    "brew.by_weight.learn": dict(type=1, value=1, min=0, max=1),
     "brew.presets": dict(type=4, value="25,36;30,45;45,80", min=0, max=48),
     "brew.dose": dict(type=2, value=18.0, min=5, max=30),
     "brew.grind": dict(type=4, value="12", min=0, max=9),
@@ -84,8 +86,18 @@ class State:
         self.shots = []  # newest first, as GET /shots of the firmware (src/shotHistory.h)
         self.bf = 0      # shots since the last backflush
         self.live = {}  # POST /__live: fields that override the SSE values (e.g. a running shot)
+        # the Bluetooth scale chosen in the settings (GET /scale): connected; select/forget/discover change it
+        self.scale = {"address": "c8:2e:18:aa:01:02", "name": "BOOKOO_SC U 1234", "connect_at": 0.0, "search_from": 0.0}
         self.temp = 22.0
         self.lock = threading.Lock()
+
+    def scale_state(self):
+        """0 off, 1 chosen but not (yet) connected, 2 connected, 3 none chosen: as the firmware"""
+        if not self.scale_at_boot:
+            return 0
+        if not self.scale["address"]:
+            return 3
+        return 2 if time.time() >= self.scale["connect_at"] else 1
 
     def shown(self, name):
         """registered and shouldShow() in src/ParameterRegistry.cpp (scale settings exist only if the scale was on at boot)"""
@@ -167,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, ASSETS[name], kind)
         if url.path == "/shots":
             with S.lock:
-                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, **x} for x in S.shots[:5]]
+                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 1.5, **x} for x in S.shots[:5]]
                 return self.send(200, json.dumps({"now": int(time.time()), "bf": S.bf, "shots": shots}), "application/json")
         if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
             i = int(q.get("i", ["0"])[0])
@@ -185,6 +197,15 @@ class Handler(BaseHTTPRequestHandler):
             f = None if w is None else [max(0, (w[min(k + 1, n - 1)] - w[max(k - 1, 0)]) * 10) for k in range(n)]  # hundredths of g/s
             temp = [round((93.5 - 1.6 * (1 if 4 < k * 0.5 < shot["s"] else 0) * min(1, (k * 0.5 - 4) / 6)) * 10) for k in range(n)]
             return self.send(200, json.dumps({"dt": 500, "stop": stop, "w": w, "t": temp, "f": f}), "application/json")
+        if url.path == "/scale":
+            with S.lock:
+                st, since = S.scale_state(), time.time() - S.scale["search_from"]
+                found = [{"name": "BOOKOO_SC U 1234", "address": "c8:2e:18:aa:01:02", "rssi": -58},
+                         {"name": "BOOKOO_SC 5678", "address": "c8:2e:18:aa:03:04", "rssi": -81}] if 1 < since < 30 and not S.live.get("noScales") else []
+                body = {"state": st, "address": S.scale["address"], "name": S.scale["name"], "searching": since < 3, "found": found}
+                if st == 2:
+                    body["battery"] = 76
+            return self.send(200, json.dumps(body), "application/json")
         if url.path == "/version":
             return self.send(200, "4.0.4+mock")
         if url.path == "/download/config":
@@ -213,8 +234,8 @@ class Handler(BaseHTTPRequestHandler):
                     S.temp += (target - S.temp) * 0.08 if pid else (22 - S.temp) * 0.02
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
-                            "state": state, "brewTime": 0, "scale": 2 if S.scale_at_boot else 0, "weight": 0.0 if S.scale_at_boot else None, "flow": None,
-                            "battery": 76 if S.scale_at_boot else None, "warmup": 0, "pulse": 0}
+                            "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
@@ -255,6 +276,18 @@ class Handler(BaseHTTPRequestHandler):
             with S.lock:
                 S.pending_upload = cfg
             return self.send(200, json.dumps({"success": True, "message": "ok", "restart": True}), "application/json")
+        if url.path in ("/scale/discover", "/scale/select", "/scale/forget"):
+            q = urllib.parse.parse_qs(url.query)
+            with S.lock:
+                if not S.scale_at_boot:
+                    return self.send(409, "scale off")
+                if url.path == "/scale/discover":
+                    S.scale["search_from"] = time.time()  # found after 1 s, searching for 3 s (the firmware: 12 s)
+                elif url.path == "/scale/select":
+                    S.scale.update(address=q.get("address", [""])[0].lower(), name=q.get("name", [""])[0], connect_at=time.time() + 1.5)
+                else:
+                    S.scale.update(address="", name="")
+            return self.send(202, "ok")
         if url.path == "/flush":  # warm-up flush by hand: the test drives the live values itself
             if not S.p["hardware.sensors.watertank.enabled"]["value"]:
                 return self.send(409, "no water level sensor")

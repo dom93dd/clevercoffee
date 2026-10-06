@@ -786,6 +786,75 @@ test("Reiterleiste klebt unten, auf kurzen und langen Seiten, auch beim Scrollen
   await ctx.close();
 });
 
+test("Waage wählen: suchen, verbinden, vergessen; Hinweis im Reiter Bezug", async ({browser}) => {
+  await fetch(BASE + "/scale/forget", {method: "POST"});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  await page.locator("#scaleSt:not(.on)", {hasText: "Keine Waage gewählt – unter Einstellungen → Waage suchen"}).waitFor();
+  await tab(page, "Einstellungen");
+  const now = page.locator("#scaleNow");
+  await page.locator("#scaleNow", {hasText: "Keine Waage gewählt"}).waitFor();
+  assert.equal(await page.locator("#scaleForget").isHidden(), true, "nothing to forget");
+  await page.locator("#scaleFind").click();
+  await page.locator("#scaleFind[disabled]", {hasText: "Suche"}).waitFor();
+  const rows = page.locator("#scaleFound .foundscale");
+  await rows.nth(1).waitFor();
+  assert.deepEqual(await rows.locator(".lbl > div").allTextContents(), ["BOOKOO_SC U 1234", "BOOKOO_SC 5678"]);
+  assert.deepEqual(await rows.locator(".lbl p").allTextContents(), ["Signal gut", "Signal schwach"]);
+  await page.locator("#scaleFind:not([disabled])", {hasText: "Waage suchen"}).waitFor({timeout: 20000});
+  await page.screenshot({path: OUT + "settings-scale-found.png", fullPage: true});
+  await rows.nth(0).locator("button", {hasText: "Verbinden"}).click();
+  await page.locator("#scaleNow.on", {hasText: "Verbunden mit BOOKOO_SC U 1234 · Akku 76 %"}).waitFor();
+  const sel = (await posts(BASE)).filter(p => p.path === "/scale/select").map(p => p.query);
+  assert.deepEqual(sel, ["address=c8%3A2e%3A18%3Aaa%3A01%3A02&name=BOOKOO_SC%20U%201234"]);
+  assert.equal(await rows.count(), 0, "the list goes once one is chosen");
+  await tab(page, "Bezug");
+  await page.locator("#scaleSt.on", {hasText: "Waage verbunden"}).waitFor();
+  await tab(page, "Einstellungen");
+  await page.locator("#scaleForget").click();
+  await page.locator("#scaleNow:not(.on)", {hasText: "Keine Waage gewählt"}).waitFor();
+  assert.ok((await posts(BASE)).some(p => p.path === "/scale/forget"));
+  // nothing around
+  await mock(BASE, "/__live", {noScales: true});
+  await page.locator("#scaleFind").click();
+  await page.locator("#scaleHint", {hasText: "Keine Waage gefunden"}).waitFor({timeout: 20000});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Nach Gewicht: Nachlauf und Abweichung vom Ziel, Pumpe stoppt vorher", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 27.0, g: 38.5, at: now - 900, tw: 36.0, sw: 35.1, ld: 1.5});
+  await mock(BASE, "/__shot", {s: 25.6, g: 36.4, at: now - 300, tw: 36.0, sw: 34.6, ld: 1.5, d: 18.0});
+  await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "brew.mode=1"});
+  await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "brew.by_weight.enabled=1&brew.by_time.enabled=0"});
+  let seen;
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, () => "Passt."); }});
+  const rows = view(page).locator("#shotList .shot");
+  await rows.nth(1).waitFor();
+  assert.equal(await rows.nth(0).locator(".dev").textContent(), "+0,4");
+  assert.equal(await rows.nth(0).locator(".dev.off").count(), 0, "within a gram");
+  assert.equal(await rows.nth(1).locator(".dev.off").textContent(), "+2,5", "over a gram: marked");
+  await rows.nth(0).click();
+  const info = view(page).locator("#shotList .curve:not([hidden]) .shotinfo");
+  await info.waitFor();
+  assert.match(await info.textContent(), /Ziel 36,0 g · Pumpe aus bei 34,6 g · Nachlauf 1,8 g · \+0,4 g über Ziel$/);
+  await view(page).locator("#shotList .curve:not([hidden]) canvas").waitFor();
+  await page.screenshot({path: OUT + "brew-weight-drops.png", fullPage: true});
+  // the shot card: stop by weight shows the lead
+  assert.equal(await row(page, "Pumpe stoppt vorher").locator("input").inputValue(), "1,5 g", "stop by weight: the lead");
+  // live: stopped at 34.6 g, the drops bring it to 36.4 g
+  await mock(BASE, "/__live", {state: 20, brewTime: 25.6, weight: 34.6, scale: 2, flow: 2.1});
+  await page.locator("#lsLab", {hasText: "Bezug läuft"}).waitFor();
+  await mock(BASE, "/__live", {state: 10, brewTime: 25.6, weight: 0.4, scale: 2, cup: 36.4});
+  await page.locator("#lsGoal", {hasText: "Ziel 36 g · Pumpe aus bei 34,6 g · +0,4 g"}).waitFor();
+  assert.equal(await page.locator("#lsWeight").textContent(), "36,4 g");
+  await page.waitForFunction(() => true);
+  const ctxText = seen.length ? seen[0].body.messages[0].content : "";
+  assert.ok(ctxText.includes("Pumpe aus bei 34,6 g (1,5 g vor dem Ziel), Nachlauf 1,8 g, +0,4 g zum Ziel"), "Claude gets the drops");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");

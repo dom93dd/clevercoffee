@@ -33,6 +33,9 @@ inline double totalTargetBrewTime = 0;                    // total target brew t
 inline double currBrewTime = 0;                           // current running total brewed time
 inline unsigned long startingTime = 0;                    // start time of brew
 inline bool brewPidDisabled = false;                      // is PID disabled for delay after brew has started?
+#ifdef CC_ORIONE
+inline bool brewStoppedByWeight = false; // the last shot stopped at its target weight (minus the lead)
+#endif
 
 // Backflush values
 inline int backflushCycles = BACKFLUSH_CYCLES;
@@ -264,6 +267,9 @@ inline bool brew() {
 
                 LOG(INFO, "Brew started");
 #ifdef CC_ORIONE
+                brewStoppedByWeight = false;
+#endif
+#ifdef CC_ORIONE
                 shot_history::brewStarted(temperature);
 #endif
 
@@ -340,8 +346,18 @@ inline bool brew() {
                 else if (scale && config.get<bool>("hardware.sensors.scale.enabled")) {
                     const auto targetBrewWeight = ParameterRegistry::getInstance().getParameterById("brew.by_weight.target_weight")->getValueAs<float>();
 
-                    if (currBrewWeight > targetBrewWeight && brewByWeightEnabled) {
+#ifdef CC_ORIONE
+                    // a lead before the target: the scale reports late and drops follow (learned, shotHistory.h)
+                    const float stopAt = targetBrewWeight - static_cast<float>(config.get<double>("brew.by_weight.lead"));
+#else
+                    const float stopAt = targetBrewWeight;
+#endif
+
+                    if (currBrewWeight > stopAt && brewByWeightEnabled) {
                         LOG(INFO, "Brew reached weight target");
+#ifdef CC_ORIONE
+                        brewStoppedByWeight = true;
+#endif
                         currBrewState = kBrewFinished;
                     }
                 }
@@ -359,7 +375,7 @@ inline bool brew() {
                 LOG(INFO, "Brew finished");
                 LOGF(INFO, "Shot time: %4.1f s", currBrewTime / 1000);
 #ifdef CC_ORIONE
-                shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? std::max(0.0f, static_cast<float>(currBrewWeight)) : -1.0f);
+                shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? std::max(0.0f, static_cast<float>(currBrewWeight)) : -1.0f, brewStoppedByWeight);
 #endif
                 LOG(INFO, "Brew idle");
                 currBrewState = kBrewIdle;

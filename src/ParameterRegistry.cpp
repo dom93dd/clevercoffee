@@ -298,6 +298,9 @@ void ParameterRegistry::initialize(Config& config) {
 #ifdef CC_ORIONE
     // Quick choice Espresso/Doppio/Lungo: "seconds,grams;..." set and read by the web page only
     addStringConfigParam("brew.presets", "Quick choice", sBrewSection, 324, nullptr, BREW_PRESETS_MAX_LENGTH, "Espresso, Doppio, Lungo: seconds,grams separated by ;");
+    addNumericConfigParam<double>("brew.by_weight.lead", "Stop before the target (g)", kDouble, sBrewSection, 329, nullptr, 0.0, 5.0,
+                                  "The pump stops this much before the target weight, the drops make up the rest; learned from each shot stopped by weight");
+    addBoolConfigParam("brew.by_weight.learn", "Learn the stop", sBrewSection, 330, nullptr, "After each shot stopped by weight, correct the lead by what ended up in the cup");
     // Recipe of the next shot and the coffee it is made with: logged with each shot, context for the analysis
     addNumericConfigParam<double>("brew.dose", "Dose (g)", kDouble, sBrewSection, 325, nullptr, BREW_DOSE_MIN, BREW_DOSE_MAX, "Ground coffee in the portafilter");
     addStringConfigParam("brew.grind", "Grind setting", sBrewSection, 326, nullptr, BREW_GRIND_MAX_LENGTH, "Grinder setting of the next shot");
@@ -1252,6 +1255,12 @@ void ParameterRegistry::initialize(Config& config) {
         [] { return true; },
         true
     );
+
+#ifdef CC_ORIONE
+    // set by "Waage suchen" on the web page (POST /scale/select), not typed
+    addStringConfigParam("hardware.sensors.scale.address", "Scale address", sHardwareSensorSection, 2432, nullptr, 17, "The chosen Bluetooth scale");
+    addStringConfigParam("hardware.sensors.scale.name", "Scale name", sHardwareSensorSection, 2433, nullptr, 23, "Its name as it advertises itself");
+#endif
 
 #ifndef CC_ORIONE // Orione: fixed in Config::get() or left out (slim-firmware-analysis.md)
     addEnumConfigParam(

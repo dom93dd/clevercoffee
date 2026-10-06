@@ -46,6 +46,18 @@ class BluetoothScale : public Scale {
 
         /** Remaining battery of the scale in percent, -1 if not connected or the scale does not report it */
         [[nodiscard]] int getBattery() const;
+
+        /**
+         * @brief Choosing the scale on the web page (Einstellungen → Waage): only the chosen one is
+         *        connected, none without a choice. Requests come from the web server's task and are
+         *        applied by the scale task; found() and target() may be read from any task.
+         */
+        void requestTarget(const char* address); // "aa:bb:cc:dd:ee:ff", "" = forget
+        void requestDiscover();                  // collect the scales around for kDiscoverMs
+        int found(orione::FoundScale* out, int max);
+        [[nodiscard]] bool discovering();
+        [[nodiscard]] bool hasTarget();
+        static constexpr uint32_t kDiscoverMs = 12000;
 #endif
 
     private:
@@ -64,6 +76,13 @@ class BluetoothScale : public Scale {
 
 #ifdef CC_ORIONE
         static void connectionTask(void* self);
+        void applyRequests();
         SemaphoreHandle_t lock_ = nullptr;
+        portMUX_TYPE requestLock_ = portMUX_INITIALIZER_UNLOCKED;
+        char target_[18] = {};        // the chosen scale, "" = none
+        char pendingTarget_[18] = {}; // set by the web page, applied by the scale task
+        bool targetPending_ = false;
+        bool discoverPending_ = false;
+        uint32_t fakeDiscoverUntil_ = 0; // bench build: the simulated search
 #endif
 };

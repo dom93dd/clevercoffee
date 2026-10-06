@@ -35,6 +35,7 @@
 #include <NimBLEClient.h>
 #include <NimBLEDevice.h>
 #include <NimBLEUtils.h>
+#include <OrioneScaleList.h> // Orione: the scales a search found (lib/Orione)
 
 #include <utility>
 
@@ -79,8 +80,37 @@ class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks {
             _deviceFound = false;
         }
 
-        void setTargetMac(String mac) {
-            _targetMac = std::move(mac);
+        // Orione: the target is read by the NimBLE task and set by others: a fixed buffer under a lock
+        // instead of a String (whose reallocation could race with the read)
+        void setTargetMac(const String& mac) {
+            portENTER_CRITICAL(&_lock);
+            std::strncpy(_target, mac.c_str(), sizeof(_target) - 1);
+            _target[sizeof(_target) - 1] = '\0';
+            portEXIT_CRITICAL(&_lock);
+        }
+
+        // Orione: without a chosen scale, connect to none (instead of the first supported one)
+        void setRequireTarget(const bool require) {
+            _requireTarget = require;
+        }
+
+        // Orione: collect every supported scale for the web page until untilMs
+        void discover(const uint32_t untilMs) {
+            portENTER_CRITICAL(&_lock);
+            _found.clear();
+            _discoverUntil = untilMs;
+            portEXIT_CRITICAL(&_lock);
+        }
+
+        [[nodiscard]] bool discovering() const {
+            return static_cast<int32_t>(_discoverUntil - millis()) > 0;
+        }
+
+        int found(orione::FoundScale *out, const int max) {
+            portENTER_CRITICAL(&_lock);
+            const int n = _found.list(out, max, millis());
+            portEXIT_CRITICAL(&_lock);
+            return n;
         }
 
         void setDebug(const bool debug) {
@@ -91,7 +121,11 @@ class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks {
         bool _deviceFound = false;
         NimBLEAddress _foundDeviceAddress = {};
         String _foundDeviceName;
-        String _targetMac = "";
+        char _target[18] = {}; // Orione: see setTargetMac()
+        bool _requireTarget = false;
+        volatile uint32_t _discoverUntil = 0;
+        orione::ScaleList _found;
+        portMUX_TYPE _lock = portMUX_INITIALIZER_UNLOCKED;
         bool _debug = false;
 
         static bool isSupportedScale(const String &name);
@@ -129,6 +163,13 @@ class AcaiaArduinoBLE {
         [[nodiscard]] bool heartbeatRequired() const;
         [[nodiscard]] bool isConnected() const;
         bool newWeightAvailable();
+
+        // Orione: choosing the scale from the web page
+        void setTarget(const String &mac); // "aa:bb:cc:dd:ee:ff", "" = none; drops a connection to another one
+        void requireTarget(bool require);  // without a target, connect to none
+        void discover(uint32_t ms);        // collect the supported scales around for ms
+        [[nodiscard]] bool discovering() const;
+        int found(orione::FoundScale *out, int max);
         [[nodiscard]] int getBattery() const; // Orione: percent, -1 unknown
 
     private:
@@ -163,6 +204,7 @@ class AcaiaArduinoBLE {
         ConnectionState _connectionState;
         unsigned long _connectionStartTime;
         String _targetMac;
+        bool _requireTarget = false; // Orione
         bool _cleanupComplete;
         unsigned long _lastScanClear;
 
