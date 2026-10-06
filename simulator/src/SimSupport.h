@@ -260,6 +260,18 @@ namespace sim {
                      ui.update(m.model(), static_cast<uint32_t>(t * 1000.0f));
                  }
              }},
+            {"scale-time-remind", "Waage, nach Zeit fertig, Schalter seit 1 min an",
+             [](FakeMachine& m, rd::RoundUi& ui) {
+                 m.scale = true;
+                 m.targetBrewWeight = 0; // stop by time, the scale only weighs
+                 m.settle();
+                 m.toggleBrewSwitch();
+
+                 for (float t = 0.0f; t < 95.0f; t += 0.1f) { // stops at 25 s, switch left on
+                     m.step(0.1f);
+                     ui.update(m.model(), static_cast<uint32_t>(t * 1000.0f));
+                 }
+             }},
             {"scale-done-over", "Waage, fertig, 2,5 g über dem Ziel",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.scale = true;

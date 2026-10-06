@@ -932,7 +932,7 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
                           warmup_flush::livePhase(), warmup_flush::flush.pulse(),
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
-                          !checkBrewActive() && currBrewSwitchState == kBrewSwitchWaitForRelease});
+                          brewSwitchHeldAfterBrew()});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

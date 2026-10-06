@@ -35,6 +35,7 @@ inline unsigned long startingTime = 0;                    // start time of brew
 inline bool brewPidDisabled = false;                      // is PID disabled for delay after brew has started?
 #ifdef CC_ORIONE
 inline bool brewStoppedByWeight = false; // the last shot stopped at its target weight (minus the lead)
+inline bool brewEndedSwitchOn = false;   // the switch waits for release because a brew (not a backflush) stopped by itself
 #endif
 
 // Backflush values
@@ -68,6 +69,20 @@ inline void valveSafetyShutdownCheck() {
         valveRelay->off();
     }
 }
+
+#ifdef CC_ORIONE
+/**
+ * @brief The brew stopped by itself (time, weight, scale lost) and the brew switch is still on: the round display and
+ *        the page keep the shot until it goes off (Dominik, 07.10.2026). Includes the one loop between the stop
+ *        (kBrewFinished) and checkBrewSwitch() moving the switch on to kBrewSwitchWaitForRelease. A stop by hand
+ *        never: the switch is already off. A backflush never: it does not set brewEndedSwitchOn.
+ */
+inline bool brewSwitchHeldAfterBrew() {
+    return (currBrewState == kBrewFinished && currBrewSwitchState == kBrewSwitchShortPressed) ||
+           (currBrewSwitchState == kBrewSwitchWaitForRelease && brewEndedSwitchOn);
+}
+
+#endif
 
 /**
  * @brief Toggle or momentary input for Brew Switch
@@ -122,6 +137,9 @@ inline void checkBrewSwitch() {
                 }
                 else if (currBrewState == kBrewFinished || currBackflushState == kBackflushFinished) {
                     currBrewSwitchState = kBrewSwitchWaitForRelease;
+#ifdef CC_ORIONE
+                    brewEndedSwitchOn = currBrewState == kBrewFinished;
+#endif
                     LOG(DEBUG, "Brew reached target or backflush done -> got to currBrewSwitchState = kBrewSwitchWaitForRelease");
                 }
                 break;

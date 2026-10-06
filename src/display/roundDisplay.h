@@ -53,8 +53,16 @@ inline rd::BandFilter roundBandFilter; // bands the panel already shows are not 
  */
 inline bool shouldDisplayBrewTimer() {
     // a shot that stopped by itself stays on the display while the brew switch is still on (Dominik, 07.10.2026)
-    return roundBrewTimer.update(checkBrewActive(), static_cast<float>(currBrewTime / 1000), millis(), static_cast<float>(postBrewTimerDuration),
-                                 currBrewSwitchState == kBrewSwitchWaitForRelease);
+    const bool visible = roundBrewTimer.update(checkBrewActive(), static_cast<float>(currBrewTime / 1000), millis(), static_cast<float>(postBrewTimerDuration),
+                                               brewSwitchHeldAfterBrew());
+    static bool wasHeld = false;
+
+    if (roundBrewTimer.held() != wasHeld) {
+        wasHeld = !wasHeld;
+        LOG(INFO, wasHeld ? "Round display: the shot stays until the brew switch is off" : "Round display: brew switch off, the shot stays for the post-brew time");
+    }
+
+    return visible;
 }
 
 inline rd::Model roundDisplayModel() {

@@ -1428,6 +1428,10 @@ namespace rd {
                 p.text(fonts::midSmall(), buf, kCx, kSecondNumberY, kWeight);
             }
 
+            if (done && m.brewSwitchReminder) { // where the weight ring has it
+                p.text(fonts::hint(), s.switchReminder, kCx, kRowBY + 6.0f, kHeat);
+            }
+
             return;
         }
 

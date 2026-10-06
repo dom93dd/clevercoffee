@@ -71,6 +71,11 @@ namespace rd {
             }
 
             /** The switch has been left on for kRemindMs after the shot: show a hint to switch it off */
+            /** The result stays because the brew switch is still on */
+            bool held() const {
+                return state_ == State::Hold && held_;
+            }
+
             bool remind(const uint32_t nowMs) const {
                 return state_ == State::Hold && held_ && nowMs - heldSince_ >= kRemindMs;
             }
