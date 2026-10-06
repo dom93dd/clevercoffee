@@ -80,7 +80,13 @@ inline rd::Model roundDisplayModel() {
     m.brewTimerVisible = config.get<bool>("hardware.switches.brew.enabled") && shouldDisplayBrewTimer();
     m.brewPhase = rd::brewPhaseFromState(currBrewState);
     m.brewTime = static_cast<float>(currBrewTime / 1000);
+#ifdef CC_ORIONE
+    // the target only when the time ends the shot, as on the web page; by hand or by weight the ring is a stopwatch
+    const bool stopByTime = config.get<int>("brew.mode") != 0 && config.get<bool>("brew.by_time.enabled");
+    m.brewTargetTime = stopByTime ? static_cast<float>(totalTargetBrewTime / 1000) : 0.0f;
+#else
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);
+#endif
     m.lastBrewTime = roundBrewTimer.lastShotSeconds();
     m.brewSwitchReminder = roundBrewTimer.remind(millis());
     m.flushTime = static_cast<float>(currBrewTime / 1000);
@@ -89,7 +95,13 @@ inline rd::Model roundDisplayModel() {
     m.scaleEnabled = scale != nullptr && config.get<bool>("hardware.sensors.scale.enabled");
 
     if (m.scaleEnabled) {
+#ifdef CC_ORIONE
+        // a Bluetooth scale that is off (or asleep) is not connected, not broken: no red symbol, no "Waage gestört"
+        // in every shot after 30 s without it (scaleFailure); the web page says "nicht verbunden" as well
+        m.scaleFault = false;
+#else
         m.scaleFault = scaleFailure;
+#endif
 #ifdef CC_ORIONE
         m.bleScale = true; // the Orione build has the Bluetooth scale only
 #else

@@ -804,6 +804,8 @@ test("Waage wählen: suchen, verbinden, vergessen; Hinweis im Reiter Bezug", asy
   await page.screenshot({path: OUT + "settings-scale-found.png", fullPage: true});
   await rows.nth(0).locator("button", {hasText: "Verbinden"}).click();
   await page.locator("#scaleNow.on", {hasText: "Verbunden mit BOOKOO_SC U 1234 · Akku 76 %"}).waitFor();
+  await page.locator("#scaleFind").waitFor({state: "hidden"}); // the machine does not search while connected
+  assert.match(await page.locator("#scaleHint").textContent(), /erst „Vergessen“/);
   const sel = (await posts(BASE)).filter(p => p.path === "/scale/select").map(p => p.query);
   assert.deepEqual(sel, ["address=c8%3A2e%3A18%3Aaa%3A01%3A02&name=BOOKOO_SC%20U%201234"]);
   assert.equal(await rows.count(), 0, "the list goes once one is chosen");
@@ -879,6 +881,90 @@ test("Fertig bleibt, solange der Bezugsschalter noch an ist; danach die Displayz
   await ctx.close();
 });
 
+test("Startseite nach Gewicht: Rad zeigt Ziel, danach die Abweichung, nach 1 min den Schalter-Hinweis", async ({browser}) => {
+  await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "brew.mode=1"});
+  await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "brew.by_weight.enabled=1&brew.by_time.enabled=0"});
+  const {page, ctx, errors} = await open(browser, BASE);
+  await page.clock.install();
+  // pixels of a colour in the dial's bottom row (y 186-208 of 240), where the display has it
+  const bottom = rgb => page.evaluate(([r, g, b]) => {
+    const c = document.querySelector("#dial"), k = c.width / 240, d = c.getContext("2d").getImageData(0, Math.round(186 * k), c.width, Math.round(22 * k)).data;
+    let n = 0; for (let i = 0; i < d.length; i += 4) n += Math.abs(d[i] - r) < 30 && Math.abs(d[i + 1] - g) < 30 && Math.abs(d[i + 2] - b) < 30; return n;
+  }, rgb);
+  const READY = [52, 211, 153], HEAT = [255, 146, 38], DIM = [142, 142, 148];
+  await mock(BASE, "/__live", {state: 20, brewTime: 20.1, weight: 28.0, scale: 2});
+  await page.locator("#dialCard:not([hidden])").waitFor();
+  await page.waitForTimeout(500);
+  assert.ok(await bottom(DIM) > 50, "while brewing: the target, dim");
+  await mock(BASE, "/__live", {state: 10, brewTime: 26.4, weight: 0.5, scale: 2, cup: 36.6, held: true});
+  await page.waitForTimeout(1500);
+  assert.ok(await bottom(READY) > 50, "done 0,6 g over: green");
+  await page.screenshot({path: OUT + "status-dial-weight-done.png"});
+  await page.clock.fastForward(65000);
+  await page.waitForTimeout(1500);
+  assert.ok(await bottom(HEAT) > 50 && await bottom(READY) < 10, "a minute later, switch still on: the reminder");
+  await page.screenshot({path: OUT + "status-dial-remind.png"});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Bezüge: Bewerten trifft den richtigen, auch wenn inzwischen einer dazukam; zurück aus dem Hintergrund neu geladen", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const rows = view(page).locator("#shotList .shot");
+  await rows.first().waitFor();
+  await rows.first().click();
+  await view(page).locator("#shotList .curve:not([hidden]) .taste").waitFor();
+  await mock(BASE, "/__shot", {s: 27.0, g: 38.0, at: now - 60}); // made while the page did not look
+  await view(page).locator("#shotList .curve:not([hidden]) .taste button", {hasText: "sauer"}).click();
+  await rows.nth(1).waitFor();
+  await settle(page);
+  const after = (await mock(BASE, "/shots")).shots;
+  assert.deepEqual(after.map(x => [x.s, x.r || 0]), [[27.0, 0], [25.3, 1]], "rated the 25,3 s shot, now in place 1");
+  // phone locked, a shot meanwhile, phone back
+  const hidden = on => page.evaluate(h => { Object.defineProperty(document, "hidden", {value: h, configurable: true}); document.dispatchEvent(new Event("visibilitychange")); }, on);
+  await hidden(true);
+  await mock(BASE, "/__shot", {s: 24.0, g: 35.0, at: now - 10});
+  await page.waitForTimeout(1500);
+  assert.equal(await rows.count(), 2, "hidden: nothing loaded");
+  await hidden(false);
+  await rows.nth(2).waitFor({timeout: 5000});
+  assert.equal(await rows.first().locator("b").textContent(), "24,0 s");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Standby: der Regelungs-Schalter folgt der Maschine", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  await page.locator("#pidSw.on").waitFor();
+  await mock(BASE, "/__live", {state: 80});
+  await page.locator("#pidSw:not(.on)").waitFor();
+  assert.equal(await page.locator("#pidSw").getAttribute("aria-checked"), "false");
+  await mock(BASE, "/__live", {state: 10}); // woken (brew switch)
+  await page.locator("#pidSw.on").waitFor();
+  await mock(BASE, "/__live", {state: 80});
+  await page.locator("#pidSw:not(.on)").waitFor();
+  await page.locator("#pidSw").click(); // one tap wakes it
+  await settle(page);
+  assert.equal((await values(BASE))["pid.enabled"], 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Reiter, der nicht laden konnte: Hinweis, beim nächsten Öffnen neu geladen", async ({browser}) => {
+  let refuse = true; // busy for longer than the page retries: the start tab and the other tabs in the background fail
+  const {page, ctx} = await open(browser, BASE, {route: pg => pg.route("**/parameters?*", r => refuse ? r.fulfill({status: 503, body: "busy"}) : r.continue())});
+  await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("Nicht alles geladen"), null, {timeout: 20000});
+  assert.equal(await page.locator("#pidSw").count(), 0, "built from what came");
+  refuse = false;
+  await tab(page, "Bezug");
+  await row(page, "Stoppen").waitFor({timeout: 30000});
+  await tab(page, "Maschine");
+  await page.locator("#pidSw").waitFor({timeout: 15000});
+  await ctx.close();
+});
+
 test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");
@@ -924,7 +1010,7 @@ test("Beschäftigt (503): alles kommt trotzdem an, keine Fehlermeldung", async (
     await tab(page, label);
     await settle(page);
     seen.push(await view(page).locator(".row").count());
-    if (await page.locator("#toast.show", {hasText: "Nicht gespeichert"}).count()) failed = true;
+    if (await page.locator("#toast.show", {hasText: /Nicht gespeichert|Nicht alles geladen/}).count()) failed = true;
     await noOverflow(page, label + " @320");
   }
   await row(page, "Stoppen").locator("button", {hasText: "nach Zeit"}).click();

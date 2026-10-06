@@ -82,6 +82,20 @@ inline bool brewSwitchHeldAfterBrew() {
            (currBrewSwitchState == kBrewSwitchWaitForRelease && brewEndedSwitchOn);
 }
 
+/**
+ * @brief The machine left kBrew while a brew was running: temperature control switched off on the page, sensor
+ *        error, over temperature. Those states do not call brew(), so pump and valve would stay on (with a sensor
+ *        error until the power plug is pulled; no OPV, and an empty tank runs the pump dry). Call from loop() after
+ *        handleMachineState(). The next brew() logs the shot and goes idle.
+ */
+inline void brewSafetyStop() {
+    if (checkBrewActive() && machineState != kBrew) {
+        LOGF(WARNING, "Brew stopped: machine left the brew state (%d)", static_cast<int>(machineState));
+        pumpRelay->off();
+        valveRelay->off();
+        currBrewState = kBrewFinished;
+    }
+}
 #endif
 
 /**

@@ -225,6 +225,12 @@ inline void checkWeight() {
 
     if (scaleTareOn) {
         scaleTareOn = false;
+#ifdef CC_ORIONE
+        // Bluetooth: the scale tares itself, with the cup on it. No message (it stayed on the round display, and
+        // "remove any load" is wrong here) and no 4 s delay (it held up the loop, also a stop by time or weight).
+        scale->tare();
+        return;
+#endif
         displayWrappedMessage("Taring scale,\nremove any load!\n....", 0, 2);
         delay(2000);
         scale->tare();

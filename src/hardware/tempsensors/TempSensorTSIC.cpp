@@ -51,6 +51,16 @@ bool TempSensorTSIC::sample_temperature(double& temperature) const {
         return false;
     }
 
+#ifdef CC_ORIONE
+    // A reading outside 0-180 °C is a fault, not a temperature: a shorted TSIC reads -49.9 °C, which the PID answered
+    // with 100 % heating until the thermal fuse blew (Lokus, Discord 2026). Counted as a failed reading, so the
+    // controller keeps the last good value and after 10 in a row (4 s) the machine goes to kSensorError, heater off.
+    if (!(temp > 0.0f && temp < 180.0f)) {
+        LOGF(WARNING, "Temperature reading out of range: %0.1f°C", temp);
+        return false;
+    }
+#endif
+
     temperature = temp;
 
     return true;

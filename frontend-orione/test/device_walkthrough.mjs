@@ -24,7 +24,7 @@ const check = async (name, fn) => {
 const before = await config();
 const br = await chromium.launch();
 const errors = [];
-let inflight = 0, maxInflight = 0;
+let maxInflight = 0; // per page: a page closed with a request under way never reports it finished
 
 async function open(width) {
   const ctx = await br.newContext({viewport: {width, height: 900}, deviceScaleFactor: 2, locale: "de-DE"});
@@ -33,6 +33,7 @@ async function open(width) {
   page.on("console", m => { if (m.type() === "error" && !/503|Failed to load resource/.test(m.text())) errors.push(`${width}px: ${m.text()}`); });
   page.on("dialog", d => d.dismiss().catch(() => {}));
   const counted = r => !r.url().endsWith("/events") && !r.isNavigationRequest() && !r.url().startsWith("data:");
+  let inflight = 0;
   page.on("request", r => { if (counted(r)) maxInflight = Math.max(maxInflight, ++inflight); });
   page.on("requestfinished", r => { if (counted(r)) inflight--; });
   page.on("requestfailed", r => { if (counted(r)) inflight--; });
@@ -173,7 +174,7 @@ await check("Wartung: Sicherung herunterladen, Version, Reset-Dialoge abgebroche
 });
 
 await check("Höchstens eine Anfrage gleichzeitig, keine Skriptfehler", async () => {
-  assert.equal(maxInflight, 1);
+  assert.equal(maxInflight, 1, "requests at once: " + maxInflight);
   assert.deepEqual(errors, []);
 });
 await ctx.close();

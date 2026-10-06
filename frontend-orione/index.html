@@ -200,7 +200,8 @@ const T = {
     scaleNoneChosen: "Keine Waage gewählt", scaleFind: "Waage suchen", scaleSearching: "Suche …", scaleForget: "Vergessen", scaleConnect: "Verbinden", scaleChosen: "gewählt",
     signal: ["Signal schwach", "Signal mittel", "Signal gut"], scaleHint: "Waage einschalten und die Bookoo-App trennen: Die Waage nimmt nur eine Verbindung an.",
     scaleNoneFound: "Keine Waage gefunden. Ist sie eingeschaltet und nicht mit dem Handy verbunden?",
-    dialBrew: "BEZUG", dialDone: "FERTIG", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
+    scaleSwitchHint: "Andere Waage: erst „Vergessen“, dann suchen (während eine verbunden ist, sucht die Maschine nicht).",
+    dialBrew: "BEZUG", dialDone: "FERTIG", dialRemind: "Schalter aus", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
     compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
     sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor, etwa beim Mahlgrad. Dafür brauchst du einen API-Schlüssel von Anthropic. Er bleibt nur in diesem Browser; am sichersten ist ein eigener Schlüssel mit Monatslimit.",
     claudeGet: "Schlüssel erstellen ↗", claudeConnect: "Verbinden", claudeChecking: "Prüfe …", claudeOn: "Verbunden", claudeOnHint: "Vorschläge zu deinen Bezügen von Claude Sonnet 5", claudeOff: "Trennen",
@@ -236,7 +237,7 @@ const T = {
     wifiReset: "WLAN zurücksetzen", factory: "Werkseinstellungen",
     reallyWifi: "WLAN-Zugang löschen? Die Maschine öffnet danach ein Einrichtungs-WLAN mit ihrem Gerätenamen (Passwort CleverCoffee).",
     reallyFactory: "Alle Einstellungen auf Werkszustand zurücksetzen?", reallyRestart: "Maschine jetzt neu starten?",
-    saved: "Gespeichert", failed: "Nicht gespeichert, bitte erneut", needReboot: "Wirkt nach einem Neustart",
+    saved: "Gespeichert", failed: "Nicht gespeichert, bitte erneut", loadFailed: "Nicht alles geladen, die Maschine ist beschäftigt – kommt beim nächsten Öffnen", needReboot: "Wirkt nach einem Neustart",
     restarting: "Startet neu …", uploaded: "Eingespielt, startet neu", version: "Version", restartNow: "Jetzt neu starten"
   },
   en: {
@@ -261,7 +262,8 @@ const T = {
     scaleNoneChosen: "No scale chosen", scaleFind: "Find scale", scaleSearching: "Searching …", scaleForget: "Forget", scaleConnect: "Connect", scaleChosen: "chosen",
     signal: ["weak signal", "medium signal", "good signal"], scaleHint: "Switch the scale on and disconnect the Bookoo app: the scale takes one connection only.",
     scaleNoneFound: "No scale found. Is it switched on and not connected to the phone?",
-    dialBrew: "BREW", dialDone: "DONE", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
+    scaleSwitchHint: "Another scale: first “Forget”, then search (the machine does not search while one is connected).",
+    dialBrew: "BREW", dialDone: "DONE", dialRemind: "Switch off", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
     compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
     sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step, e.g. the grind. It needs an API key from Anthropic. The key stays in this browser only; safest is a key of its own with a monthly limit.",
     claudeGet: "Create a key ↗", claudeConnect: "Connect", claudeChecking: "Checking …", claudeOn: "Connected", claudeOnHint: "Suggestions on your shots by Claude Sonnet 5", claudeOff: "Disconnect",
@@ -297,7 +299,7 @@ const T = {
     wifiReset: "Reset WiFi", factory: "Factory settings",
     reallyWifi: "Delete the WiFi credentials? The machine then opens a setup WiFi named after the device (password CleverCoffee).",
     reallyFactory: "Reset all settings to factory defaults?", reallyRestart: "Restart the machine now?",
-    saved: "Saved", failed: "Not saved, please retry", needReboot: "Takes effect after a restart",
+    saved: "Saved", failed: "Not saved, please retry", loadFailed: "Not everything loaded, the machine is busy – comes the next time you open it", needReboot: "Takes effect after a restart",
     restarting: "Restarting …", uploaded: "Restored, restarting", version: "Version", restartNow: "Restart now"
   }
 };
@@ -524,7 +526,7 @@ function statusView(m) {
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
-    const sw = switchCtl("pid.enabled");
+    const sw = switchCtl("pid.enabled"); sw.id = "pidSw";
     r.append(lbl("pid"), sw); rowToggles(r, sw); // lbl() adds the hint
     c.append(r); m.append(c);
   }
@@ -648,7 +650,14 @@ function shotCard() {
 // ---------- last shots (GET /shots: newest first, s seconds, g grams or null, at UTC seconds or 0) ----------
 let shots = null, bfCount = 0;
 async function loadShots() {
+  const before = shots?.map(shotKey).join("|");
   try { const r = await call("/shots"); if (r.ok) { const j = await r.json(); shots = j.shots; bfCount = j.bf ?? 0; } } catch (e) {}
+  if (shots && shots.map(shotKey).join("|") !== before) { // a curve is fetched by its place in the list: places moved
+    for (const k in curves) delete curves[k];
+    compareShot = null;
+    const i = shots.findIndex(x => shotKey(x) === openShot);
+    if (i < 0) openShot = null; else await curveOf(shots[i], i);
+  }
   paintShots(); paintBf();
   suggest();
 }
@@ -680,7 +689,8 @@ function shotsCard() {
 const curves = {};     // curve per shot, by "time,seconds"
 let openShot = null;   // key of the shot whose curve is open
 let compareShot = null; // key of the shot drawn behind it
-const shotKey = x => x.at + "," + x.s;
+// without a clock (no NTP) every shot has at 0: then more of the shot tells two apart
+const shotKey = x => x.at ? x.at + "," + x.s : ["0", x.s, x.g, x.t0, x.fd].join(",");
 const coldStart = x => x.t0 != null && P["brew.setpoint"] && x.t0 < P["brew.setpoint"].value - 2;
 function paintShots(box = $("#shotList")) {
   if (!box) return;
@@ -721,9 +731,14 @@ async function toggleCompare(o) {
   paintShots();
 }
 async function rateShot(x, i, taste) {
+  // the machine rates by place in its list: a shot since this list was loaded moves them
+  let moved = false;
+  try { const j = await (await call("/shots")).json(); const k = j.shots.findIndex(o => shotKey(o) === shotKey(x)); moved = k !== i; i = k; } catch (e) {}
+  if (i < 0) { toast(t("failed")); loadShots(); return; }
   const r = await post(`/shot/rate?i=${i}&t=${taste}`);
   if (!r.ok) { toast(t("failed")); return; }
   x.r = taste;
+  if (moved) { loadShots(); return; }
   paintShots();
   if (i === 0) suggest(); // a new suggestion with the taste
 }
@@ -1064,13 +1079,14 @@ function paintDial() {
   if (hero) hero.hidden = !!x;
   if (!x) return;
   const m = stopMode(), goalT = P["brew.by_time.target_time"]?.value, goalW = P["brew.by_weight.target_weight"]?.value;
-  drawDial($("#dial"), {time: x.t, weight: x.w, done: !brewing, byWeight: m === "weight" && x.w != null && goalW > 0, goalT: m === "time" ? goalT : 0, goalW});
+  const remind = !brewing && live.held && x.doneAt && Date.now() - x.doneAt >= 60000; // as the display: switch left on for a minute
+  drawDial($("#dial"), {time: x.t, weight: x.w, done: !brewing, byWeight: m === "weight" && x.w != null && goalW > 0, goalT: m === "time" ? goalT : 0, goalW, remind});
 }
 function drawDial(c, d) {
   const g = canvas2d(c);
   if (!g) return;
   const k = c.clientWidth / 240, F = "'Barlow SC',sans-serif", rgb = (a, b, f) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * f)).join(",")})`;
-  const TEXT = [242, 242, 244], DIM = [142, 142, 148], BREW = [240, 180, 92], BREWDARK = [110, 62, 24], READY = [52, 211, 153], WEIGHT = [236, 226, 208], BG = [0, 0, 0];
+  const TEXT = [242, 242, 244], DIM = [142, 142, 148], BREW = [240, 180, 92], BREWDARK = [110, 62, 24], READY = [52, 211, 153], WEIGHT = [236, 226, 208], HEAT = [255, 146, 38], BG = [0, 0, 0];
   g.scale(k, k);
   const rad = deg => (deg - 90) * Math.PI / 180, ring = (a0, a1, col) => { g.strokeStyle = col; g.beginPath(); g.arc(120, 120, 111, rad(a0), rad(a1)); g.stroke(); };
   g.fillStyle = "#000"; g.beginPath(); g.arc(120, 120, 120, 0, 2 * Math.PI); g.fill();
@@ -1083,7 +1099,7 @@ function drawDial(c, d) {
   g.lineWidth = 9;
   const end = 360 * Math.min(fill, 1), n = Math.max(1, Math.ceil(end / 4)); // the display's gradient along the ring, in 4 degree pieces
   for (let i = 0; i < n; i++) ring(end * i / n, end * (i + 1) / n + .3, rgb(BREWDARK, BREW, i / n));
-  if (fill > 1) ring(0, 360 * Math.min(fill - 1, 1), rgb(BREW, TEXT, .5)); // second lap
+  if (fill > 1) ring(0, 360 * Math.min(fill - 1, 1), d.byWeight ? rgb(HEAT, HEAT, 0) : rgb(BREW, TEXT, .5)); // second lap; over the target weight in the heat colour
   if (!d.done) { g.fillStyle = rgb(BREW, TEXT, .4); g.beginPath(); g.arc(120 + 111 * Math.cos(rad(360 * (fill % 1))), 120 + 111 * Math.sin(rad(360 * (fill % 1))), 6.5, 0, 2 * Math.PI); g.fill(); }
   g.textAlign = "center"; g.textBaseline = "alphabetic";
   g.font = `600 19px ${F}`; if ("letterSpacing" in g) g.letterSpacing = "2px";
@@ -1098,6 +1114,13 @@ function drawDial(c, d) {
   if (d.byWeight) { g.font = `600 32px ${F}`; g.fillStyle = rgb(TEXT, BG, .25); g.fillText(num(d.time, 1) + " s", 120, 177); }
   else if (d.weight != null) { g.font = `600 32px ${F}`; g.fillStyle = rgb(WEIGHT, WEIGHT, 0); g.fillText(num(d.weight, 1) + " g", 120, 177); }
   else if (d.goalT > 0) { g.font = `500 19px ${F}`; g.fillStyle = rgb(DIM, DIM, 0); g.fillText(`${t("goal")} ${fmt(d.goalT)} s`, 120, 172); }
+  // bottom row as the display: the switch reminder, or by weight the target and after the shot the deviation from it
+  if (d.remind) { g.font = `500 17px ${F}`; g.fillStyle = rgb(HEAT, HEAT, 0); g.fillText(t("dialRemind"), 120, 203); }
+  else if (d.byWeight) {
+    const off = Math.round((d.weight - d.goalW) * 10) / 10;
+    g.font = `500 19px ${F}`; g.fillStyle = d.done ? rgb(Math.abs(off) <= 1 ? READY : HEAT, BG, 0) : rgb(DIM, DIM, 0);
+    g.fillText(d.done ? signed(off) + " g" : `${t("goal")} ${fmt(d.goalW)} g`, 120, 203);
+  }
 }
 function paintLive() {
   const [txt, col] = stateText();
@@ -1136,7 +1159,7 @@ function drawChart() {
   const line = (i, col, dash) => { g.setLineDash(dash); g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(x(p[0]), y(p[i])) : g.moveTo(x(p[0]), y(p[i]))); g.stroke(); };
   line(2, "#56565c", [4, 4]); line(1, "#ff9226", []); g.setLineDash([]);
 }
-let es = null, started = false;
+let es = null, started = false, liveSeen = false;
 function connectLive() {
   if (es) return;
   started = true;
@@ -1144,6 +1167,14 @@ function connectLive() {
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
     if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
+    if (liveSeen && !live.ok) { loadShots(); if (dirty.has(shown)) render(); } // back after a gap (phone locked, WiFi): shots may have come meanwhile
+    liveSeen = true;
+    // standby switches the temperature control off on the machine, waking it switches it on: the switch follows
+    const pidNow = d.state !== live.state ? {10: 1, 20: 1, 60: 0, 80: 0}[d.state] : undefined;
+    if (pidNow != null && P["pid.enabled"] && P["pid.enabled"].value !== pidNow) {
+      P["pid.enabled"].value = pidNow;
+      const sw = $("#pidSw"); if (sw) { sw.classList.toggle("on", !!pidNow); sw.setAttribute("aria-checked", String(!!pidNow)); }
+    }
     Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
@@ -1154,7 +1185,7 @@ function connectLive() {
 // A hidden page (phone locked, other tab) stops reading but would keep the connection, and the
 // machine would keep sending into it: close it, open it again when the page is back
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { es?.close(); es = null; } else if (started) connectLive();
+  if (document.hidden) { es?.close(); es = null; live.ok = false; } else if (started) connectLive();
 });
 addEventListener("pagehide", () => { es?.close(); es = null; });
 async function loadHistory() {
@@ -1247,6 +1278,7 @@ function paintScale() {
     : s.state === 1 ? t("scaleWaiting").replace("{n}", s.name || "") : t("scaleNoneChosen");
   now.className = "scalenow" + (s?.state === 2 ? " on" : "");
   find.textContent = t(scaleSearching ? "scaleSearching" : "scaleFind"); find.disabled = scaleSearching;
+  find.hidden = s?.state === 2 && !scaleSearching; // the machine does not search while connected
   forget.textContent = t("scaleForget"); forget.hidden = !s?.address;
   list.innerHTML = "";
   for (const f of scaleFound) { // the names come from any scale around: text, not HTML
@@ -1258,7 +1290,7 @@ function paintScale() {
     go.onclick = () => chooseScale(f);
     row.append(l, go); list.append(row);
   }
-  $("#scaleHint").textContent = t(!scaleSearching && scaleSearched && !scaleFound.length ? "scaleNoneFound" : "scaleHint");
+  $("#scaleHint").textContent = t(s?.state === 2 && !scaleSearching ? "scaleSwitchHint" : !scaleSearching && scaleSearched && !scaleFound.length ? "scaleNoneFound" : "scaleHint");
 }
 function careExtras(m) {
   const b = el("section", "card");
@@ -1342,13 +1374,14 @@ async function render() {
   if (shown) scrollAt[shown] = scrollY;
   let v = views[def.id];
   if (!v || dirty.has(def.id)) {
-    try { await load(needOf(def)); } catch (e) { toast(t("failed")); }
+    let loaded = true;
+    try { await load(needOf(def)); } catch (e) { loaded = false; toast(t("loadFailed")); }
     if (def !== (TABS.find(x => x.id === tab) || TABS[0])) return; // switched meanwhile
     const nv = el("div");
     build(def, nv);
     if (v) v.replaceWith(nv); else $("#main").append(nv);
     views[def.id] = v = nv;
-    dirty.delete(def.id);
+    if (loaded) dirty.delete(def.id); else dirty.add(def.id); // built from what came, loaded again next time
     paintBf(); // its lines exist only now that the view is in the page
   }
   for (const [id, e] of Object.entries(views)) e.hidden = id !== def.id;

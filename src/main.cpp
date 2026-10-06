@@ -1654,6 +1654,7 @@ void loopPid() {
     updateStandbyTimer();
     handleMachineState();
 #ifdef CC_ORIONE
+    brewSafetyStop();
     warmup_flush::loop();
 #endif
     hotWaterHandler();
