@@ -379,6 +379,32 @@ test("Schnellwahl: Tipp setzt Stopp-Art und Ziele (mit Waage nach Gewicht)", asy
   await ctx.close();
 });
 
+test("Schnellwahl: ein im Reiter Bezug geändertes Ziel übernimmt der gewählte Chip", async ({browser}) => {
+  const form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+  await form("brew.mode=1"); await form("brew.by_weight.enabled=1&brew.by_time.enabled=0");
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  await view(page).locator(".chips button.on", {hasText: "Espresso"}).waitFor(); // 36 g: Espresso
+  await row(page, "Zielgewicht").locator("button", {hasText: "−"}).click();
+  await view(page).locator(".chips button.on", {hasText: "Espresso35,5 g"}).waitFor();
+  await settle(page);
+  let v = await values(BASE);
+  assert.equal(v["brew.by_weight.target_weight"], 35.5);
+  assert.equal(v["brew.presets"], "25,35.5;30,45;45,80");
+  await row(page, "Ohne Waage nach").locator("button", {hasText: "+"}).click(); // the time goes along as well
+  await settle(page);
+  assert.equal((await values(BASE))["brew.presets"], "25.5,35.5;30,45;45,80");
+  await view(page).locator(".chips button", {hasText: "Doppio"}).click(); // another chip: takes its values, changes none
+  await view(page).locator(".chips button.on", {hasText: "Doppio45 g"}).waitFor();
+  await settle(page);
+  v = await values(BASE);
+  assert.equal(v["brew.presets"], "25.5,35.5;30,45;45,80");
+  assert.equal(v["brew.by_weight.target_weight"], 45); assert.equal(v["brew.by_time.target_time"], 30);
+  await tab(page, "Einstellungen"); // the quick choice there shows it too
+  assert.deepEqual(await row(page, "Espresso").locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,5 s", "35,5 g"]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schnellwahl ohne Waage: nach Zeit", async ({browser}) => {
   await mock(BASE, "/parameters", "hardware.sensors.scale.enabled=0");
   await mock(BASE, "/restart", ""); // the scale settings go with the next start, as in the firmware

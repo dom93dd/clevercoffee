@@ -438,7 +438,7 @@ function switchCtl(id, onChange) {
   };
   return b;
 }
-function stepCtl(id) {
+function stepCtl(id, store = save) {
   const p = P[id], st = STEP[id] ?? 1, d = decimals(id), box = el("div", "step"), inp = el("input");
   inp.inputMode = "decimal";
   const show = v => inp.value = num(v, d) + (UNIT[id] ? " " + UNIT[id] : "");
@@ -446,7 +446,7 @@ function stepCtl(id) {
   const set = (v, typed) => { // +/- go in steps; a typed value stays as precise as the field shows it
     const q = typed ? 10 ** -d : st;
     val = Math.min(p.max, Math.max(p.min, Math.round(v / q) * q)); show(val); clearTimeout(pending);
-    if (Math.abs(val - p.value) > 1e-9) pending = setTimeout(() => save(id, val.toFixed(d)), 700); // back at the stored value: nothing to send
+    if (Math.abs(val - p.value) > 1e-9) pending = setTimeout(() => store(id, val.toFixed(d)), 700); // back at the stored value: nothing to send
   };
   const minus = el("button", null, "−"), plus = el("button", null, "+");
   minus.setAttribute("aria-label", t("less")); plus.setAttribute("aria-label", t("more")); inp.setAttribute("aria-label", t(id));
@@ -579,6 +579,27 @@ function presetActive(p) {
   const m = stopMode(), near = (id, v) => Math.abs((P[id]?.value ?? -1) - v) < .01;
   return m === "time" ? near("brew.by_time.target_time", p.s) : m === "weight" ? near("brew.by_weight.target_weight", p.g) : false;
 }
+function fillChips(chips) {
+  const cur = stopMode(), byWeight = cur === "weight" || (cur === "hand" && P["hardware.sensors.scale.enabled"]?.value);
+  chips.replaceChildren(...presets().map((p, i) => {
+    const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? fmt(p.g) + " g" : fmt(p.s) + " s"}</small>`);
+    b.onclick = () => applyPreset(i);
+    return b;
+  }));
+}
+// a target changed in the brew tab: the quick choice that was chosen takes it along (Dominik, 08.10.2026: "wenn man
+// das zielgewicht unter Bezug verändert, dann wird das nicht für die schnellauswahl übernommen")
+async function saveTarget(id, value) {
+  const list = presets(), i = list.findIndex(presetActive), k = id === "brew.by_weight.target_weight" ? "g" : "s";
+  if (!await save(id, value)) return false;
+  if (i >= 0 && Math.abs(list[i][k] - Number(value)) > .01) {
+    list[i][k] = Number(value);
+    await save("brew.presets", list.map(p => p.s + "," + p.g).join(";"));
+  }
+  const ch = $("#chips");
+  if (ch) fillChips(ch);
+  return true;
+}
 // a tap: stop by weight (scale on) or time unless one of them is chosen already, then both targets
 async function applyPreset(i) {
   const p = presets()[i];
@@ -610,13 +631,8 @@ function shotCard() {
   ls.id = "liveShot"; ls.hidden = true; c.append(ls);
   const cur = stopMode(), r = el("div", "row"), seg = el("div", "seg");
   if (P["brew.presets"]) {
-    const chips = el("div", "chips"), byWeight = cur === "weight" || (cur === "hand" && P["hardware.sensors.scale.enabled"]?.value);
-    presets().forEach((p, i) => {
-      const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? fmt(p.g) + " g" : fmt(p.s) + " s"}</small>`);
-      b.onclick = () => applyPreset(i);
-      chips.append(b);
-    });
-    c.append(chips);
+    const chips = el("div", "chips"); chips.id = "chips";
+    fillChips(chips); c.append(chips);
   }
   if (P["brew.dose"] || P["brew.grind"]) { // the recipe goes into the log with the shot
     const rc = el("div", "recipe");
@@ -636,13 +652,13 @@ function shotCard() {
   r.append(l, seg); c.append(r);
   const id = cur === "time" ? "brew.by_time.target_time" : cur === "weight" ? "brew.by_weight.target_weight" : null;
   if (id && P[id]) {
-    const v = el("div", "row"); v.append(lbl(id), stepCtl(id)); c.append(v);
+    const v = el("div", "row"); v.append(lbl(id), stepCtl(id, saveTarget)); c.append(v);
     if (cur === "weight") { const q = el("p"); q.id = "ratio"; v.firstChild.append(q); setTimeout(paintRatio); }
     if (cur === "weight" && P["brew.by_weight.lead"]) { const s = el("div", "row"); s.append(lbl("brew.by_weight.lead"), stepCtl("brew.by_weight.lead")); c.append(s); }
     if (cur === "weight" && P["brew.by_time.target_time"]) { // the firmware stops at the target time when the scale is missing
       const f = el("div", "row"), fl = el("div", "lbl");
       fl.append(el("div", null, t("fallbackTime")), el("p", null, t("fallbackTimeHint")));
-      f.append(fl, stepCtl("brew.by_time.target_time")); c.append(f);
+      f.append(fl, stepCtl("brew.by_time.target_time", saveTarget)); c.append(f);
     }
   }
   if (P["TARE_ON"]) { // only with the scale
