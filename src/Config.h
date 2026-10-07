@@ -394,8 +394,8 @@ class Config {
             _configDefs.emplace("brew.by_weight.auto_tare", ConfigDef::forBool(false));
 #ifdef CC_ORIONE
             _configDefs.emplace("brew.presets", ConfigDef::forString(BREW_PRESETS, BREW_PRESETS_MAX_LENGTH)); // only the web page reads it
-            // brew by weight: the pump stops this far before the target, learned from each shot (shotHistory.h)
-            _configDefs.emplace("brew.by_weight.lead", ConfigDef::forDouble(1.5, 0.0, 5.0));
+            // brew by weight: the pump stops this many seconds of flow before the target, learned from each shot (shotHistory.h)
+            _configDefs.emplace("brew.by_weight.lag", ConfigDef::forDouble(1.0, 0.0, 3.0));
             _configDefs.emplace("brew.by_weight.learn", ConfigDef::forBool(true));
             _configDefs.emplace("brew.heat_boost", ConfigDef::forDouble(60.0, 0.0, 100.0)); // heater floor while the pump runs (OrioneHeat.h)
             _configDefs.emplace("brew.dose", ConfigDef::forDouble(BREW_DOSE, BREW_DOSE_MIN, BREW_DOSE_MAX));

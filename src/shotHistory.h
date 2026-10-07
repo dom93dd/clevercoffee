@@ -34,11 +34,12 @@ namespace shot_history {
             return; // nothing saved yet
         }
 
-        orione::ShotLog::Stored saved{};
+        // this format or the one before (taken over after an update): ~420 bytes, setup() has room for it
+        alignas(orione::ShotLog::Stored) uint8_t saved[orione::ShotLog::kMaxStoredSize];
+        const size_t length = prefs.getBytesLength(kKey);
 
-        if (prefs.getBytesLength(kKey) == sizeof(saved)) {
-            prefs.getBytes(kKey, &saved, sizeof(saved));
-            shotLog.restore(&saved, sizeof(saved));
+        if (orione::ShotLog::readable(length) && prefs.getBytes(kKey, saved, length) == length) {
+            shotLog.restore(saved, length);
         }
 
         prefs.end();
@@ -125,6 +126,18 @@ namespace shot_history {
         LOG(INFO, "Backflush done: shot counter reset");
     }
 
+    // brew by weight: what the pump stopped with (brewHandler.h), and what the lag is learned from once the drops are counted
+    inline float stopLag = 0.0f;  // s
+    inline float stopFlow = 0.0f; // g/s
+    inline bool learnPending = false;
+    inline float learnTarget = 0.0f;
+
+    /** The pump stopped at the target weight minus lagSeconds of flow (g/s) */
+    inline void noteStop(const float lagSeconds, const float flow) {
+        stopLag = lagSeconds;
+        stopFlow = flow;
+    }
+
     inline void learnFromShot(); // below
 
     inline void brewStarted(const double celsius) {
@@ -134,6 +147,7 @@ namespace shot_history {
         }
 
         startCelsius = static_cast<float>(celsius);
+        noteStop(0.0f, 0.0f);
         shotCurve.begin(millis());
         flowMeter.start(millis());
     }
@@ -143,12 +157,7 @@ namespace shot_history {
         return scaleConnected && flowMeter.running() ? flowMeter.flow() : -1.0f;
     }
 
-    // brew by weight: what the lead is learned from once the drops are counted
-    inline bool learnPending = false;
-    inline float learnTarget = 0.0f;
-    inline float learnLead = 0.0f;
-
-    /** After the drops: correct the lead by what ended up in the cup (orione::BrewLead, as the shotStopper) */
+    /** After the drops: correct the lag by what ended up in the cup (orione::BrewLag, after the shotStopper) */
     inline void learnFromShot() {
         if (!learnPending || shotLog.count() == 0) {
             return;
@@ -156,17 +165,18 @@ namespace shot_history {
 
         learnPending = false;
         const auto& x = shotLog.at(0);
-        const float next = std::round(orione::BrewLead::learn(learnLead, learnTarget, x.grams) * 10.0f) / 10.0f;
-        LOGF(INFO, "Brew by weight: target %.1f g, %.1f g at the stop, %.1f g in the cup, lead %.1f -> %.1f g", learnTarget, x.stopTenths / 10.0f, x.grams, learnLead, next);
+        const float lag = x.lagCs / 100.0f, flow = x.flowStopCs / 100.0f;
+        const float next = std::round(orione::BrewLag::learn(lag, learnTarget, x.grams, flow) * 100.0f) / 100.0f;
+        LOGF(INFO, "Brew by weight: target %.1f g, %.1f g at the stop (%.1f g/s), %.1f g in the cup, lag %.2f -> %.2f s", learnTarget, x.stopTenths / 10.0f, flow, x.grams, lag, next);
 
-        if (config.get<bool>("brew.by_weight.learn") && std::fabs(next - learnLead) >= 0.05f) {
-            ParameterRegistry::getInstance().setParameterValue("brew.by_weight.lead", static_cast<double>(next));
+        if (config.get<bool>("brew.by_weight.learn") && std::fabs(next - lag) >= 0.005f) {
+            ParameterRegistry::getInstance().setParameterValue("brew.by_weight.lag", static_cast<double>(next));
         }
     }
 
     /**
      * @param grams in the cup when the pump stopped, < 0 without a connected scale
-     * @param byWeight the shot stopped at its target weight (minus the lead)
+     * @param byWeight the shot stopped at its target weight (minus the lead, noteStop())
      */
     inline void brewEnded(const double seconds, const float grams, const bool byWeight) {
         shotCurve.stopped();
@@ -175,9 +185,15 @@ namespace shot_history {
             shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str(), config.get<String>("brew.beans").c_str());
             shotLog.noteFacts(startCelsius, grams < 0 ? -1.0f : flowMeter.firstDropSeconds());
             learnTarget = byWeight && grams >= 0 ? config.get<float>("brew.by_weight.target_weight") : 0.0f;
-            learnLead = config.get<float>("brew.by_weight.lead");
             learnPending = learnTarget > 0.0f;
-            shotLog.noteWeights(learnTarget, grams, learnLead);
+
+            if (learnTarget > 0.0f) {
+                shotLog.noteWeights(learnTarget, grams, orione::BrewLag::leadGrams(stopLag, stopFlow), stopLag, stopFlow);
+            }
+            else {
+                shotLog.noteWeights(0.0f, grams, 0.0f);
+            }
+
             LOGF(INFO, "Shot logged: %.1f s, %.1f g", seconds, grams);
         }
         else {
@@ -219,7 +235,7 @@ namespace shot_history {
 
             if (isShot(i, when, seconds) && shotLog.remove(i)) {
                 if (i == 0) {
-                    learnPending = false; // a deleted shot teaches the lead nothing
+                    learnPending = false; // a deleted shot teaches the lag nothing
                 }
 
                 saveLog();
@@ -237,7 +253,8 @@ namespace shot_history {
      * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","b":"beans","r":2,"t0":93.4,"fd":6.2},...]},
      * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
      * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown); brew by weight:
-     * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with
+     * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with,
+     * lg that lead as seconds of flow, fs the flow when the pump stopped (g/s; both null if unknown)
      */
     /** Text typed by the user inside a JSON string: quotes and backslashes escaped, control characters left out */
     inline void printJsonText(Print& out, const char* text) {
@@ -287,7 +304,11 @@ namespace shot_history {
             s.targetTenths ? (void)out.printf("%u.%u", s.targetTenths / 10u, s.targetTenths % 10u) : (void)out.print("null");
             out.print(R"(,"sw":)");
             s.stopTenths ? (void)out.printf("%u.%u", s.stopTenths / 10u, s.stopTenths % 10u) : (void)out.print("null");
-            out.printf(R"(,"ld":%u.%u})", s.leadTenths / 10u, s.leadTenths % 10u);
+            out.printf(R"(,"ld":%u.%u,"lg":)", s.leadTenths / 10u, s.leadTenths % 10u);
+            s.lagCs ? (void)out.printf("%u.%02u", s.lagCs / 100u, s.lagCs % 100u) : (void)out.print("null");
+            out.print(R"(,"fs":)");
+            s.flowStopCs ? (void)out.printf("%u.%02u", s.flowStopCs / 100u, s.flowStopCs % 100u) : (void)out.print("null");
+            out.print("}");
         }
 
         out.print("]}");

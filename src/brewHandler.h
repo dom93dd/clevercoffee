@@ -428,8 +428,11 @@ inline bool brew() {
                     const auto targetBrewWeight = ParameterRegistry::getInstance().getParameterById("brew.by_weight.target_weight")->getValueAs<float>();
 
 #ifdef CC_ORIONE
-                    // a lead before the target: the scale reports late and drops follow (learned, shotHistory.h)
-                    const float stopAt = targetBrewWeight - static_cast<float>(config.get<double>("brew.by_weight.lead"));
+                    // a lead before the target: the scale reports late and drops follow, as many as run in the
+                    // learned lag at the flow right now (orione::BrewLag, learned in shotHistory.h)
+                    const float lag = static_cast<float>(config.get<double>("brew.by_weight.lag"));
+                    const float flow = shot_history::flowMeter.running() ? shot_history::flowMeter.flow() : 0.0f;
+                    const float stopAt = targetBrewWeight - orione::BrewLag::leadGrams(lag, flow);
 #else
                     const float stopAt = targetBrewWeight;
 #endif
@@ -438,6 +441,7 @@ inline bool brew() {
                         LOG(INFO, "Brew reached weight target");
 #ifdef CC_ORIONE
                         brewStoppedByWeight = true;
+                        shot_history::noteStop(lag, flow);
 #endif
                         currBrewState = kBrewFinished;
                     }

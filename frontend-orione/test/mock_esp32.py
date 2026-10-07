@@ -9,8 +9,9 @@ for backflush and tare, a config upload that needs a restart, SSE live values.
 
 --busy-every N answers every N-th GET /parameters with 503, like the request gate of the firmware.
 Test hooks: GET /__posts (POST requests so far), GET /__state (values, restarts),
-POST /__live (JSON merged into the SSE values), POST /__shot (log a shot), POST /__bf (backflush counter),
-POST /__reset (fresh state).
+POST /__live (JSON merged into the SSE values; {"noBeans": true}: GET /beans answers 404), POST /__shot (log a shot),
+POST /__bf (backflush counter), POST /__param (JSON {name: value}: a value the machine changed itself, e.g. the learned
+drop time), POST /__reset (fresh state).
 """
 
 import argparse
@@ -46,7 +47,7 @@ BASE = {
     "brew.by_weight.enabled": dict(type=1, value=0, min=0, max=1),
     "brew.by_weight.target_weight": dict(type=2, value=36.0, min=0, max=500),
     "brew.by_weight.auto_tare": dict(type=1, value=1, min=0, max=1),
-    "brew.by_weight.lead": dict(type=2, value=1.5, min=0, max=5),
+    "brew.by_weight.lag": dict(type=2, value=1.0, min=0, max=3),
     "brew.heat_boost": dict(type=2, value=60.0, min=0, max=100),
     "brew.by_weight.learn": dict(type=1, value=1, min=0, max=1),
     "brew.presets": dict(type=4, value="25,36;30,45;45,80", min=0, max=48),
@@ -90,7 +91,65 @@ class State:
         # the Bluetooth scale chosen in the settings (GET /scale): connected; select/forget/discover change it
         self.scale = {"address": "c8:2e:18:aa:01:02", "name": "BOOKOO_SC U 1234", "connect_at": 0.0, "search_from": 0.0}
         self.temp = 22.0
+        self.beans = []         # recipes per bean as src/beanProfiles.h keeps them: {"n","d","m","tw","t","lg","used"}
+        self.bean_live = None   # the current bean's values as last seen
+        self.bean_clock = 0
         self.lock = threading.Lock()
+
+    # ---- beans: the firmware's loop (src/beanProfiles.h), run here before each request instead of every 0.5 s
+    RECIPE = {"d": "brew.dose", "m": "brew.grind", "tw": "brew.by_weight.target_weight", "t": "brew.setpoint", "lg": "brew.by_weight.lag"}
+
+    @staticmethod
+    def bean_key(name):
+        return re.sub(r"[A-Z]", lambda m: m.group(0).lower(), str(name or "").strip())
+
+    def recipe(self):
+        r = {k: self.p[n]["value"] for k, n in self.RECIPE.items()}
+        r["n"] = self.p["brew.beans"]["value"]
+        return r
+
+    def bean_find(self, name):
+        key = self.bean_key(name)
+        return next((i for i, b in enumerate(self.beans) if key and self.bean_key(b["n"]) == key), None)
+
+    def bean_put(self, r):
+        if not self.bean_key(r["n"]):
+            return
+        self.bean_clock += 1
+        r = dict(r, used=self.bean_clock)
+        i = self.bean_find(r["n"])
+        if i is None and len(self.beans) >= 8:  # full: the one not used for the longest time makes room
+            i = min(range(len(self.beans)), key=lambda k: self.beans[k]["used"])
+        if i is None:
+            self.beans.append(r)
+        else:
+            self.beans[i] = r
+
+    def check_beans(self):
+        now, live = self.recipe(), self.bean_live
+        if live is None:
+            self.bean_live = now
+            if self.bean_find(now["n"]) is None:
+                self.bean_put(now)
+            return
+        if self.bean_key(now["n"]) != self.bean_key(live["n"]):
+            self.bean_put(live)  # the old bean keeps its values
+            i = self.bean_find(now["n"])
+            if i is not None:
+                back = dict(self.beans[i], n=now["n"])
+                for k, n in self.RECIPE.items():
+                    if back[k] or k in ("m", "lg"):
+                        self.p[n]["value"] = back[k]
+            self.bean_put(self.recipe())
+        self.bean_live = self.recipe()
+
+    def beans_json(self):
+        cur = self.bean_key(self.bean_live["n"]) if self.bean_live else ""
+        out = []
+        for b in sorted(self.beans, key=lambda b: -b["used"]):
+            b = self.bean_live if cur and self.bean_key(b["n"]) == cur else b
+            out.append({"n": b["n"], "d": b["d"] or None, "m": b["m"], "tw": b["tw"] or None, "t": b["t"] or None, "lg": round(b["lg"], 2)})
+        return {"now": self.bean_live["n"] if self.bean_live else "", "beans": out}
 
     def scale_state(self):
         """0 off, 1 chosen but not (yet) connected, 2 connected, 3 none chosen: as the firmware"""
@@ -157,6 +216,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(url.query)
+        if not url.path.startswith("/__"):
+            with S.lock:
+                S.check_beans()
         if url.path in ("/", "/index.html"):
             S.page_loads += 1
             with open(PAGE, "rb") as f:
@@ -180,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, ASSETS[name], kind)
         if url.path == "/shots":
             with S.lock:
-                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 1.5, **x} for x in S.shots[:5]]
+                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 0, "lg": None, "fs": None, **x} for x in S.shots[:5]]
                 return self.send(200, json.dumps({"now": int(time.time()), "bf": S.bf, "shots": shots}), "application/json")
         if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
             i = int(q.get("i", ["0"])[0])
@@ -198,6 +260,11 @@ class Handler(BaseHTTPRequestHandler):
             f = None if w is None else [max(0, (w[min(k + 1, n - 1)] - w[max(k - 1, 0)]) * 10) for k in range(n)]  # hundredths of g/s
             temp = [round((93.5 - 1.6 * (1 if 4 < k * 0.5 < shot["s"] else 0) * min(1, (k * 0.5 - 4) / 6)) * 10) for k in range(n)]
             return self.send(200, json.dumps({"dt": 500, "stop": stop, "w": w, "t": temp, "f": f}), "application/json")
+        if url.path == "/beans":
+            if S.live.get("noBeans"):  # firmware without bean profiles
+                return self.send(404, "not found")
+            with S.lock:
+                return self.send(200, json.dumps(S.beans_json()), "application/json")
         if url.path == "/scale":
             with S.lock:
                 st, since = S.scale_state(), time.time() - S.scale["search_from"]
@@ -252,6 +319,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(n) if n else b""
         if not url.path.startswith("/__"):
             with S.lock:
+                S.check_beans()  # the firmware's loop has seen the values before this request (it looks every 0.5 s)
                 S.posts.append({"path": url.path, "query": url.query, "body": body.decode(errors="replace")[:200]})
         if url.path == "/parameters":
             form = urllib.parse.parse_qs(body.decode(), keep_blank_values=True)
@@ -309,6 +377,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(400, "bad rating")
                 S.shots[i]["r"] = t
             return self.send(200, "OK")
+        if url.path == "/beans/delete":  # as src/beanProfiles.h: not the current one
+            name = urllib.parse.parse_qs(url.query).get("n", [""])[0]
+            with S.lock:
+                S.check_beans()
+                i = S.bean_find(name)
+                if i is None or S.bean_key(name) == S.bean_key(S.bean_live["n"]):
+                    return self.send(409, "not that bean")
+                del S.beans[i]
+            return self.send(200, "OK")
         if url.path == "/shot/delete":  # as src/embeddedWebserver.h: by place, checked against time and seconds
             q = urllib.parse.parse_qs(url.query)
             i = int(q.get("i", ["-1"])[0])
@@ -326,6 +403,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/__shot":  # JSON {"s": 25.3, "g": 36.1 or null, "at": UTC seconds or 0}
             with S.lock:
                 S.shots.insert(0, json.loads(body))
+            return self.send(200, "OK")
+        if url.path == "/__param":
+            with S.lock:
+                for k, val in json.loads(body).items():
+                    S.p[k]["value"] = val
             return self.send(200, "OK")
         if url.path == "/__live":
             with S.lock:

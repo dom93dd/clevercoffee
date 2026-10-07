@@ -111,6 +111,13 @@ details[open] summary:after{content:"−"}
 .recipe .step{width:100%;justify-content:space-between}
 .recipe .step input{width:100%;min-width:0}
 .recipe .txt{max-width:none;width:100%;text-align:center}
+.recipe .bean{grid-column:1/-1}
+.recipe select{max-width:none;width:100%}
+.beanrow{border-top:1px solid var(--line)}
+.beanrow .lbl div{overflow-wrap:anywhere}
+.beanrow .btns{margin:0;flex:none;gap:6px}
+.beanrow .btn{padding:9px 12px;font-size:14px}
+.beanrow .on{color:var(--ready);font-size:14px;font-weight:600;flex:none}
 .shotinfo{font-size:13px;color:var(--mute);margin:10px 0 2px}
 .shotinfo .cold,.shot .cold{color:var(--cool)}
 .taste{display:flex;align-items:center;gap:10px;margin:12px 0 4px;font-size:14px;color:var(--mute)}
@@ -220,7 +227,11 @@ const T = {
     "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
     "hardware.sensors.scale.enabled": "Bluetooth-Waage", "hardware.sensors.scale.enabledHint": "Änderung wirkt nach einem Neustart",
     "brew.by_weight.enabled": "Nach Gewicht stoppen", "brew.by_weight.target_weight": "Zielgewicht",
-    "brew.by_weight.lead": "Pumpe stoppt vorher", "brew.by_weight.leadHint": "so viel vor dem Ziel, der Nachlauf füllt auf; lernt aus jedem Bezug",
+    "brew.by_weight.lag": "Nachlaufzeit", "brew.by_weight.lagHint": "Die Pumpe stoppt so viele Sekunden Durchfluss vor dem Ziel, der Nachlauf füllt auf; lernt aus jedem Bezug",
+    lagLast: "Letzter Bezug: {f} g/s, also {g} g vor dem Ziel", lagAt: "Bei {f} g/s: {g} g vor dem Ziel",
+    beansSaved: "Gespeicherte Bohnen", beansHint: "Jede Bohne behält Dosis, Mahlgrad, Zielgewicht, Temperatur und Nachlaufzeit. Für eine neue Bohne oben den Namen eintragen.",
+    beanActive: "aktiv", beanUse: "Wählen", beanDelete: "Löschen", reallyDeleteBean: "Die Bohne „{n}“ mit ihren Werten löschen?", beanBack: "„{n}“ geladen", beanNew: "Neue Bohne „{n}“ angelegt",
+    beanNewOpt: "+ Neue Bohne …", beanNewQ: "Name der neuen Bohne (Sorte und Röstung)", beanNone: "keine angegeben", beanLag: "Nachlauf",
     "brew.by_weight.learn": "Stopp automatisch lernen", "brew.by_weight.learnHint": "nach jedem Bezug nach Gewicht aus dem, was in der Tasse landet",
     target: "Ziel", atStop: "Pumpe aus bei", drip: "Nachlauf", overTarget: "über Ziel", underTarget: "unter Ziel", switchBack: "Bezugsschalter wieder auf AUS stellen",
     "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
@@ -288,7 +299,11 @@ const T = {
     "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
     "hardware.sensors.scale.enabled": "Bluetooth scale", "hardware.sensors.scale.enabledHint": "Takes effect after a restart",
     "brew.by_weight.enabled": "Stop by weight", "brew.by_weight.target_weight": "Target weight",
-    "brew.by_weight.lead": "Pump stops early by", "brew.by_weight.leadHint": "this much before the target, the drops fill up; learned from each shot",
+    "brew.by_weight.lag": "Drop time", "brew.by_weight.lagHint": "The pump stops this many seconds of flow before the target, the drops fill up; learned from each shot",
+    lagLast: "Last shot: {f} g/s, so {g} g before the target", lagAt: "At {f} g/s: {g} g before the target",
+    beansSaved: "Saved beans", beansHint: "Each bean keeps dose, grind, target weight, temperature and drop time. For new beans, type their name above.",
+    beanActive: "current", beanUse: "Use", beanDelete: "Delete", reallyDeleteBean: "Delete the beans “{n}” and their values?", beanBack: "“{n}” loaded", beanNew: "New beans “{n}” added",
+    beanNewOpt: "+ New beans …", beanNewQ: "Name of the new beans (kind and roast)", beanNone: "none given", beanLag: "drops",
     "brew.by_weight.learn": "Learn the stop", "brew.by_weight.learnHint": "after each shot by weight, from what ends up in the cup",
     target: "Target", atStop: "pump off at", drip: "drops", overTarget: "over target", underTarget: "under target", switchBack: "Switch the brew switch back off",
     "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
@@ -322,10 +337,10 @@ const optLabel = l => lang === "de" ? (OPTION_DE[l] ?? l) : l;
 
 // ---------- what the tabs show (ids of the firmware's parameters) ----------
 const UNIT = {"brew.heat_boost": "%", "brew.setpoint": "°C", "brew.temp_offset": "°C", "display.blinking.delta": "°C", "brew.by_time.target_time": "s",
-  "brew.by_weight.target_weight": "g", "brew.by_weight.lead": "g", "display.post_brew_timer_duration": "s", "standby.time": "min",
+  "brew.by_weight.target_weight": "g", "brew.by_weight.lag": "s", "display.post_brew_timer_duration": "s", "standby.time": "min",
   "backflush.fill_time": "s", "backflush.flush_time": "s", "pid.regular.tn": "s", "pid.regular.tv": "s"};
 const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1, "display.blinking.delta": .1, "brew.by_time.target_time": .5,
-  "brew.by_weight.target_weight": .5, "brew.by_weight.lead": .1, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
+  "brew.by_weight.target_weight": .5, "brew.by_weight.lag": .05, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
 UNIT["brew.dose"] = "g";
@@ -352,7 +367,9 @@ const TABS = [
 // rows shown only while their switch is on
 const SHOWN_IF = {"standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
   "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled"};
-const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lead", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind"];
+const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint"];
+// what a bean keeps (src/beanProfiles.h): switching beans sets these
+const RECIPE = ["brew.dose", "brew.grind", "brew.by_weight.target_weight", "brew.setpoint", "brew.by_weight.lag"];
 // settings the firmware only shows depending on another one (ParameterRegistry show conditions)
 const DEPENDS = {"brew.mode": /^brew\.by_|^display\.blescale/, "hardware.sensors.scale.enabled": /^brew\.by_weight|^TARE_ON|^display\.blescale/};
 function forget(id) { for (const k of Object.keys(P)) if (DEPENDS[id]?.test(k)) delete P[k]; }
@@ -390,6 +407,7 @@ async function load(names) {
 }
 async function save(id, value) {
   if (id.startsWith("preset.")) return savePreset(id, value);
+  const knownBean = id === "brew.beans" && !!beans?.beans.some(b => sameBean(b.n, value));
   try {
     const r = await call("/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: encodeURIComponent(id) + "=" + encodeURIComponent(value)});
@@ -398,6 +416,8 @@ async function save(id, value) {
     for (const x of TABS) if (x.id !== tab) dirty.add(x.id);
     if (P[id].reboot) { String(value) === startVal[id] ? pendingRestart.delete(id) : pendingRestart.add(id); needRestart(); } else toast(t("saved"));
     if (id === "brew.dose" || id === "brew.by_weight.target_weight") paintRatio();
+    if (id === "brew.by_weight.lag") paintLag();
+    if (id === "brew.beans" && beans) await beansSwitched(String(value), knownBean);
     return true;
   } catch (e) { toast(t("failed")); return false; }
 }
@@ -429,7 +449,7 @@ const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 const num = (v, d = 1) => { const x = Number(v); return (Math.abs(x) < .5 / 10 ** d ? 0 : x).toLocaleString(lang === "de" ? "de-DE" : "en-GB", {minimumFractionDigits: d, maximumFractionDigits: d}); };
 const decimals = id => (STEP[id] ?? 1) < 1 ? ((STEP[id] ?? 1) < .1 ? 2 : 1) : 0;
 let toastTimer;
-function toast(msg) { const e = $("#toast"); e.textContent = msg; e.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove("show"), 1800); }
+function toast(msg) { const e = $("#toast"); e.textContent = msg; e.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove("show"), Math.max(1800, msg.length * 55)); }
 function lbl(id) { const b = el("div", "lbl"); b.append(el("div", null, t(id))); const h = T[lang][id + "Hint"] ?? T.de[id + "Hint"]; if (h) b.append(el("p", null, h)); return b; }
 
 // ---------- controls ----------
@@ -457,6 +477,7 @@ function stepCtl(id, store = save) {
   const minus = el("button", null, "−"), plus = el("button", null, "+");
   minus.setAttribute("aria-label", t("less")); plus.setAttribute("aria-label", t("more")); inp.setAttribute("aria-label", t(id));
   minus.onclick = () => set(val - st); plus.onclick = () => set(val + st);
+  box.dataset.id = id; box.setValue = v => { val = v; if (document.activeElement !== inp) show(v); };
   inp.onfocus = () => { inp.value = num(val, d); inp.select(); }; // typing replaces the number
   inp.onchange = () => { const v = parseFloat(inp.value.replace(",", ".")); isNaN(v) ? show(val) : set(v, true); };
   inp.onblur = () => show(val);
@@ -642,8 +663,10 @@ function shotCard() {
   }
   if (P["brew.dose"] || P["brew.grind"]) { // the recipe goes into the log with the shot
     const rc = el("div", "recipe");
+    if (P["brew.beans"]) { const b = el("div", "bean"), s = el("select"); s.id = "beanPick"; s.setAttribute("aria-label", t("brew.beans")); b.append(el("label", null, t("brew.beans")), s); rc.append(b); }
     for (const id of ["brew.dose", "brew.grind"]) if (P[id]) { const b = el("div"), ctl = control(id); b.append(el("label", null, t(id)), ctl); rc.append(b); }
     c.append(rc);
+    setTimeout(paintBeans);
   }
   const modes = ["hand", "time"].concat(P["hardware.sensors.scale.enabled"]?.value ? ["weight"] : []);
   for (const mo of modes) {
@@ -660,7 +683,10 @@ function shotCard() {
   if (id && P[id]) {
     const v = el("div", "row"); v.append(lbl(id), stepCtl(id, saveTarget)); c.append(v);
     if (cur === "weight") { const q = el("p"); q.id = "ratio"; v.firstChild.append(q); setTimeout(paintRatio); }
-    if (cur === "weight" && P["brew.by_weight.lead"]) { const s = el("div", "row"); s.append(lbl("brew.by_weight.lead"), stepCtl("brew.by_weight.lead")); c.append(s); }
+    if (cur === "weight" && P["brew.by_weight.lag"]) {
+      const s = el("div", "row"), q = el("p"); q.id = "lagNow";
+      s.append(lbl("brew.by_weight.lag"), stepCtl("brew.by_weight.lag")); s.firstChild.append(q); c.append(s); setTimeout(paintLag);
+    }
     if (cur === "weight" && P["brew.by_time.target_time"]) { // the firmware stops at the target time when the scale is missing
       const f = el("div", "row"), fl = el("div", "lbl");
       fl.append(el("div", null, t("fallbackTime")), el("p", null, t("fallbackTimeHint")));
@@ -682,7 +708,7 @@ function shotCard() {
 }
 
 // ---------- last shots (GET /shots: newest first, s seconds, g grams or null, at UTC seconds or 0) ----------
-let shots = null, bfCount = 0;
+let shots = null, bfCount = 0, newestSeen;
 async function loadShots() {
   const before = shots?.map(shotKey).join("|");
   try { const r = await call("/shots"); if (r.ok) { const j = await r.json(); shots = j.shots; bfCount = j.bf ?? 0; } } catch (e) {}
@@ -692,8 +718,28 @@ async function loadShots() {
     const i = shots.findIndex(x => shotKey(x) === openShot);
     if (i < 0) openShot = null; else await curveOf(shots[i], i);
   }
-  paintShots(); paintBf();
+  paintShots(); paintBf(); paintLag();
+  // a shot stopped by weight, its drops counted: the machine has learned the drop time from it
+  const newest = shots?.[0] ? shotKey(shots[0]) + "|" + shots[0].g : "";
+  if (newestSeen !== undefined && newest !== newestSeen && shots[0]?.tw != null) { await refreshLag(); loadBeans(); }
+  newestSeen = newest;
   suggest();
+}
+async function refreshLag() {
+  const id = "brew.by_weight.lag";
+  if (!P[id]) return;
+  try {
+    const r = await call(`/parameters?offset=0&limit=1&names=${id}`), p = r.ok && (await r.json()).parameters?.[0];
+    if (p) { P[id].value = p.value; document.querySelectorAll(`.step[data-id="${id}"]`).forEach(b => b.setValue(p.value)); }
+  } catch (e) {}
+  paintLag();
+}
+// the drop time in grams: as the last shot's flow at the stop would make it (2 g/s before the first one)
+function paintLag() {
+  const q = $("#lagNow"), lag = P["brew.by_weight.lag"]?.value;
+  if (!q || lag == null) return;
+  const last = shots?.find(x => x.fs != null), f = last ? last.fs : 2;
+  q.textContent = t(last ? "lagLast" : "lagAt").replace("{f}", num(f, 1)).replace("{g}", num(Math.min(6, lag * f), 1)); // at most 6 g: BrewLag::kMaxLeadGrams
 }
 function paintRatio() {
   const r = $("#ratio"), d = P["brew.dose"]?.value, g = P["brew.by_weight.target_weight"]?.value;
@@ -795,7 +841,7 @@ function fillDetail(cv, x, i) {
   if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
   if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
   if (x.tw != null) info.push(`${t("target")} ${num(x.tw, 1)} g`);
-  if (x.sw != null) info.push(`${t("atStop")} ${num(x.sw, 1)} g`);
+  if (x.sw != null) info.push(`${t("atStop")} ${num(x.sw, 1)} g` + (x.lg != null && x.fs != null ? ` (${num(x.ld ?? 0, 1)} g = ${num(x.lg, 2)} s × ${num(x.fs, 1)} g/s)` : ""));
   if (x.sw != null && x.g != null) info.push(`${t("drip")} ${num(Math.max(0, x.g - x.sw), 1)} g`);
   if (deviation(x) != null) info.push(`${signed(deviation(x))} g ${t(deviation(x) < 0 ? "underTarget" : "overTarget")}`);
   if (info.length) { // typed by the user: text, not HTML
@@ -976,7 +1022,7 @@ function coffeeContext() {
     if (x.b) p.push("Bohne " + x.b);
     if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
     if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
-    if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
+    if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel${x.lg != null && x.fs != null ? `: gelernte Nachlaufzeit ${num(x.lg, 2)} s × Durchfluss beim Stopp ${num(x.fs, 1)} g/s` : ""}), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
     if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
     out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
   });
@@ -1228,7 +1274,7 @@ function connectLive() {
   es = new EventSource("/events");
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
-    if (live.state === 20 && d.state !== 20) setTimeout(loadShots, 5000); // shot over: the firmware counts the drops for 4 s, then logs it
+    if (live.state === 20 && d.state !== 20) { setTimeout(loadShots, 5000); setTimeout(loadShots, 16000); } // shot over: the firmware counts the drops for 4-15 s (until 2 s without), then logs them
     if (liveSeen && !live.ok) { loadShots(); if (dirty.has(shown)) render(); } // back after a gap (phone locked, WiFi): shots may have come meanwhile
     liveSeen = true;
     // standby switches the temperature control off on the machine, waking it switches it on: the switch follows
@@ -1293,6 +1339,80 @@ function paintFlush() {
 // searching, found: [{name, address, rssi}]}; POST /scale/discover, /scale/select?address=&name=, /scale/forget
 let scaleInfo = null, scaleFound = [], scaleSearching = false, scaleSearched = false, scaleRun = 0, lastScaleState = null;
 const pause = ms => new Promise(r => setTimeout(r, ms));
+// ---------- beans (GET /beans: {now, beans: [{n, d, m, tw, t, lg}]}, last used first; src/beanProfiles.h) ----------
+let beans; // undefined: not asked yet, null: firmware without
+// the same bean as the machine sees it: spaces at the ends and the case of A-Z do not count
+const beanName = v => String(v ?? "").trim().replace(/[A-Z]/g, c => c.toLowerCase()), sameBean = (a, b) => beanName(a) === beanName(b);
+async function loadBeans() {
+  try { const r = await call("/beans"); if (r.ok) beans = await r.json(); else if (r.status === 404) beans = null; } catch (e) {}
+  paintBeans();
+}
+const beanSummary = b => [b.d != null ? fmt(b.d) + " g" + (b.tw != null ? " → " + fmt(b.tw) + " g" : "") : b.tw != null ? fmt(b.tw) + " g" : "",
+  b.m ? t("brew.grind") + " " + b.m : "", b.t != null ? fmt(b.t) + " °C" : "", t("beanLag") + " " + num(b.lg, 2) + " s"].filter(Boolean).join(" · ");
+// brew.beans saved: the machine keeps the old bean's values and sets the new one's (or keeps the current ones for a new
+// bean) within half a second; then the page reads what it set
+async function beansSwitched(name, known) {
+  for (let i = 0; i < 8; i++) {
+    await pause(400);
+    await loadBeans();
+    if (!beans || sameBean(beans.now, name)) break;
+  }
+  for (const id of RECIPE) delete P[id];
+  try { await load(RECIPE); } catch (e) {}
+  refresh();
+  if (!name.trim()) return;
+  const b = beans?.beans.find(x => sameBean(x.n, name));
+  toast(t(known ? "beanBack" : "beanNew").replace("{n}", name.trim()) + (known && b ? " · " + beanSummary(b) : ""));
+}
+async function deleteBean(b) {
+  if (!confirm(t("reallyDeleteBean").replace("{n}", b.n))) return;
+  const r = await post(`/beans/delete?n=${encodeURIComponent(b.n)}`).catch(() => null);
+  toast(r?.ok ? t("deleted") : t("failed"));
+  await loadBeans();
+}
+function paintBeans() {
+  const pick = $("#beanPick"), list = $("#beanList"), all = beans?.beans ?? [], now = beans ? beans.now : P["brew.beans"]?.value ?? "";
+  if (pick) { // names typed by the user: text, not HTML
+    pick.parentElement.hidden = beans === null;
+    const opts = [];
+    if (!beanName(now)) opts.push([t("beanNone"), ""]);
+    else if (!all.some(b => sameBean(b.n, now))) opts.push([now, now]);
+    for (const b of all) opts.push([b.n, b.n]);
+    if (beans) opts.push([t("beanNewOpt"), "\n"]); // a value no name can have
+    pick.replaceChildren(...opts.map(([label, value]) => { const o = el("option"); o.textContent = label; o.value = value; o.selected = value !== "\n" && sameBean(value, now); return o; }));
+    pick.disabled = !beans;
+    pick.onchange = async () => {
+      let v = pick.value;
+      if (v === "\n") v = (prompt(t("beanNewQ")) || "").trim();
+      if (!v || sameBean(v, P["brew.beans"]?.value) || !await save("brew.beans", v)) paintBeans();
+    };
+  }
+  if (list) {
+    list.replaceChildren();
+    list.hidden = !all.length;
+    if (all.length) { const h = el("p", "shotinfo"); h.append(el("b", null, t("beansSaved"))); h.append(" · " + t("beansHint")); list.append(h); }
+    for (const b of all) {
+      const row = el("div", "row beanrow"), l = el("div", "lbl"), n = el("div"), sum = el("p");
+      n.textContent = b.n; sum.textContent = beanSummary(b);
+      l.append(n, sum); row.append(l);
+      if (sameBean(b.n, now)) row.append(el("span", "on", t("beanActive")));
+      else {
+        const w = el("div", "btns"), use = el("button", "btn", t("beanUse")), del = el("button", "btn bad", t("beanDelete"));
+        use.onclick = () => save("brew.beans", b.n);
+        del.onclick = () => deleteBean(b);
+        w.append(use, del); row.append(w);
+      }
+      list.append(row);
+    }
+  }
+}
+function coffeeCard(title, ids) {
+  const c = card(title, ids);
+  if (!c || beans === null) return c;
+  const l = el("div"); l.id = "beanList"; c.append(l);
+  setTimeout(() => { paintBeans(); if (beans !== undefined) loadBeans(); }); // fresh values each time the tab is built
+  return c;
+}
 function scaleCard(title, ids) {
   const c = card(title, ids);
   if (!c || !P["hardware.sensors.scale.enabled"]?.value) return c;
@@ -1432,7 +1552,7 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sScale" ? scaleCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
     const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
     careExtras(m); paintBf();
@@ -1485,7 +1605,8 @@ async function loadFonts() {
   connectLive();
   await loadFonts();
   for (const x of TABS) { try { await load(needOf(x)); } catch (e) {} } // the other tabs' values, one request after another
-  loadShots();
+  await loadShots();
+  loadBeans();
 })();
 </script>
 </body>

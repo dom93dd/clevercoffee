@@ -44,31 +44,68 @@ namespace orione {
             uint16_t stopTenths = 0;      // in the cup when the pump stopped, 0.1 g (grams: after the drops)
             uint8_t leadTenths = 0;       // the pump stopped this far before the target, 0.1 g
             char beans[41] = {};          // beans in the grinder then (setting brew.beans, up to 40 bytes), as typed
+            uint16_t lagCs = 0;           // the lead in seconds of flow it stopped with (BrewLag), 0.01 s
+            uint16_t flowStopCs = 0;      // the flow when the pump stopped, 0.01 g/s
+    };
+
+    /** A shot as saved by format 6 (before lagCs and flowStopCs): read once after the update, then saved as 7 */
+    struct ShotV6 {
+            float seconds = 0;
+            float grams = -1;
+            uint32_t when = 0;
+            uint16_t seq = 0;
+            uint16_t doseTenths = 0;
+            char grind[10] = {};
+            uint8_t taste = kNotRated;
+            int16_t startTenths = 0;
+            uint16_t firstDropTenths = 0;
+            uint16_t targetTenths = 0;
+            uint16_t stopTenths = 0;
+            uint8_t leadTenths = 0;
+            char beans[41] = {};
     };
 
     /**
-     * Brew by weight: the pump stops a lead before the target, because the scale reports late and drops
-     * follow. The lead learns from each shot stopped by weight, after tatemazer's shotStopper
-     * (AcaiaArduinoBLE, examples/shotStopper: offset += final weight - goal, unchanged if the error is
-     * over 5 g), but gentler: half the error per shot and nothing from errors over 3 g. Taking the whole
-     * error, one shot 3.5 g over (poured on by hand at the bench) moved the lead from 1.5 to its 5 g
-     * limit (Dominik, 06.10.2026: "ja bitte entschärfen"); half of it settles a steady drip in a few shots.
+     * Brew by weight: the pump stops before the target, because the scale reports late and drops follow.
+     * How much follows depends on how fast it runs when the pump stops: 1.8 g at 1.8 g/s in the machine
+     * (08.10.2026), about a second of flow. So the lead is kept as seconds of flow and turned into grams
+     * with the flow measured right then: it fits other beans, grind settings and targets without learning
+     * anew (Dominik, 08.10.2026: "geht das dann immer verloren wenn wir gramm zahl, etc verändern?").
+     *
+     * It learns from each shot stopped by weight, after tatemazer's shotStopper (AcaiaArduinoBLE,
+     * examples/shotStopper: offset += final weight - goal, unchanged if the error is over 5 g), but gentler:
+     * half the error per shot, nothing from errors over 3 g (one shot poured on by hand at the bench
+     * moved the old gram lead to its limit: "ja bitte entschärfen", 06.10.2026), and nothing from a shot
+     * that hardly ran when it stopped (a second of 0.1 g/s says nothing about the lag).
      */
-    struct BrewLead {
-            static constexpr float kStart = 1.5f; // shotStopper's default
-            static constexpr float kMax = 5.0f;
-            static constexpr float kMaxError = 3.0f;
+    struct BrewLag {
+            static constexpr float kStart = 1.0f; // s
+            static constexpr float kMax = 3.0f;
+            static constexpr float kMaxError = 3.0f; // g
             static constexpr float kGain = 0.5f;
+            static constexpr float kMinFlow = 0.3f;     // g/s
+            static constexpr float kMaxLeadGrams = 6.0f; // a flow reading thrown by a bump on the scale stops no shot early
 
-            /** @return the lead for the next shot after one that ended with finalGrams in the cup */
-            static float learn(const float lead, const float target, const float finalGrams) {
-                const float error = finalGrams - target;
-
-                if (!std::isfinite(lead) || !std::isfinite(error) || target <= 0.0f || std::fabs(error) > kMaxError) {
-                    return lead;
+            /** @return grams the pump stops before the target: what runs in lagSeconds at flow (g/s) */
+            static float leadGrams(const float lagSeconds, const float flow) {
+                if (!std::isfinite(lagSeconds) || !std::isfinite(flow) || lagSeconds <= 0.0f || flow <= 0.0f) {
+                    return 0.0f;
                 }
 
-                const float next = lead + kGain * error;
+                const float lead = lagSeconds * flow;
+                return lead > kMaxLeadGrams ? kMaxLeadGrams : lead;
+            }
+
+            /** @return the lag for the next shot after one that stopped at flowAtStop and ended with finalGrams */
+            static float learn(const float lagSeconds, const float target, const float finalGrams, const float flowAtStop) {
+                const float error = finalGrams - target;
+
+                if (!std::isfinite(lagSeconds) || !std::isfinite(error) || !std::isfinite(flowAtStop) || target <= 0.0f || std::fabs(error) > kMaxError ||
+                    flowAtStop < kMinFlow) {
+                    return lagSeconds;
+                }
+
+                const float next = lagSeconds + kGain * error / flowAtStop; // grams too many -> seconds earlier
                 return next < 0.0f ? 0.0f : next > kMax ? kMax : next;
             }
     };
@@ -160,18 +197,20 @@ namespace orione {
 
             /** Brew by weight of the newest shot: its target (<= 0: not stopped by weight), what was in the
              *  cup when the pump stopped, and the lead it stopped with */
-            void noteWeights(const float target, const float atStop, const float lead) {
+            void noteWeights(const float target, const float atStop, const float lead, const float lagSeconds = 0.0f, const float flowAtStop = 0.0f) {
                 if (count_ == 0) {
                     return;
                 }
 
-                const auto tenths = [](const float g, const float max) {
-                    const float t = g * 10.0f;
+                const auto scaled = [](const float v, const float factor, const float max) {
+                    const float t = v * factor;
                     return std::isfinite(t) && t > 0.0f && t < max ? static_cast<int>(t + 0.5f) : 0;
                 };
-                shots_[0].targetTenths = static_cast<uint16_t>(tenths(target, 65535.0f));
-                shots_[0].stopTenths = static_cast<uint16_t>(tenths(atStop, 65535.0f));
-                shots_[0].leadTenths = static_cast<uint8_t>(tenths(lead, 255.0f));
+                shots_[0].targetTenths = static_cast<uint16_t>(scaled(target, 10.0f, 65535.0f));
+                shots_[0].stopTenths = static_cast<uint16_t>(scaled(atStop, 10.0f, 65535.0f));
+                shots_[0].leadTenths = static_cast<uint8_t>(scaled(lead, 10.0f, 255.0f));
+                shots_[0].lagCs = static_cast<uint16_t>(scaled(lagSeconds, 100.0f, 65535.0f));
+                shots_[0].flowStopCs = static_cast<uint16_t>(scaled(flowAtStop, 100.0f, 65535.0f));
             }
 
             /**
@@ -257,7 +296,26 @@ namespace orione {
             }
 
             /** @return false (and the log stays empty) if the data is not a saved log of this version */
+            // Format 6, before lagCs and flowStopCs: taken over field by field instead of dropped (real shots by now)
+            struct StoredV6 {
+                    uint8_t version;
+                    uint8_t count;
+                    uint16_t sinceBackflush;
+                    ShotV6 shots[kSize];
+            };
+
+            static constexpr size_t kMaxStoredSize = sizeof(Stored) > sizeof(StoredV6) ? sizeof(Stored) : sizeof(StoredV6);
+
+            /** @return whether length is the size of a log this version can read (this format or format 6) */
+            static bool readable(const size_t length) {
+                return length == sizeof(Stored) || length == sizeof(StoredV6);
+            }
+
             bool restore(const void* data, const size_t length) {
+                if (data != nullptr && length == sizeof(StoredV6) && static_cast<const uint8_t*>(data)[0] == 6) {
+                    return restoreV6(data);
+                }
+
                 Stored s{};
 
                 if (data == nullptr || length != sizeof(s)) {
@@ -283,6 +341,41 @@ namespace orione {
             }
 
         private:
+            bool restoreV6(const void* data) {
+                StoredV6 s{};
+                std::memcpy(&s, data, sizeof(s));
+
+                if (s.count > kSize) {
+                    return false;
+                }
+
+                count_ = s.count;
+                sinceBackflush_ = s.sinceBackflush;
+
+                for (int i = 0; i < kSize; ++i) {
+                    const ShotV6& o = s.shots[i];
+                    Shot& n = shots_[i];
+                    n = Shot{};
+                    n.seconds = o.seconds;
+                    n.grams = o.grams;
+                    n.when = o.when;
+                    n.seq = o.seq;
+                    n.doseTenths = o.doseTenths;
+                    std::memcpy(n.grind, o.grind, sizeof(n.grind));
+                    n.taste = o.taste;
+                    n.startTenths = o.startTenths;
+                    n.firstDropTenths = o.firstDropTenths;
+                    n.targetTenths = o.targetTenths;
+                    n.stopTenths = o.stopTenths;
+                    n.leadTenths = o.leadTenths;
+                    std::memcpy(n.beans, o.beans, sizeof(n.beans));
+                    n.grind[sizeof(n.grind) - 1] = '\0';
+                    n.beans[sizeof(n.beans) - 1] = '\0';
+                }
+
+                return true;
+            }
+
             /** Typed text into a fixed field; cut where it does not fit, but never inside a UTF-8 letter (ü, é) */
             static void copyText(char* out, const size_t size, const char* in) {
                 std::memset(out, 0, size);
@@ -331,7 +424,7 @@ namespace orione {
                 return seq;
             }
 
-            static constexpr uint8_t kVersion = 6; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead, 6: beans
+            static constexpr uint8_t kVersion = 7; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead, 6: beans, 7: lag and flow at the stop
 
             Shot shots_[kSize];
             int count_ = 0;

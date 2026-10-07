@@ -20,6 +20,9 @@
 
 #include "LittleFS.h"
 #include "webRequestGate.h"
+#ifdef CC_ORIONE
+#include <nvs.h>
+#endif
 
 inline AsyncWebServer server(80);
 inline AsyncEventSource events("/events");
@@ -507,18 +510,22 @@ inline void serverSetup() {
 
 #ifdef CC_ORIONE
     // why the ESP32 last started, for how long it has been running (orioneMachine.h), and its memory: the heap now,
-    // its lowest point since the start and largest block, and for each task the stack it has never used (bytes)
+    // its lowest point since the start and largest block, for each task the stack it has never used (bytes), and the
+    // NVS entries (32 bytes each) used and free: shots, curves, beans and WiFi share 20 KB
     server.on("/boot", HTTP_GET, [](AsyncWebServerRequest* request) {
         const auto unused = [](const char* name) -> long {
             TaskHandle_t t = xTaskGetHandle(name);
             return t != nullptr ? static_cast<long>(uxTaskGetStackHighWaterMark(t)) : -1L;
         };
-        char json[300];
+        nvs_stats_t nvs{};
+        nvs_get_stats(nullptr, &nvs);
+        char json[360];
         snprintf(json, sizeof(json),
-                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld}})",
+                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u}})",
                  orione_machine::startReason, static_cast<unsigned long>(millis() / 1000), static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
                  static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
-                 unused("loopTask"), unused("async_tcp"), unused("nimble_host"), unused("scale"), unused("sse"), unused("loopGuard"));
+                 unused("loopTask"), unused("async_tcp"), unused("nimble_host"), unused("scale"), unused("sse"), unused("loopGuard"),
+                 static_cast<unsigned>(nvs.used_entries), static_cast<unsigned>(nvs.free_entries));
         request->send(200, "application/json", json);
     });
 #endif
@@ -688,6 +695,24 @@ inline void serverSetup() {
         shot_history::requestDelete(static_cast<int>(i), at, s);
         request->send(200, "text/plain", "OK");
     });
+
+    // the beans kept with their recipes (beanProfiles.h); switching is saving brew.beans
+    server.on("/beans/delete", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const String name = request->hasParam("n") ? request->getParam("n")->value() : String();
+
+        if (!bean_profiles::remove(name.c_str())) {
+            request->send(409, "text/plain", "not that bean");
+            return;
+        }
+
+        request->send(200, "text/plain", "OK");
+    });
+
+    server.on("/beans", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        bean_profiles::writeJson(*response);
+        request->send(response);
+    }));
 
     server.on("/shot", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         const int i = request->hasParam("i") ? request->getParam("i")->value().toInt() : 0;

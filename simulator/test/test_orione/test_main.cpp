@@ -10,6 +10,7 @@
 
 #include <OrioneFixed.h>
 #include <OrioneFlow.h>
+#include <OrioneBeans.h>
 #include <OrioneHeat.h>
 #include <OrioneShots.h>
 #include <OrioneWebGate.h>
@@ -869,35 +870,156 @@ void test_scale_addresses_normalized_or_refused() {
 
 // ---------- brew by weight: lead and drops ----------
 
-void test_lead_learns_half_the_error_and_ignores_outliers() {
-    using L = orione::BrewLead;
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.9f, L::learn(1.5f, 36.0f, 36.8f));  // 0.8 g over: stop 0.4 g earlier
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.25f, L::learn(1.5f, 36.0f, 35.5f)); // 0.5 g short: 0.25 g later
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, 39.5f));  // 3.5 g over (the bench test that took it to 5 g)
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, 41.4f));  // cup lifted, poured by hand
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, 32.9f));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, L::learn(0.5f, 36.0f, 34.0f));  // never below 0
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, L::learn(4.5f, 36.0f, 38.5f));  // never over 5 g
-    float lead = L::kStart; // a steady 1.2 g too much each time: settles within a few shots
-    for (int shot = 0; shot < 4; ++shot) {
-        const float atStop = 36.0f - lead;
-        lead = L::learn(lead, 36.0f, atStop + 2.7f); // drops of 2.7 g after the stop
+void test_lag_learns_half_the_error_in_seconds_of_flow() {
+    using L = orione::BrewLag;
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.8f, L::leadGrams(1.0f, 1.8f)); // a second of 1.8 g/s
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 3.0f, L::leadGrams(1.0f, 3.0f)); // a faster shot stops earlier by itself
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, L::leadGrams(1.0f, 0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, L::leadGrams(1.0f, NAN));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 6.0f, L::leadGrams(3.0f, 9.0f)); // a bump on the scale: not 27 g early
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.2f, L::learn(1.0f, 36.0f, 36.8f, 2.0f));  // 0.8 g over at 2 g/s: 0.2 s earlier
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.875f, L::learn(1.0f, 36.0f, 35.5f, 2.0f)); // 0.5 g short: 0.125 s later
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, L::learn(1.0f, 36.0f, 39.5f, 2.0f));  // 3.5 g over: poured by hand, ignored
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, L::learn(1.0f, 36.0f, 37.0f, 0.2f));  // hardly ran at the stop: says nothing
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, L::learn(0.1f, 36.0f, 34.0f, 1.0f));  // never below 0
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 3.0f, L::learn(2.9f, 36.0f, 38.5f, 1.0f));  // never over 3 s
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, L::learn(1.0f, 0.0f, 36.0f, 2.0f));   // no target: nothing to learn
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, L::learn(1.0f, 36.0f, NAN, 2.0f));
+    // the machine's shot of 08.10.2026: 1.7 g lead at 1.8 g/s left 0.2 g over the target
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, L::learn(1.7f / 1.8f, 33.0f, 33.2f, 1.8f));
+
+    // a steady 1.3 s of drops: settles within a few shots, at 2 g/s and then still right at 3 g/s
+    float lag = L::kStart;
+    for (int shot = 0; shot < 6; ++shot) {
+        const float flow = shot % 2 ? 2.0f : 3.0f;
+        const float atStop = 36.0f - L::leadGrams(lag, flow);
+        lag = L::learn(lag, 36.0f, atStop + 1.3f * flow, flow);
     }
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 2.7f, lead);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 0.0f, 36.0f));   // no target: nothing to learn
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.5f, L::learn(1.5f, 36.0f, NAN));
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 1.3f, lag);
+}
+
+void test_shots_from_format_6_are_taken_over() {
+    orione::ShotLog::StoredV6 old{};
+    old.version = 6;
+    old.count = 2;
+    old.sinceBackflush = 8;
+    old.shots[0].seconds = 32.4f;
+    old.shots[0].grams = 33.2f;
+    old.shots[0].when = 1791401900u;
+    old.shots[0].seq = 7;
+    old.shots[0].doseTenths = 165;
+    std::strcpy(old.shots[0].grind, "21");
+    old.shots[0].taste = orione::kGood;
+    old.shots[0].startTenths = 929;
+    old.shots[0].firstDropTenths = 59;
+    old.shots[0].targetTenths = 330;
+    old.shots[0].stopTenths = 314;
+    old.shots[0].leadTenths = 17;
+    std::strcpy(old.shots[0].beans, "Ettli Don Pedro");
+    old.shots[1].seconds = 30.1f;
+    old.shots[1].seq = 6;
+
+    TEST_ASSERT_TRUE(orione::ShotLog::readable(sizeof(old)));
+    TEST_ASSERT_TRUE(orione::ShotLog::readable(sizeof(orione::ShotLog::Stored)));
+    TEST_ASSERT_FALSE(orione::ShotLog::readable(sizeof(old) - 4));
+    orione::ShotLog log;
+    TEST_ASSERT_TRUE(log.restore(&old, sizeof(old)));
+    TEST_ASSERT_EQUAL_INT(2, log.count());
+    TEST_ASSERT_EQUAL_UINT16(8, log.sinceBackflush());
+    const auto& x = log.at(0);
+    TEST_ASSERT_EQUAL_FLOAT(32.4f, x.seconds);
+    TEST_ASSERT_EQUAL_FLOAT(33.2f, x.grams);
+    TEST_ASSERT_EQUAL_UINT32(1791401900u, x.when);
+    TEST_ASSERT_EQUAL_UINT16(7, x.seq);
+    TEST_ASSERT_EQUAL_UINT16(165, x.doseTenths);
+    TEST_ASSERT_EQUAL_STRING("21", x.grind);
+    TEST_ASSERT_EQUAL_UINT8(orione::kGood, x.taste);
+    TEST_ASSERT_EQUAL_INT16(929, x.startTenths);
+    TEST_ASSERT_EQUAL_UINT16(59, x.firstDropTenths);
+    TEST_ASSERT_EQUAL_UINT16(330, x.targetTenths);
+    TEST_ASSERT_EQUAL_UINT16(314, x.stopTenths);
+    TEST_ASSERT_EQUAL_UINT8(17, x.leadTenths);
+    TEST_ASSERT_EQUAL_STRING("Ettli Don Pedro", x.beans);
+    TEST_ASSERT_EQUAL_UINT16(0, x.lagCs); // not known then
+    TEST_ASSERT_EQUAL_FLOAT(30.1f, log.at(1).seconds);
+    const auto now = log.stored(); // saved again as this format
+    orione::ShotLog back;
+    TEST_ASSERT_TRUE(back.restore(&now, sizeof(now)));
+    TEST_ASSERT_EQUAL_STRING("Ettli Don Pedro", back.at(0).beans);
+    old.count = 9; // nonsense stays out
+    orione::ShotLog bad;
+    TEST_ASSERT_FALSE(bad.restore(&old, sizeof(old)));
+}
+
+void test_beans_keep_a_recipe_each() {
+    orione::BeanProfiles b;
+    orione::BeanRecipe r;
+    std::strcpy(r.name, "Ettli Don Pedro");
+    r.doseTenths = 165;
+    std::strcpy(r.grind, "21");
+    r.targetTenths = 330;
+    r.setpointTenths = 930;
+    r.lagCs = 100;
+    b.put(r);
+    TEST_ASSERT_EQUAL_INT(0, b.find("  ettli don pedro ")); // case and spaces at the ends do not matter
+    TEST_ASSERT_EQUAL_INT(-1, b.find("Ettli"));
+    TEST_ASSERT_EQUAL_INT(-1, b.find(""));
+    orione::BeanRecipe other = r;
+    std::strcpy(other.name, "Röstwerk Hell");
+    other.setpointTenths = 950;
+    b.put(other);
+    r.targetTenths = 360; // the same bean again: new values, no second entry
+    b.put(r);
+    TEST_ASSERT_EQUAL_INT(2, b.count());
+    TEST_ASSERT_EQUAL_UINT16(360, b.at(b.find("Ettli Don Pedro")).targetTenths);
+    int order[orione::BeanProfiles::kSize];
+    TEST_ASSERT_EQUAL_INT(2, b.byUse(order));
+    TEST_ASSERT_EQUAL_STRING("Ettli Don Pedro", b.at(order[0]).name); // used last
+    orione::BeanRecipe blank;
+    std::strcpy(blank.name, "   ");
+    b.put(blank);
+    TEST_ASSERT_EQUAL_INT(2, b.count());
+    TEST_ASSERT_FALSE(b.remove("RÖSTWERK HELL")); // ASCII case only: "Ö" is not "ö"
+    TEST_ASSERT_TRUE(b.remove("röstwerk hell"));
+    TEST_ASSERT_EQUAL_INT(1, b.count());
+    const auto saved = b.stored();
+    orione::BeanProfiles back;
+    TEST_ASSERT_TRUE(back.restore(&saved, sizeof(saved)));
+    TEST_ASSERT_EQUAL_UINT16(100, back.at(0).lagCs);
+    TEST_ASSERT_FALSE(back.restore(&saved, sizeof(saved) - 1));
+}
+
+void test_beans_the_longest_unused_makes_room() {
+    orione::BeanProfiles b;
+    for (int i = 0; i < orione::BeanProfiles::kSize; ++i) {
+        orione::BeanRecipe r;
+        std::snprintf(r.name, sizeof(r.name), "Bohne %d", i);
+        b.put(r);
+    }
+    orione::BeanRecipe again; // bean 0 used again: bean 1 is now the oldest
+    std::strcpy(again.name, "Bohne 0");
+    b.put(again);
+    orione::BeanRecipe fresh;
+    std::strcpy(fresh.name, "Neue Bohne");
+    b.put(fresh);
+    TEST_ASSERT_EQUAL_INT(orione::BeanProfiles::kSize, b.count());
+    TEST_ASSERT_TRUE(b.find("Bohne 0") >= 0);
+    TEST_ASSERT_EQUAL_INT(-1, b.find("Bohne 1"));
+    TEST_ASSERT_TRUE(b.find("Neue Bohne") >= 0);
 }
 
 void test_shot_keeps_target_weight_at_stop_and_lead() {
     orione::ShotLog log;
     log.record(26.0f, 34.6f, 0, 0);
-    log.noteWeights(36.0f, 34.6f, 1.5f);
+    log.noteWeights(36.0f, 34.6f, 1.5f, 0.83f, 1.8f);
     log.settle(1000, 36.4f); // drops
     TEST_ASSERT_TRUE(log.settle(orione::ShotLog::kSettleMs, 36.4f));
     const auto& x = log.at(0);
     TEST_ASSERT_EQUAL(360, x.targetTenths);
     TEST_ASSERT_EQUAL(346, x.stopTenths);
     TEST_ASSERT_EQUAL(15, x.leadTenths);
+    TEST_ASSERT_EQUAL(83, x.lagCs);
+    TEST_ASSERT_EQUAL(180, x.flowStopCs);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 36.4f, x.grams);
     log.record(25.0f, -1.0f, 0, 10000); // by time, no scale
     log.noteWeights(0.0f, -1.0f, 1.5f);
@@ -907,6 +1029,7 @@ void test_shot_keeps_target_weight_at_stop_and_lead() {
     const auto stored = log.stored();
     TEST_ASSERT_TRUE(back.restore(&stored, sizeof(stored)));
     TEST_ASSERT_EQUAL(346, back.at(1).stopTenths);
+    TEST_ASSERT_EQUAL(83, back.at(1).lagCs);
 }
 
 int main() {
@@ -975,7 +1098,10 @@ int main() {
     RUN_TEST(test_scales_one_entry_per_address_strongest_first);
     RUN_TEST(test_scales_forgotten_when_not_seen_and_room_made_when_full);
     RUN_TEST(test_scale_addresses_normalized_or_refused);
-    RUN_TEST(test_lead_learns_half_the_error_and_ignores_outliers);
+    RUN_TEST(test_lag_learns_half_the_error_in_seconds_of_flow);
+    RUN_TEST(test_shots_from_format_6_are_taken_over);
+    RUN_TEST(test_beans_keep_a_recipe_each);
+    RUN_TEST(test_beans_the_longest_unused_makes_room);
     RUN_TEST(test_shot_keeps_target_weight_at_stop_and_lead);
     return UNITY_END();
 }

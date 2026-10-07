@@ -298,9 +298,9 @@ void ParameterRegistry::initialize(Config& config) {
 #ifdef CC_ORIONE
     // Quick choice Espresso/Doppio/Lungo: "seconds,grams;..." set and read by the web page only
     addStringConfigParam("brew.presets", "Quick choice", sBrewSection, 324, nullptr, BREW_PRESETS_MAX_LENGTH, "Espresso, Doppio, Lungo: seconds,grams separated by ;");
-    addNumericConfigParam<double>("brew.by_weight.lead", "Stop before the target (g)", kDouble, sBrewSection, 329, nullptr, 0.0, 5.0,
-                                  "The pump stops this much before the target weight, the drops make up the rest; learned from each shot stopped by weight");
-    addBoolConfigParam("brew.by_weight.learn", "Learn the stop", sBrewSection, 330, nullptr, "After each shot stopped by weight, correct the lead by what ended up in the cup");
+    addNumericConfigParam<double>("brew.by_weight.lag", "Drops after the stop (s)", kDouble, sBrewSection, 329, nullptr, 0.0, 3.0,
+                                  "The pump stops this many seconds of flow before the target weight, the drops make up the rest; learned from each shot stopped by weight");
+    addBoolConfigParam("brew.by_weight.learn", "Learn the stop", sBrewSection, 330, nullptr, "After each shot stopped by weight, correct the lag by what ended up in the cup");
     addNumericConfigParam<double>("brew.heat_boost", "Heating during a shot (%)", kDouble, sPIDSection, 111, nullptr, 0.0, 100.0,
                                   "While the pump runs the heater gets at least this share of its power: the cold water takes ~600 W at 2 g/s. Ends over the setpoint (0 = off)");
     // Recipe of the next shot and the coffee it is made with: logged with each shot, context for the analysis

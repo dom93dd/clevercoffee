@@ -231,6 +231,7 @@ PID bPID(&temperature, &pidOutput, &setpoint, aggKp, aggKi, aggKd, 1, DIRECT);
 
 #ifdef CC_ORIONE
 #include "shotHistory.h"
+#include "beanProfiles.h"
 #endif
 #ifdef CC_FAKE_TEMP_SENSOR
 #include "benchSwitch.h"
@@ -1207,6 +1208,7 @@ void setup() {
 
 #ifdef CC_ORIONE
     shot_history::begin();
+    bean_profiles::begin();
 #endif
 
     ROUND_TIMING_DO(round_timing::heapMark("before wifi"));
@@ -1680,6 +1682,7 @@ void loopPid() {
     brewSafetyStop();
     warmup_flush::loop();
     orione_machine::loop();
+    bean_profiles::loop(checkBrewActive() || machineState == kBackflush);
 #endif
     hotWaterHandler();
     valveSafetyShutdownCheck();

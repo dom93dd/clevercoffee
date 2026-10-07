@@ -555,7 +555,7 @@ test("Bedienbarkeit: Schalter mit Zustand, ganze Zeile tippbar, 44-px-Tasten, 16
 test("Rezept: Dosis, Mahlgrad und Verhältnis im nächsten Bezug", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   const rc = view(page).locator(".recipe");
-  assert.deepEqual(await rc.locator("label").allTextContents(), ["Dosis", "Mahlgrad"]);
+  assert.deepEqual(await rc.locator("label").allTextContents(), ["Bohne", "Dosis", "Mahlgrad"]);
   assert.equal(await rc.locator(".step input").inputValue(), "18,0 g");
   assert.equal(await rc.locator(".txt").inputValue(), "12");
   await rc.locator(".txt").fill("14"); await rc.locator(".txt").press("Enter");
@@ -569,6 +569,82 @@ test("Rezept: Dosis, Mahlgrad und Verhältnis im nächsten Bezug", async ({brows
   await view(page).locator(".recipe .step input").fill("15"); await view(page).locator(".recipe .step input").press("Enter");
   await page.locator("#ratio", {hasText: "1:3,0"}).waitFor();
   await page.screenshot({path: OUT + "brew-recipe.png", fullPage: true});
+  await ctx.close();
+});
+
+test("Bohnen: neue anlegen, zurückwechseln holt ihre Werte, wählen und löschen in Einstellungen", async ({browser}) => {
+  const form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+  await form("brew.beans=" + encodeURIComponent("Ettli Don Pedro"));
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const pick = view(page).locator("#beanPick"), rc = view(page).locator(".recipe");
+  await page.waitForFunction(() => document.querySelectorAll("#beanPick option").length === 2);
+  assert.deepEqual(await pick.locator("option").allTextContents(), ["Ettli Don Pedro", "+ Neue Bohne …"]);
+  assert.equal(await pick.inputValue(), "Ettli Don Pedro");
+  // a new bean: named in a prompt, starts from the current values
+  page.once("dialog", d => d.accept("Röstwerk Hell"));
+  await pick.selectOption({index: 1});
+  await toast(page, "Neue Bohne „Röstwerk Hell“ angelegt");
+  await settle(page);
+  let v = await values(BASE);
+  assert.equal(v["brew.beans"], "Röstwerk Hell"); assert.equal(v["brew.dose"], 18);
+  // its own dose and grind
+  await rc.locator(".step input").fill("16,5"); await rc.locator(".step input").press("Enter");
+  await settle(page);
+  await rc.locator(".txt").fill("21"); await rc.locator(".txt").press("Enter");
+  await settle(page);
+  // back to the first one: its values come back
+  await view(page).locator("#beanPick").selectOption("Ettli Don Pedro");
+  await toast(page, "„Ettli Don Pedro“ geladen · 18 g → 36 g · Mahlgrad 12 · 95 °C · Nachlauf 1,00 s");
+  await settle(page);
+  v = await values(BASE);
+  assert.equal(v["brew.beans"], "Ettli Don Pedro"); assert.equal(v["brew.dose"], 18); assert.equal(v["brew.grind"], "12");
+  assert.equal(await view(page).locator(".recipe .step input").inputValue(), "18,0 g", "the field shows it");
+  assert.equal(await view(page).locator(".recipe .txt").inputValue(), "12");
+  await page.screenshot({path: OUT + "brew-beans.png", fullPage: true});
+  // settings: both with their values, the current one marked
+  await tab(page, "Einstellungen");
+  const list = view(page).locator("#beanList");
+  await list.locator(".beanrow").nth(1).waitFor();
+  const rows = list.locator(".beanrow");
+  assert.equal(await rows.nth(0).locator(".lbl > div").textContent(), "Ettli Don Pedro");
+  assert.equal(await rows.nth(0).locator(".on").textContent(), "aktiv");
+  assert.equal(await rows.nth(1).locator(".lbl p").textContent(), "16,5 g → 36 g · Mahlgrad 21 · 95 °C · Nachlauf 1,00 s");
+  await noOverflow(page, "beans @390");
+  await page.locator("#toast:not(.show)").waitFor({timeout: 6000});
+  await view(page).locator('[data-card="sCoffee"]').evaluate(e => e.scrollIntoView({block: "start"}));
+  await page.screenshot({path: OUT + "settings-beans.png"});
+  await rows.nth(1).locator("button", {hasText: "Wählen"}).click();
+  await toast(page, "„Röstwerk Hell“ geladen");
+  await settle(page);
+  v = await values(BASE);
+  assert.equal(v["brew.beans"], "Röstwerk Hell"); assert.equal(v["brew.dose"], 16.5); assert.equal(v["brew.grind"], "21");
+  assert.equal(await row(page, "Bohne").locator("input").inputValue(), "Röstwerk Hell", "the text field follows");
+  // delete the other one, only after asking
+  page.once("dialog", d => d.dismiss());
+  await view(page).locator("#beanList .beanrow", {hasText: "Ettli"}).locator("button", {hasText: "Löschen"}).click();
+  await settle(page);
+  assert.equal((await mock(BASE, "/beans")).beans.length, 2, "not without confirming");
+  page.once("dialog", d => d.accept());
+  await view(page).locator("#beanList .beanrow", {hasText: "Ettli"}).locator("button", {hasText: "Löschen"}).click();
+  await toast(page, "Gelöscht");
+  await view(page).locator("#beanList .beanrow").nth(1).waitFor({state: "detached"});
+  assert.deepEqual((await mock(BASE, "/beans")).beans.map(b => b.n), ["Röstwerk Hell"]);
+  // typed in the coffee card: the same bean in other case is no new one
+  await row(page, "Bohne").locator("input").fill("röstwerk hell"); await row(page, "Bohne").locator("input").press("Enter");
+  await settle(page);
+  assert.equal((await mock(BASE, "/beans")).beans.length, 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Bohnen: Firmware ohne Profile zeigt keine Auswahl", async ({browser}) => {
+  await mock(BASE, "/__live", {noBeans: true});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  await settle(page);
+  assert.equal(await view(page).locator(".recipe .bean").isVisible(), false);
+  await tab(page, "Einstellungen");
+  assert.equal(await view(page).locator("#beanList .beanrow").count(), 0);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 
@@ -878,10 +954,10 @@ test("Waage wählen: suchen, verbinden, vergessen; Hinweis im Reiter Bezug", asy
   await ctx.close();
 });
 
-test("Nach Gewicht: Nachlauf und Abweichung vom Ziel, Pumpe stoppt vorher", async ({browser}) => {
+test("Nach Gewicht: Nachlauf und Abweichung vom Ziel, Nachlaufzeit gelernt", async ({browser}) => {
   const now = Math.floor(Date.now() / 1000);
   await mock(BASE, "/__shot", {s: 27.0, g: 38.5, at: now - 900, tw: 36.0, sw: 35.1, ld: 1.5});
-  await mock(BASE, "/__shot", {s: 25.6, g: 36.4, at: now - 300, tw: 36.0, sw: 34.6, ld: 1.5, d: 18.0});
+  await mock(BASE, "/__shot", {s: 25.6, g: 36.4, at: now - 300, tw: 36.0, sw: 34.6, ld: 1.8, lg: 1.0, fs: 1.8, d: 18.0});
   await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "brew.mode=1"});
   await fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: "brew.by_weight.enabled=1&brew.by_time.enabled=0"});
   let seen;
@@ -894,20 +970,29 @@ test("Nach Gewicht: Nachlauf und Abweichung vom Ziel, Pumpe stoppt vorher", asyn
   await rows.nth(0).click();
   const info = view(page).locator("#shotList .curve:not([hidden]) .shotinfo");
   await info.waitFor();
-  assert.match(await info.textContent(), /Ziel 36,0 g · Pumpe aus bei 34,6 g · Nachlauf 1,8 g · \+0,4 g über Ziel$/);
+  assert.match(await info.textContent(), /Ziel 36,0 g · Pumpe aus bei 34,6 g \(1,8 g = 1,00 s × 1,8 g\/s\) · Nachlauf 1,8 g · \+0,4 g über Ziel$/);
   await view(page).locator("#shotList .curve:not([hidden]) canvas").waitFor();
   await page.screenshot({path: OUT + "brew-weight-drops.png", fullPage: true});
-  // the shot card: stop by weight shows the lead
-  assert.equal(await row(page, "Pumpe stoppt vorher").locator("input").inputValue(), "1,5 g", "stop by weight: the lead");
+  // the shot card: stop by weight shows the drop time, and what it means in grams at the last shot's flow
+  assert.equal(await row(page, "Nachlaufzeit").locator("input").inputValue(), "1,00 s", "stop by weight: the drop time");
+  assert.equal(await page.locator("#lagNow").textContent(), "Letzter Bezug: 1,8 g/s, also 1,8 g vor dem Ziel");
+  await row(page, "Nachlaufzeit").locator("button", {hasText: "+"}).click();
+  await settle(page);
+  assert.equal((await values(BASE))["brew.by_weight.lag"], 1.05, "in steps of 0.05 s");
+  assert.equal(await page.locator("#lagNow").textContent(), "Letzter Bezug: 1,8 g/s, also 1,9 g vor dem Ziel");
   // live: stopped at 34.6 g, the drops bring it to 36.4 g
   await mock(BASE, "/__live", {state: 20, brewTime: 25.6, weight: 34.6, scale: 2, flow: 2.1});
   await page.locator("#lsLab", {hasText: "Bezug läuft"}).waitFor();
+  // the machine logs the shot and learns from it (src/shotHistory.h): the page shows the new drop time on its own
+  await mock(BASE, "/__shot", {s: 25.6, g: 36.6, at: now - 5, tw: 36.0, sw: 34.4, ld: 1.9, lg: 1.05, fs: 1.8});
+  await mock(BASE, "/__param", {"brew.by_weight.lag": 0.88});
   await mock(BASE, "/__live", {state: 10, brewTime: 25.6, weight: 0.4, scale: 2, cup: 36.4});
   await page.locator("#lsGoal", {hasText: "Ziel 36 g · Pumpe aus bei 34,6 g · +0,4 g"}).waitFor();
   assert.equal(await page.locator("#lsWeight").textContent(), "36,4 g");
-  await page.waitForFunction(() => true);
+  await page.waitForFunction(() => document.querySelector('.step[data-id="brew.by_weight.lag"] input')?.value === "0,88 s", null, {timeout: 9000});
+  assert.equal(await page.locator("#lagNow").textContent(), "Letzter Bezug: 1,8 g/s, also 1,6 g vor dem Ziel");
   const ctxText = seen.length ? seen[0].body.messages[0].content : "";
-  assert.ok(ctxText.includes("Pumpe aus bei 34,6 g (1,5 g vor dem Ziel), Nachlauf 1,8 g, +0,4 g zum Ziel"), "Claude gets the drops");
+  assert.ok(ctxText.includes("Pumpe aus bei 34,6 g (1,8 g vor dem Ziel: gelernte Nachlaufzeit 1,00 s × Durchfluss beim Stopp 1,8 g/s), Nachlauf 1,8 g, +0,4 g zum Ziel"), "Claude gets the drops: " + ctxText);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
