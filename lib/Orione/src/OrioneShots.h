@@ -78,7 +78,13 @@ namespace orione {
             static constexpr int kSize = 5;
             static constexpr float kMinSeconds = 10.0f; // without a scale
             static constexpr float kMinGrams = 5.0f;    // with a scale
+            // The drops after the stop are counted until the weight has not risen for kSettleQuietMs, at least
+            // kSettleMs and at most kSettleMaxMs. A fixed 4 s missed half of it with water at 11 g/s, which ran
+            // on for 15-20 s (Dominik's test in the machine, 08.10.2026); with a puck it is done in a few seconds.
             static constexpr uint32_t kSettleMs = 4000;
+            static constexpr uint32_t kSettleQuietMs = 2000;
+            static constexpr uint32_t kSettleMaxMs = 15000;
+            static constexpr float kSettleRise = 0.2f; // g: less is the scale's noise
 
             /** @return false if it was not a shot (see above) */
             bool record(const float seconds, const float grams, const uint32_t when, const uint32_t nowMs) {
@@ -92,6 +98,8 @@ namespace orione {
 
                 count_ = count_ < kSize ? count_ + 1 : kSize;
                 shots_[0] = Shot{seconds, grams, when, nextSeq()};
+                riseRef_ = grams;
+                lastRise_ = nowMs;
                 sinceBackflush_ = sinceBackflush_ < 0xFFFF ? sinceBackflush_ + 1 : sinceBackflush_;
                 settleStart_ = nowMs;
                 settling_ = true;
@@ -108,16 +116,23 @@ namespace orione {
                     return false;
                 }
 
-                if (nowMs - settleStart_ < kSettleMs) {
-                    if (grams > shots_[0].grams) {
-                        shots_[0].grams = grams;
-                    }
+                const uint32_t since = nowMs - settleStart_;
 
-                    return false;
+                if ((since >= kSettleMs && nowMs - lastRise_ >= kSettleQuietMs) || since >= kSettleMaxMs) {
+                    settling_ = false;
+                    return true;
                 }
 
-                settling_ = false;
-                return true;
+                if (grams > shots_[0].grams) {
+                    shots_[0].grams = grams; // the highest reading: lifting the cup must not count as zero
+                }
+
+                if (grams > riseRef_ + kSettleRise) {
+                    riseRef_ = grams;
+                    lastRise_ = nowMs;
+                }
+
+                return false;
             }
 
             /** Dose, grinder setting and beans of the newest shot (what was set up for it) */
@@ -322,6 +337,8 @@ namespace orione {
             int count_ = 0;
             uint16_t sinceBackflush_ = 0;
             uint32_t settleStart_ = 0;
+            uint32_t lastRise_ = 0; // when the weight last rose by more than kSettleRise while settling
+            float riseRef_ = 0.0f;
             bool settling_ = false;
     };
 

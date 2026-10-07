@@ -5,6 +5,7 @@
  */
 
 #include "../support/TestSupport.h"
+#include <RoundDisplayStrings.h>
 
 #include <limits>
 
@@ -197,6 +198,29 @@ void test_font_decodes_utf8() {
     TEST_ASSERT_EQUAL_CHAR('\0', *cut);
 }
 
+void test_display_texts_have_their_glyphs() {
+    // Every text of the display must be in the fonts: a missing glyph draws as a gap ("Zu heiß – spülen" had no dash)
+    const rd::Font* fonts[] = {rd::fonts::text(), rd::fonts::textSmall(), rd::fonts::hint()};
+
+    for (const rd::Strings* table : {&rd::kGerman, &rd::kEnglish}) {
+        const char* const* texts = reinterpret_cast<const char* const*>(table); // the struct holds only texts
+        static_assert(sizeof(rd::Strings) % sizeof(const char*) == 0, "Strings holds const char* only");
+
+        for (size_t i = 0; i < sizeof(rd::Strings) / sizeof(const char*); ++i) {
+            for (const char* c = texts[i]; *c != '\0';) {
+                const uint32_t code = rd::Font::next(c);
+
+                for (const rd::Font* f : fonts) {
+                    rd::Font::Glyph g;
+                    char msg[96];
+                    snprintf(msg, sizeof(msg), "text %u \"%s\": U+%04X missing", static_cast<unsigned>(i), texts[i], static_cast<unsigned>(code));
+                    TEST_ASSERT_TRUE_MESSAGE(f->find(code, g), msg);
+                }
+            }
+        }
+    }
+}
+
 void test_fonts_find_their_glyphs() {
     const rd::Font* all[] = {rd::fonts::big(), rd::fonts::mid(), rd::fonts::midSmall(), rd::fonts::text(), rd::fonts::textSmall(), rd::fonts::textCompact(), rd::fonts::hint(), rd::fonts::label()};
     const int sizes[] = {80, 34, 32, 20, 19, 18, 16, 19};
@@ -330,6 +354,7 @@ int main() {
     RUN_TEST(test_text_alignment);
     RUN_TEST(test_font_decodes_utf8);
     RUN_TEST(test_fonts_find_their_glyphs);
+    RUN_TEST(test_display_texts_have_their_glyphs);
     RUN_TEST(test_font_sizes_get_smaller);
     RUN_TEST(test_font_width_and_ink_top);
     RUN_TEST(test_text_blends_coverage);

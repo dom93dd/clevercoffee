@@ -1109,6 +1109,43 @@ test("Backflush: nach dem vollständigen Backflush ist der Modus aus, auch auf d
   await ctx.close();
 });
 
+test("Dampf vom Originalschalter: Status Dampf, danach Abkühlen mit Hinweis", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  await mock(BASE, "/__live", {state: 10, currentTemp: 124.0, steam: 1});
+  await page.locator("#state", {hasText: "Dampf"}).waitFor();
+  assert.equal(await page.locator("#alarm").isHidden(), true, "steam itself is no alarm");
+  await mock(BASE, "/__live", {state: 10, currentTemp: 101.0, steam: 2});
+  await page.locator("#state", {hasText: "Abkühlen nach Dampf"}).waitFor();
+  await page.locator("#alarm.info", {hasText: "Nach dem Dampf zu heiß für Espresso"}).waitFor();
+  assert.match(await page.locator("#alarm").textContent(), /Spülbezug/);
+  await mock(BASE, "/__live", {state: 10, currentTemp: 93.0, steam: 0});
+  await page.locator("#alarm").waitFor({state: "hidden"});
+  assert.doesNotMatch(await page.locator("#state").textContent(), /Dampf/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Wartung: Laufzeit und Grund des letzten Starts", async ({browser}) => {
+  await mock(BASE, "/__live", {bootReason: "brownout"});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  await page.locator("#bootInfo", {hasText: "Läuft seit 2 h 3 min · letzter Start: Unterspannung"}).waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Regler: Heizen beim Bezug einstellbar", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  await view(page).locator("summary", {hasText: "Regler"}).click();
+  const r = row(page, "Heizen beim Bezug");
+  assert.equal(await r.locator("input").inputValue(), "60 %");
+  assert.match(await r.locator(".lbl p").textContent(), /solange die Pumpe läuft/);
+  await r.locator("button", {hasText: "+"}).click();
+  await settle(page);
+  assert.equal((await values(BASE))["brew.heat_boost"], 65);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");

@@ -106,6 +106,7 @@ namespace live_events {
             double cup;    // while the drops after a shot are counted: in the cup since the start, < 0 otherwise
             bool held;     // the shot stopped by itself and the brew switch is still on
             bool sw;       // the brew switch is on (or not back off yet)
+            int steam;     // steam from the original switch, seen from the temperature: 0 no, 1 steam, 2 cooling down after it
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -131,7 +132,7 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
-                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s})", v.held ? "true" : "false", v.sw ? "true" : "false");
+                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d})", v.held ? "true" : "false", v.sw ? "true" : "false", v.steam);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -503,6 +504,15 @@ inline void serverSetup() {
     server.on("/version", HTTP_GET, [](AsyncWebServerRequest* request) {
         request->send(200, "text/plain", sysVersion);
     });
+
+#ifdef CC_ORIONE
+    // why the ESP32 last started and for how long it has been running (orioneMachine.h)
+    server.on("/boot", HTTP_GET, [](AsyncWebServerRequest* request) {
+        char json[80];
+        snprintf(json, sizeof(json), R"({"reason":"%s","uptime":%lu})", orione_machine::startReason, static_cast<unsigned long>(millis() / 1000));
+        request->send(200, "application/json", json);
+    });
+#endif
 
     server.on("/temperatures", HTTP_GET, [](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
@@ -966,7 +976,7 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
                           warmup_flush::livePhase(), warmup_flush::flush.pulse(),
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
-                          brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle});
+                          brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle, static_cast<int>(orione_machine::steam.phase())});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

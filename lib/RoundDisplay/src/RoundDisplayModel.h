@@ -69,6 +69,8 @@ namespace rd {
             float lastBrewTime = 0;   // duration of the previous shot, 0 = none yet
             bool brewSwitchReminder = false; // the shot is done, the brew switch has been left on for a while
             bool warmupFlushPending = false; // after a cold start the machine will flush by itself once settled
+            bool steamByThermostat = false;  // steam screen: the original steam thermostat heats, the firmware only watches
+            bool steamCooling = false;       // after steam: too hot for espresso until it has cooled down
             float flushTime = 0;
             float hotWaterTime = 0;
 

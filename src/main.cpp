@@ -249,6 +249,7 @@ boolean waterTankFull = true;
 Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 ms
 
 #ifdef CC_ORIONE
+#include "orioneMachine.h"
 #include "warmupFlush.h"
 #endif
 
@@ -1043,6 +1044,10 @@ void setup() {
 
     // Initialize the logger
     Logger::init(23);
+#ifdef CC_ORIONE
+    orione_machine::noteStart();
+    LOGF(INFO, "Started after: %s", orione_machine::startReason);
+#endif
 
     if (!config.begin()) {
         LOG(ERROR, "Failed to load config from filesystem!");
@@ -1561,7 +1566,24 @@ void loopPid() {
     {
         ROUND_TIME(Pid);
         testEmergencyStop(); // test if temp is too high
-        bPID.Compute();      // the variable pidOutput now has new values from PID (will be written to heater pin in ISR.cpp)
+#ifdef CC_ORIONE
+        // No heating before the first valid reading: until then the temperature is 0 °C and the controller
+        // would heat at 100 % for the 4 s until the sensor error (seen at the first start, 08.10.2026)
+        const bool sensorReady = tempSensor != nullptr && tempSensor->hasValidReading();
+
+        if (sensorReady) {
+            bPID.Compute(); // the variable pidOutput now has new values from PID (will be written to heater pin in ISR.cpp)
+        }
+        else {
+            pidOutput = 0;
+        }
+
+        // While the pump runs: at least brew.heat_boost % against the cold water (lib/Orione/src/OrioneHeat.h)
+        const bool pumping = sensorReady && bPID.GetMode() == AUTOMATIC && machineState == kBrew && currBrewState == kBrewRunning;
+        pidOutput = orione::BrewHeatBoost::apply(pidOutput, windowSize, config.get<double>("brew.heat_boost"), pumping, temperature, setpoint);
+#else
+        bPID.Compute(); // the variable pidOutput now has new values from PID (will be written to heater pin in ISR.cpp)
+#endif
     }
 
     websiteUpdateRunning = false;
@@ -1621,6 +1643,7 @@ void loopPid() {
 
             if (heapWatch.update(millis(), orione::HeapWatch::low(heapFree, heapBlock), busy)) {
                 LOGF(ERROR, "Heap below the web server's brake for a minute (free %u, largest block %u): restarting", static_cast<unsigned>(heapFree), static_cast<unsigned>(heapBlock));
+                orione_machine::markHeapRestart();
                 delay(200);
                 ESP.restart();
             }
@@ -1656,6 +1679,7 @@ void loopPid() {
 #ifdef CC_ORIONE
     brewSafetyStop();
     warmup_flush::loop();
+    orione_machine::loop();
 #endif
     hotWaterHandler();
     valveSafetyShutdownCheck();

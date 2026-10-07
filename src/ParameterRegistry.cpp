@@ -301,6 +301,8 @@ void ParameterRegistry::initialize(Config& config) {
     addNumericConfigParam<double>("brew.by_weight.lead", "Stop before the target (g)", kDouble, sBrewSection, 329, nullptr, 0.0, 5.0,
                                   "The pump stops this much before the target weight, the drops make up the rest; learned from each shot stopped by weight");
     addBoolConfigParam("brew.by_weight.learn", "Learn the stop", sBrewSection, 330, nullptr, "After each shot stopped by weight, correct the lead by what ended up in the cup");
+    addNumericConfigParam<double>("brew.heat_boost", "Heating during a shot (%)", kDouble, sPIDSection, 111, nullptr, 0.0, 100.0,
+                                  "While the pump runs the heater gets at least this share of its power: the cold water takes ~600 W at 2 g/s. Ends over the setpoint (0 = off)");
     // Recipe of the next shot and the coffee it is made with: logged with each shot, context for the analysis
     addNumericConfigParam<double>("brew.dose", "Dose (g)", kDouble, sBrewSection, 325, nullptr, BREW_DOSE_MIN, BREW_DOSE_MAX, "Ground coffee in the portafilter");
     addStringConfigParam("brew.grind", "Grind setting", sBrewSection, 326, nullptr, BREW_GRIND_MAX_LENGTH, "Grinder setting of the next shot");

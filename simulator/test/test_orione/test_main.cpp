@@ -10,6 +10,7 @@
 
 #include <OrioneFixed.h>
 #include <OrioneFlow.h>
+#include <OrioneHeat.h>
 #include <OrioneShots.h>
 #include <OrioneWebGate.h>
 #include <OrioneWarmupFlush.h>
@@ -286,6 +287,67 @@ void test_shots_drops_after_the_stop_are_counted() {
     TEST_ASSERT_TRUE(log.settle(14000, 36.0f));  // settled: save now, this reading comes too late
     TEST_ASSERT_FALSE(log.settle(15000, 36.0f)); // only once
     TEST_ASSERT_EQUAL_INT(356, tenths(log.at(0).grams));
+}
+
+void test_shots_drops_counted_until_the_weight_stops_rising() {
+    orione::ShotLog log; // water without a puck ran on for 15-20 s at the machine (08.10.2026)
+    log.record(10.6f, 89.0f, 0, 0);
+
+    for (uint32_t t = 500; t <= 9000; t += 500) { // 1 g/s until 9 s
+        TEST_ASSERT_FALSE_MESSAGE(log.settle(t, 89.0f + static_cast<float>(t) / 1000.0f), "still rising: keeps counting past 4 s");
+    }
+
+    TEST_ASSERT_FALSE(log.settle(10000, 98.0f)); // quiet from 9 s on
+    TEST_ASSERT_FALSE(log.settle(10900, 98.05f));
+    TEST_ASSERT_TRUE(log.settle(11000, 98.1f)); // 2 s without a real rise
+    TEST_ASSERT_EQUAL_INT(981, tenths(log.at(0).grams));
+}
+
+void test_shots_drops_counted_at_most_fifteen_seconds() {
+    orione::ShotLog log;
+    log.record(10.0f, 80.0f, 0, 1000);
+    uint32_t t = 1000;
+    float g = 80.0f;
+
+    while (!log.settle(t += 500, g += 0.5f)) {
+        TEST_ASSERT_TRUE(t <= 1000 + orione::ShotLog::kSettleMaxMs);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1000 + orione::ShotLog::kSettleMaxMs, t);
+}
+
+void test_shots_without_scale_settle_after_four_seconds() {
+    orione::ShotLog log;
+    log.record(25.0f, -1.0f, 0, 0);
+    TEST_ASSERT_FALSE(log.settle(3999, -1.0f));
+    TEST_ASSERT_TRUE(log.settle(4000, -1.0f));
+}
+
+void test_heat_boost_while_the_pump_runs() {
+    using B = orione::BrewHeatBoost;
+    TEST_ASSERT_EQUAL_FLOAT(600.0f, static_cast<float>(B::apply(0.0, 1000.0, 60.0, true, 92.0, 93.0)));    // at least 60 %
+    TEST_ASSERT_EQUAL_FLOAT(900.0f, static_cast<float>(B::apply(900.0, 1000.0, 60.0, true, 88.0, 93.0)));  // the controller may give more
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, static_cast<float>(B::apply(0.0, 1000.0, 60.0, false, 88.0, 93.0)));     // pump off: the controller alone
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, static_cast<float>(B::apply(0.0, 1000.0, 60.0, true, 93.5, 93.0)));      // over the setpoint: no floor
+    TEST_ASSERT_EQUAL_FLOAT(200.0f, static_cast<float>(B::apply(200.0, 1000.0, 0.0, true, 80.0, 93.0)));   // switched off
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, static_cast<float>(B::apply(0.0, 1000.0, 150.0, true, 80.0, 93.0)));  // at most the whole window
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, static_cast<float>(B::apply(0.0, 1000.0, 60.0, true, NAN, 93.0)));       // no reading: never heat blind
+}
+
+void test_steam_seen_from_the_temperature() {
+    orione::SteamWatch w;
+    using W = orione::SteamWatch;
+    TEST_ASSERT_EQUAL(W::kNone, w.update(99.0, 93.0)); // the controller's overshoot is no steam
+    TEST_ASSERT_EQUAL(W::kSteam, w.update(106.0, 93.0));
+    TEST_ASSERT_EQUAL(W::kSteam, w.update(104.0, 93.0)); // hysteresis
+    TEST_ASSERT_EQUAL(W::kSteam, w.update(125.0, 93.0));
+    TEST_ASSERT_EQUAL(W::kSteam, w.update(-49.9, 93.0)); // the sensor's error value changes nothing
+    TEST_ASSERT_EQUAL(W::kCooling, w.update(102.9, 93.0)); // S2 off: cooling down
+    TEST_ASSERT_EQUAL(W::kCooling, w.update(97.0, 93.0));
+    TEST_ASSERT_EQUAL(W::kNone, w.update(96.0, 93.0)); // near the setpoint: espresso again
+    TEST_ASSERT_EQUAL(W::kSteam, w.update(110.0, 93.0)); // steam again
+    TEST_ASSERT_EQUAL(W::kCooling, w.update(100.0, 93.0));
+    TEST_ASSERT_EQUAL(W::kSteam, w.update(105.0, 93.0)); // switched on again while cooling
 }
 
 void test_shots_without_scale_keep_no_weight() {
@@ -867,6 +929,11 @@ int main() {
     RUN_TEST(test_shots_newest_first_and_at_most_five);
     RUN_TEST(test_shots_short_ones_are_left_out);
     RUN_TEST(test_shots_with_a_scale_need_coffee_in_the_cup);
+    RUN_TEST(test_shots_drops_counted_until_the_weight_stops_rising);
+    RUN_TEST(test_shots_drops_counted_at_most_fifteen_seconds);
+    RUN_TEST(test_shots_without_scale_settle_after_four_seconds);
+    RUN_TEST(test_heat_boost_while_the_pump_runs);
+    RUN_TEST(test_steam_seen_from_the_temperature);
     RUN_TEST(test_shots_delete_keeps_the_others_and_their_curves);
     RUN_TEST(test_shots_delete_the_newest_while_its_drops_are_counted);
     RUN_TEST(test_shots_delete_counts_since_backflush_only_for_newer_ones);

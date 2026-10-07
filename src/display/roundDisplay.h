@@ -74,6 +74,20 @@ inline rd::Model roundDisplayModel() {
     m.temperature = static_cast<float>(temperature);
     m.setpoint = static_cast<float>(setpoint);
     m.heaterPercent = static_cast<float>(pidOutput / 10);
+#ifdef CC_ORIONE
+    // Steam from the original switch: seen from the temperature (orioneMachine.h). Only over the normal screen,
+    // never over a shot, an alarm or the like; the gauge's top is the steam setting (the thermostat holds ~120-130 °C).
+    if (m.mode == rd::Mode::Normal) {
+        if (orione_machine::steam.phase() == orione::SteamWatch::kSteam) {
+            m.mode = rd::Mode::Steam;
+            m.steamByThermostat = true;
+            m.setpoint = config.get<float>("steam.setpoint");
+        }
+        else {
+            m.steamCooling = orione_machine::steam.phase() == orione::SteamWatch::kCooling;
+        }
+    }
+#endif
     m.readyBand = config.get<float>("display.blinking.delta");
     m.emergencyResetTemp = static_cast<float>(brewSetpoint + 5);
 

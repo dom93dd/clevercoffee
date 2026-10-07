@@ -544,7 +544,7 @@ namespace rd {
         h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16);
         h = hashAdd(h, m.offlineMode | m.wifiConnected << 1 | m.wifiBars << 2 | m.mqttEnabled << 5 | m.mqttConnected << 6);
         h = hashAdd(h, q(m.emergencyResetTemp, 0.1f));
-        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1);
+        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3);
 
         if (screen_ == Screen::EmergencyStop || screen_ == Screen::SensorError) {
             h = hashAdd(h, static_cast<int32_t>(nowMs / 500 % 2)); // blinking ring
@@ -1302,6 +1302,10 @@ namespace rd {
             // it is about to run valve and pump by itself: before a portafilter with coffee goes in
             p.text(fonts::hint(), s.flushSoon, kCx, kRowBY, kBrew);
         }
+        else if (m.steamCooling) {
+            // after steam the block is far over the setpoint: a flush through the group cools it fastest
+            p.text(fonts::hint(), s.tooHotFlush, kCx, kRowBY, kCool);
+        }
         else if (drawConnectionHint(p, kRowBY)) {
             // a connection problem is shown instead
         }
@@ -1339,9 +1343,16 @@ namespace rd {
 
         char num[16];
         char buf[48];
-        formatNumber(num, sizeof(num), m.setpoint, 0, m.language);
-        snprintf(buf, sizeof(buf), "%s %s°", s.setpoint, num);
-        p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
+
+        if (m.steamByThermostat) {
+            p.text(fonts::textSmall(), s.steamThermostat, kCx, kRowAY, kTextDim); // no setpoint of ours to show
+        }
+        else {
+            formatNumber(num, sizeof(num), m.setpoint, 0, m.language);
+            snprintf(buf, sizeof(buf), "%s %s°", s.setpoint, num);
+            p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
+        }
+
         drawConnectionHint(p, kRowBY);
         drawHeaterBar(p);
         drawScaleStatus(p);

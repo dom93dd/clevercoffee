@@ -52,6 +52,8 @@ namespace rd {
             const char* scaleDisconnected;
             const char* switchReminder; // short: the bottom row of the done screen
             const char* flushSoon;      // the warm-up flush will start by itself (bottom row)
+            const char* steamThermostat; // steam from the original switch: the thermostat holds it, not a setpoint
+            const char* tooHotFlush;     // after steam: too hot for espresso (bottom row)
     };
 
     inline constexpr Strings kGerman = {
@@ -91,6 +93,8 @@ namespace rd {
         "Waage getrennt",
         "Schalter aus",
         "Spült gleich",
+        "über Thermostat",
+        "Zu heiß, spülen",
     };
 
     inline constexpr Strings kEnglish = {
@@ -130,6 +134,8 @@ namespace rd {
         "Scale not connected",
         "Switch off",
         "Flush coming",
+        "by thermostat",
+        "Too hot, flush",
     };
 
     inline const Strings& strings(const Language lang) {

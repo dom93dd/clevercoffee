@@ -397,6 +397,7 @@ class Config {
             // brew by weight: the pump stops this far before the target, learned from each shot (shotHistory.h)
             _configDefs.emplace("brew.by_weight.lead", ConfigDef::forDouble(1.5, 0.0, 5.0));
             _configDefs.emplace("brew.by_weight.learn", ConfigDef::forBool(true));
+            _configDefs.emplace("brew.heat_boost", ConfigDef::forDouble(60.0, 0.0, 100.0)); // heater floor while the pump runs (OrioneHeat.h)
             _configDefs.emplace("brew.dose", ConfigDef::forDouble(BREW_DOSE, BREW_DOSE_MIN, BREW_DOSE_MAX));
             _configDefs.emplace("brew.grind", ConfigDef::forString("", BREW_GRIND_MAX_LENGTH));
             _configDefs.emplace("brew.grinder", ConfigDef::forString("", GRINDER_MAX_LENGTH));

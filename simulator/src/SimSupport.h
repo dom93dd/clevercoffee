@@ -222,6 +222,18 @@ namespace sim {
                  m.setHeater(18);
                  m.warmupFlushPending = true;
              }},
+            {"steam-switch", "Dampf über den Originalschalter (Thermostat heizt)",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(124.3f);
+                 m.setHeater(0);
+                 m.steamFromSwitch = true;
+             }},
+            {"steam-cooling", "Nach dem Dampf: zu heiß, spülen",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(101.6f);
+                 m.setHeater(0);
+                 m.steamCooling = true;
+             }},
             {"heating", "Aufheizen",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(61.4f);

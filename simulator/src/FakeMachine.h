@@ -28,6 +28,8 @@ class FakeMachine {
         bool scaleConnected = true;
         bool scaleBroken = false;
         bool warmupFlushPending = false; // cold start, sensor and setting on: it will flush by itself
+        bool steamFromSwitch = false;    // Orione: steam by the original switch, seen from the temperature
+        bool steamCooling = false;       // Orione: after steam, too hot for espresso
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -254,6 +256,13 @@ class FakeMachine {
 
             m.brewTimerVisible = brewing_ || holdLeft_ > 0.0f;
             m.warmupFlushPending = warmupFlushPending;
+            m.steamCooling = steamCooling;
+
+            if (steamFromSwitch) {
+                m.mode = rd::Mode::Steam;
+                m.steamByThermostat = true;
+                m.setpoint = steamSetpoint;
+            }
             m.brewSwitchReminder = !brewing_ && brewSwitch_ && phase_ == rd::BrewPhase::Finished && heldFor_ >= rd::BrewTimer::kRemindMs / 1000.0f;
             m.brewPhase = phase_;
             m.brewTime = brewTime_;

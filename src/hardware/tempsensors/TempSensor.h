@@ -57,6 +57,14 @@ class TempSensor {
             return error_;
         }
 
+        /**
+         * @brief Whether a reading has succeeded since the start. Until then getCurrentTemperature() is 0 °C,
+         *        which a controller would answer with full heating.
+         */
+        [[nodiscard]] bool hasValidReading() const {
+            return valid_;
+        }
+
     protected:
         /**
          * @brief Samples the current temperature from the sensor
@@ -79,6 +87,7 @@ class TempSensor {
                 // Reset error counter and error state
                 bad_readings_ = 0;
                 error_ = false;
+                valid_ = true;
                 temperatureUpdateRunning = true;
 
                 // Update moving average
@@ -101,6 +110,7 @@ class TempSensor {
         int bad_readings_{0};
         int max_bad_treadings_{10};
         bool error_{false};
+        bool valid_{false};
 
         /**
          * @brief FIR moving average filter for software brew detection

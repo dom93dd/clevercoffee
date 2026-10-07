@@ -47,6 +47,7 @@ BASE = {
     "brew.by_weight.target_weight": dict(type=2, value=36.0, min=0, max=500),
     "brew.by_weight.auto_tare": dict(type=1, value=1, min=0, max=1),
     "brew.by_weight.lead": dict(type=2, value=1.5, min=0, max=5),
+    "brew.heat_boost": dict(type=2, value=60.0, min=0, max=100),
     "brew.by_weight.learn": dict(type=1, value=1, min=0, max=1),
     "brew.presets": dict(type=4, value="25,36;30,45;45,80", min=0, max=48),
     "brew.dose": dict(type=2, value=18.0, min=5, max=30),
@@ -206,6 +207,8 @@ class Handler(BaseHTTPRequestHandler):
                 if st == 2:
                     body["battery"] = 76
             return self.send(200, json.dumps(body), "application/json")
+        if url.path == "/boot":  # src/orioneMachine.h: why it last started, uptime in seconds
+            return self.send(200, json.dumps({"reason": S.live.get("bootReason", "power"), "uptime": 7380}), "application/json")
         if url.path == "/version":
             return self.send(200, "4.0.4+mock")
         if url.path == "/download/config":
@@ -235,7 +238,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False}
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False, "steam": 0}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
