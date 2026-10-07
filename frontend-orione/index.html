@@ -136,6 +136,12 @@ details.ai[open]>summary::after{transform:translateY(2px) rotate(225deg)} /* poi
 .ai .teaser{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:14px;opacity:.8}
 .ai[open] .teaser{display:none}
 .ai .linkbtn{margin-top:8px;color:#b9a6ff}
+.ai .apply{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(185,166,255,.22)}
+.ai .apply p{flex:1;margin:0;font-size:14px}
+.ai .apply span{display:block}
+.ai .apply small{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#b9a6ff}
+.ai .apply .btn{flex:none;padding:9px 14px;font-size:14px;background:#b9a6ff;color:#1a1430}
+.ai .apply .btn:disabled{background:none;color:#b9a6ff;box-shadow:inset 0 0 0 1.5px rgba(185,166,255,.5)}
 .linkbtn{display:inline-block;background:none;border:0;color:var(--heat);font-weight:600;font-size:15px;padding:0;cursor:pointer;text-decoration:none}
 .claude p{margin:6px 0 12px;color:var(--mute);font-size:14px}
 .claude .txt{max-width:none;width:100%;margin:12px 0}
@@ -216,6 +222,7 @@ const T = {
     claudeCredit: "Der Schlüssel ist gültig, aber das API-Guthaben ist leer. In der Anthropic-Konsole unter „Plans & Billing“ Guthaben aufladen; ein Claude-Abo zählt dafür nicht.",
     claudeModel: "Das Modell ist mit diesem Schlüssel nicht verfügbar.", claudeBusy: "Anthropic ist gerade ausgelastet. Bitte gleich noch einmal.", claudeOther: "Anthropic meldet: ",
     suggestion: "Vorschlag zum letzten Bezug", suggestionOf: "Vorschlag", analysis: "Auswertung", analyze: "Ausführlich auswerten",
+    finer: "feiner", coarser: "gröber", aiApply: "Übernehmen", aiApplied: "Übernommen", aiChanges: "Für den nächsten Bezug", aiAppliedToast: "Vorschlag übernommen", "brew.setpoint": "Brühtemperatur",
     bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, dann in Wartung den Backflush-Modus einschalten.",
     "backflush.remind_after": "Erinnern nach", "backflush.remind_afterHint": "Bezügen (0 = nie)",
     alarmOver: "Übertemperatur", alarmOverHint: "Die Heizung bleibt aus, bis die Temperatur gesunken ist.", alarmSensor: "Sensorfehler", alarmSensorHint: "Die Heizung ist aus. Temperaturfühler und Kabel prüfen.", alarmTank: "Wassertank leer", alarmTankHint: "Bitte nachfüllen, dann geht es weiter.", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
@@ -288,6 +295,7 @@ const T = {
     claudeCredit: "The key is valid, but the API credit is used up. Buy credits in the Anthropic console under “Plans & Billing”; a Claude subscription does not count for it.",
     claudeModel: "The model is not available with this key.", claudeBusy: "Anthropic is busy right now. Please try again in a moment.", claudeOther: "Anthropic says: ",
     suggestion: "Suggestion on the last shot", suggestionOf: "Suggestion", analysis: "Analysis", analyze: "Analyse in depth",
+    finer: "finer", coarser: "coarser", aiApply: "Apply", aiApplied: "Applied", aiChanges: "For the next shot", aiAppliedToast: "Suggestion applied", "brew.setpoint": "Brew temperature",
     bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, then switch on backflush mode in Care.",
     "backflush.remind_after": "Remind after", "backflush.remind_afterHint": "shots (0 = never)",
     alarmOver: "Overtemperature", alarmOverHint: "The heater stays off until the temperature has dropped.", alarmSensor: "Sensor error", alarmSensorHint: "The heater is off. Check the temperature sensor and its cable.", alarmTank: "Water tank empty", alarmTankHint: "Please refill, then it goes on.", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
@@ -977,16 +985,18 @@ const textHash = t => [...String(t ?? "")].reduce((h, c) => (h * 31 + c.codePoin
 const aiCache = x => `orione.ai.${shotKey(x)}.${x.r || 0}.${textHash((P["brew.grinder"]?.value ?? "") + "|" + (P["brew.beans"]?.value ?? ""))}`;
 const aiBusy = {}, aiLive = {};
 // streams the answer; onText gets the text so far. Without "think" the model answers right away:
-// its thinking block would otherwise come first and can use up a small token budget, leaving no text
-async function claude(key, system, user, maxTokens, onText, think = false) {
+// its thinking block would otherwise come first and can use up a small token budget, leaving no text.
+// With a tool the model may end with a call to it: {text, input} carries its input (null without one)
+async function claude(key, system, user, maxTokens, onText, think = false, tool = null) {
   const r = await fetch(AI_URL, {method: "POST", headers: {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true"},
-    body: JSON.stringify({model: AI_MODEL, max_tokens: maxTokens, stream: true, ...(think ? {} : {thinking: {type: "disabled"}}), system, messages: [{role: "user", content: user}]})});
+    body: JSON.stringify({model: AI_MODEL, max_tokens: maxTokens, stream: true, ...(think ? {} : {thinking: {type: "disabled"}}), ...(tool ? {tools: [tool], tool_choice: {type: "auto"}} : {}),
+      system, messages: [{role: "user", content: user}]})});
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw Object.assign(new Error(j.error?.message || "HTTP " + r.status), {status: r.status, type: j.error?.type || ""});
   }
   const rd = r.body.getReader(), dec = new TextDecoder();
-  let buf = "", text = "";
+  let buf = "", text = "", json = null, input = null;
   for (;;) {
     const {value, done} = await rd.read();
     if (done) break;
@@ -996,15 +1006,30 @@ async function claude(key, system, user, maxTokens, onText, think = false) {
       if (!data) continue;
       const ev = JSON.parse(data.slice(5));
       if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") { text += ev.delta.text; onText?.(text); }
+      else if (ev.type === "content_block_start" && ev.content_block?.type === "tool_use") json = "";
+      else if (ev.type === "content_block_delta" && ev.delta?.type === "input_json_delta" && json != null) json += ev.delta.partial_json;
+      else if (ev.type === "content_block_stop" && json != null) { try { input = JSON.parse(json || "{}"); } catch (e) {} json = null; }
       else if (ev.type === "error") throw Object.assign(new Error(ev.error?.message || "error"), {status: 500});
     }
   }
   if (!text.trim()) throw Object.assign(new Error("no text"), {status: 0}); // treated like no connection: no suggestion
-  return text.trim();
+  return {text: text.trim(), input};
 }
 const AI_SYSTEM = () => `Du bist ein erfahrener Barista und kennst Siebträgermaschinen auch technisch. Du bekommst die Daten der letzten Espresso-Bezüge einer Maschine. Antworte ${lang === "de" ? "auf Deutsch" : "in English"}, ohne Einleitung, ohne Aufzählungszeichen und ohne Markdown.`;
-const AI_SHORT = "Bewerte den neuesten Bezug in höchstens 35 Wörtern und nenne genau einen konkreten nächsten Schritt (zum Beispiel Mahlgrad eine Stufe feiner oder gröber, Dosis ±0,5 g, anderes Verhältnis, Temperatur ±1 °C). Ein Espresso läuft meist 25–30 s bei etwa 1:2; sauer spricht eher für feiner, heißer oder ein längeres Verhältnis, bitter für gröber, kühler oder ein kürzeres. Passt alles, sag das und schlag nichts vor.";
-const AI_LONG = "Werte die Bezüge gründlich aus: was Zeit, Gewichtsverlauf (Durchfluss, Anlauf, Kanalbildung), Temperaturverlauf und die Konstanz über die letzten Bezüge zeigen, mögliche Ursachen und eine Reihenfolge von höchstens drei Schritten. Höchstens 150 Wörter in kurzen Absätzen.";
+const AI_TOOL_HINT = " Schreib zuerst den Text. Empfiehlt er eine Änderung an Mahlgrad, Dosis, Zielgewicht, Bezugszeit oder Temperatur, dann rufe danach immer das Werkzeug einstellungen_vorschlagen mit den neuen Werten auf (beim Mahlgrad den neuen Wert auf der Skala der Mühle und die Richtung), damit der Nutzer sie mit einem Tipp übernehmen kann. Empfiehlst du keine Änderung, rufe es nicht auf.";
+const AI_SHORT = "Bewerte den neuesten Bezug in höchstens 35 Wörtern und nenne genau einen konkreten nächsten Schritt (zum Beispiel Mahlgrad eine Stufe feiner oder gröber, Dosis ±0,5 g, anderes Verhältnis, Temperatur ±1 °C). Ein Espresso läuft meist 25–30 s bei etwa 1:2; sauer spricht eher für feiner, heißer oder ein längeres Verhältnis, bitter für gröber, kühler oder ein kürzeres. Passt alles, sag das und schlag nichts vor." + AI_TOOL_HINT;
+const AI_LONG = "Werte die Bezüge gründlich aus: was Zeit, Gewichtsverlauf (Durchfluss, Anlauf, Kanalbildung), Temperaturverlauf und die Konstanz über die letzten Bezüge zeigen, mögliche Ursachen und eine Reihenfolge von höchstens drei Schritten. Höchstens 150 Wörter in kurzen Absätzen." + AI_TOOL_HINT.replace("mit genau den Werten", "mit den Werten des ersten Schritts");
+// what Claude may change: each value checked against the setting's limits before it is offered (aiChanges)
+const AI_TOOL = {name: "einstellungen_vorschlagen", description: "Schlägt Einstellungen für den nächsten Bezug vor, die der Nutzer mit einem Tipp übernehmen kann. Nur die Werte angeben, die sich ändern sollen, und nur solche, die im Text empfohlen werden.",
+  input_schema: {type: "object", additionalProperties: false, properties: {
+    mahlgrad: {type: "string", description: "Neuer Mahlgrad, so geschrieben wie die aktuelle Einstellung (gleiche Skala der Mühle)"},
+    mahlgrad_richtung: {type: "string", enum: ["feiner", "gröber"], description: "Ob der neue Mahlgrad feiner oder gröber mahlt"},
+    dosis_g: {type: "number", description: "Kaffeemehl im Sieb in g"},
+    zielgewicht_g: {type: "number", description: "Getränk in der Tasse in g; nur beim Stopp nach Gewicht"},
+    bezugszeit_s: {type: "number", description: "Bezugszeit in s; nur beim Stopp nach Zeit"},
+    temperatur_c: {type: "number", description: "Brühtemperatur-Soll in °C"},
+    nachlaufzeit_s: {type: "number", description: "Nachlaufzeit in s; nur wenn das automatische Lernen aus ist oder klar danebenliegt"}}}};
+const AI_FIELDS = {mahlgrad: "brew.grind", dosis_g: "brew.dose", zielgewicht_g: "brew.by_weight.target_weight", bezugszeit_s: "brew.by_time.target_time", temperatur_c: "brew.setpoint", nachlaufzeit_s: "brew.by_weight.lag"};
 function coffeeContext() {
   const v = id => P[id]?.value, m = stopMode(), out = [];
   out.push("Maschine: Quick Mill Orione 3000, Einkreiser mit Thermoblock, Vibrationspumpe (Ulka), 3-Wege-Magnetventil, kein Überdruckventil, kein Druckprofil; Steuerung CleverCoffee mit PID.");
@@ -1012,6 +1037,15 @@ function coffeeContext() {
   if (v("brew.grinder")) out.push("Mühle: " + v("brew.grinder"));
   if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans"));
   out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
+  if (m === "weight") out.push(`Der Stopp nach Gewicht regelt sich selbst: Die Pumpe stoppt um Nachlaufzeit × aktuellem Durchfluss vor dem Ziel, damit der Nachlauf das Ziel auffüllt; die Nachlaufzeit (jetzt ${num(v("brew.by_weight.lag") ?? 0, 2)} s) ${v("brew.by_weight.learn") ? "lernt die Maschine nach jedem Bezug selbst nach. Abweichungen vom Zielgewicht bis etwa ±1 g gleicht sie von allein aus: Schlag nicht vor, früher oder später zu stoppen, und nicht, die Nachlaufzeit zu ändern" : "ist fest eingestellt, das Lernen ist aus"}.`);
+  out.push("Druck, Pre-Infusion und Durchfluss lassen sich an dieser Maschine nicht einstellen; einstellbar sind nur Mahlgrad, Dosis, Zielgewicht bzw. Bezugszeit und Brühtemperatur.");
+  const next = [];
+  if (v("brew.dose")) next.push(`Dosis ${num(v("brew.dose"), 1)} g`);
+  if (v("brew.grind")) next.push(`Mahlgrad ${v("brew.grind")}`);
+  if (m === "weight") next.push(`Zielgewicht ${num(v("brew.by_weight.target_weight"), 1)} g`);
+  if (m === "time") next.push(`Bezugszeit ${num(v("brew.by_time.target_time"), 1)} s`);
+  next.push(`Brühtemperatur ${num(v("brew.setpoint"), 1)} °C`);
+  out.push("Eingestellt für den nächsten Bezug: " + next.join(", ") + ".");
   out.push("Letzte Bezüge, neuester zuerst:");
   shots.forEach((x, i) => {
     const p = [num(x.s, 1) + " s"];
@@ -1043,7 +1077,8 @@ async function ask(x, long) {
   aiBusy[k] = true; paintShots();
   try {
     await curveOf(shots[0], 0);
-    const text = await claude(key, AI_SYSTEM(), coffeeContext() + "\n\n" + (long ? AI_LONG : AI_SHORT), long ? 4000 : 300, s => { aiLive[k] = s; document.querySelectorAll(`[data-ai="${CSS.escape(k)}"]`).forEach(e => e.textContent = s); }, long);
+    const {text, input} = await claude(key, AI_SYSTEM(), coffeeContext() + "\n\n" + (long ? AI_LONG : AI_SHORT), long ? 4000 : 500, s => { aiLive[k] = s; document.querySelectorAll(`[data-ai="${CSS.escape(k)}"]`).forEach(e => e.textContent = s); }, long, AI_TOOL);
+    store.set(k + ".p", input && Object.keys(input).length ? JSON.stringify(input) : null);
     if (text) store.set(k, text);
     store.set("orione.claude.err", null);
   } catch (e) {
@@ -1080,12 +1115,59 @@ function aiBox(x, newest) {
   b.open = aiOpen[kk] ?? !long;
   b.ontoggle = () => { aiOpen[kk] = b.open; };
   b.append(sum, body);
+  const ap = applyBox(kk, x === shots[0]);
+  if (ap) b.append(ap);
   if (!long && short && aiKey() && x === shots[0]) {
     const more = el("button", "linkbtn", aiBusy[k + ".long"] ? "…" : t("analyze"));
     more.onclick = () => ask(x, true);
     b.append(more);
   }
   return b;
+}
+// Claude's proposal as changes to the settings: only known settings, within their limits and steps, only what
+// differs from now; a setting that does not apply to the current stop (target time while stopping by weight) is left out
+function aiChanges(raw) {
+  const m = stopMode(), out = [];
+  for (const [field, id] of Object.entries(AI_FIELDS)) {
+    if (raw?.[field] == null || !P[id]) continue;
+    if ((id === "brew.by_weight.target_weight" || id === "brew.by_weight.lag") && m !== "weight") continue;
+    if (id === "brew.by_time.target_time" && m !== "time") continue;
+    const p = P[id];
+    if (p.type === 4) {
+      const v = String(raw[field]).trim().slice(0, p.max || 40);
+      const how = {feiner: "finer", "gröber": "coarser"}[raw.mahlgrad_richtung];
+      if (v && v !== String(p.value ?? "")) out.push({id, from: p.value ?? "", to: v, how});
+      continue;
+    }
+    let v = Number(raw[field]);
+    if (!isFinite(v)) continue;
+    if (id === "brew.setpoint") v = Math.min(p.value + 3, Math.max(p.value - 3, v)); // a step, not a jump
+    const q = (STEP[id] ?? 1) < .1 ? .05 : .1;
+    v = Math.min(p.max, Math.max(p.min, Math.round(v / q) * q));
+    if (Math.abs(v - p.value) > 1e-6) out.push({id, from: p.value, to: Math.round(v * 100) / 100});
+  }
+  return out;
+}
+const changeText = c => { const d = decimals(c.id), u = UNIT[c.id] ? " " + UNIT[c.id] : "", f = v => typeof v === "number" ? num(v, d) + u : v || "–"; return `${t(c.id)} ${f(c.from)} → ${f(c.to)}` + (c.how ? ` (${t(c.how)})` : ""); };
+function applyBox(k, newest) {
+  let raw = null;
+  try { raw = JSON.parse(store.get(k + ".p") || "null"); } catch (e) {}
+  if (!raw) return null;
+  const applied = store.get(k + ".applied") === "1", changes = applied ? [] : aiChanges(raw);
+  if (!applied && (!changes.length || !newest)) return null; // nothing left to change, or an older shot's
+  const box = el("div", "apply"), p = el("p"), go = el("button", "btn", t(applied ? "aiApplied" : "aiApply"));
+  p.append(el("small", null, t("aiChanges")));
+  if (applied) p.append("✓");
+  for (const c of changes) p.append(el("span", null, changeText(c).replace(/ (g|s|°C)\b/g, "\u00a0$1"))); // one per line, no break before a unit
+  go.disabled = applied;
+  go.onclick = async e => {
+    e.stopPropagation(); go.disabled = true;
+    for (const c of changes) if (!await save(c.id, typeof c.to === "number" ? c.to.toFixed(decimals(c.id)) : c.to)) { go.disabled = false; return; }
+    store.set(k + ".applied", "1");
+    toast(t("aiAppliedToast")); refresh();
+  };
+  box.append(p, go);
+  return box;
 }
 function claudeCard() {
   const c = el("section", "card claude"), body = el("div");
@@ -1108,7 +1190,7 @@ function claudeCard() {
       if (!key.startsWith("sk-ant-")) return paint(t("claudeForm"));
       go.disabled = true; go.textContent = t("claudeChecking");
       try {
-        await claude(key, "Antworte nur mit OK.", "Test", 5);
+        await claude(key, "Antworte nur mit OK.", "Test", 5); // throws on a bad key
         store.set("orione.claude.key", key); store.set("orione.claude.bad", null); store.set("orione.claude.err", null);
         paint(); suggest();
       } catch (e) { paint(claudeError(e)); }

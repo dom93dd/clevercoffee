@@ -82,10 +82,14 @@ async function fakeClaude(page, reply, {status = 200, abort = false, message = "
     seen.push({headers: r.request().headers(), body: JSON.parse(r.request().postData())});
     if (abort) return r.abort();
     if (status !== 200) return r.fulfill({status, headers: cors, contentType: "application/json", body: JSON.stringify({type: "error", error: {type: status === 401 ? "authentication_error" : "invalid_request_error", message}})});
-    const text = typeof reply === "function" ? reply(seen.at(-1).body) : reply;
+    const answer = typeof reply === "function" ? reply(seen.at(-1).body) : reply, text = typeof answer === "string" ? answer : answer.text;
     const ev = o => `event: ${o.type}\ndata: ${JSON.stringify(o)}\n\n`;
+    // a proposal ({text, tool: input}) follows the text as a tool_use block, its input in pieces as the API streams it
+    const json = answer.tool ? JSON.stringify(answer.tool) : "";
+    const toolUse = !answer.tool ? "" : ev({type: "content_block_start", index: 1, content_block: {type: "tool_use", id: "toolu_1", name: "einstellungen_vorschlagen", input: {}}}) +
+      json.match(/.{1,9}/gs).map(c => ev({type: "content_block_delta", index: 1, delta: {type: "input_json_delta", partial_json: c}})).join("") + ev({type: "content_block_stop", index: 1});
     const body = ev({type: "message_start", message: {}}) + ev({type: "content_block_start", index: 0, content_block: {type: "text", text: ""}}) +
-      text.match(/.{1,12}/gs).map(c => ev({type: "content_block_delta", index: 0, delta: {type: "text_delta", text: c}})).join("") + ev({type: "message_stop"});
+      text.match(/.{1,12}/gs).map(c => ev({type: "content_block_delta", index: 0, delta: {type: "text_delta", text: c}})).join("") + ev({type: "content_block_stop", index: 0}) + toolUse + ev({type: "message_stop"});
     return r.fulfill({status: 200, headers: {...cors, "content-type": "text/event-stream"}, body});
   });
   return seen;
@@ -718,7 +722,7 @@ test("Claude: Vorschlag zum neuesten Bezug, einmal; Bewertung fragt neu; ausfüh
   const now = Math.floor(Date.now() / 1000);
   await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600, d: 18.0, m: "12"});
   let seen;
-  const {page, ctx} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, b => b.max_tokens > 300 ? "Zeit und Verhältnis passen, die Temperatur fällt kaum ab." : "Etwas zu schnell – eine Stufe feiner."); }});
+  const {page, ctx} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, b => b.max_tokens > 1000 ? "Zeit und Verhältnis passen, die Temperatur fällt kaum ab." : "Etwas zu schnell – eine Stufe feiner."); }});
   const box = view(page).locator("#shotList > .ai");
   await box.locator("div", {hasText: "eine Stufe feiner"}).waitFor();
   assert.equal(await box.locator("b").textContent(), "Vorschlag zum letzten Bezug");
@@ -752,6 +756,38 @@ test("Claude: Vorschlag zum neuesten Bezug, einmal; Bewertung fragt neu; ausfüh
   assert.equal(seen[2].body.max_tokens, 4000);
   assert.equal(seen[2].body.thinking, undefined, "the long analysis may think");
   assert.deepEqual(seen[0].body.thinking, {type: "disabled"}, "the short one answers right away");
+  await ctx.close();
+});
+
+test("Claude: schlägt Einstellungen vor, Übernehmen setzt sie, nur gültige Werte", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000), form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+  await form("brew.mode=1"); await form("brew.by_weight.enabled=1&brew.by_time.enabled=0");
+  await mock(BASE, "/__shot", {s: 19.0, g: 36.2, at: now - 300, d: 18.0, m: "12", r: 1, tw: 36.0, sw: 34.4, ld: 1.8, lg: 1.0, fs: 1.8});
+  let seen;
+  const reply = {text: "Zu schnell und sauer – eine Stufe feiner und etwas mehr Kaffee.", tool: {mahlgrad: "11", dosis_g: 18.5, temperatur_c: 99.0, bezugszeit_s: 30, nachlaufzeit_s: 1.4}};
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, reply); }});
+  const box = view(page).locator("#shotList > .ai");
+  await box.locator(".apply").waitFor();
+  const b0 = seen[0].body, user = b0.messages[0].content;
+  assert.equal(b0.tools?.[0]?.name, "einstellungen_vorschlagen"); assert.deepEqual(b0.tool_choice, {type: "auto"});
+  assert.ok(user.includes("Schlag nicht vor, früher oder später zu stoppen"), "the stop learns by itself");
+  assert.ok(user.includes("Eingestellt für den nächsten Bezug: Dosis 18,0 g, Mahlgrad 12, Zielgewicht 36,0 g, Brühtemperatur 95,0 °C."), user);
+  // the time target does not apply while stopping by weight; 99 °C is more than a step from 95 °C: 98 °C
+  assert.deepEqual((await box.locator(".apply span").allTextContents()).map(x => x.replace(/\u00a0/g, " ")),
+    ["Mahlgrad 12 → 11", "Dosis 18,0 g → 18,5 g", "Brühtemperatur 95,0 °C → 98,0 °C", "Nachlaufzeit 1,00 s → 1,40 s"]);
+  await page.screenshot({path: OUT + "brew-claude-apply.png", fullPage: true});
+  await box.locator(".apply button", {hasText: "Übernehmen"}).click();
+  await toast(page, "Vorschlag übernommen");
+  await settle(page);
+  const v = await values(BASE);
+  assert.equal(v["brew.grind"], "11"); assert.equal(v["brew.dose"], 18.5); assert.equal(v["brew.setpoint"], 98); assert.equal(v["brew.by_weight.lag"], 1.4);
+  assert.equal(v["brew.by_time.target_time"], 25, "not touched");
+  await view(page).locator("#shotList > .ai .apply button:disabled", {hasText: "Übernommen"}).waitFor();
+  assert.equal(await view(page).locator(".recipe .txt").inputValue(), "11", "the recipe shows it");
+  await page.reload(); await settle(page);
+  await view(page).locator("#shotList > .ai .apply button:disabled", {hasText: "Übernommen"}).waitFor();
+  assert.equal(seen.length, 1, "kept in the browser");
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 
