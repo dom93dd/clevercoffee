@@ -43,6 +43,7 @@ namespace orione {
             uint16_t targetTenths = 0;    // target weight when stopped by weight, 0.1 g, 0 = not by weight
             uint16_t stopTenths = 0;      // in the cup when the pump stopped, 0.1 g (grams: after the drops)
             uint8_t leadTenths = 0;       // the pump stopped this far before the target, 0.1 g
+            char beans[41] = {};          // beans in the grinder then (setting brew.beans, up to 40 bytes), as typed
     };
 
     /**
@@ -119,19 +120,16 @@ namespace orione {
                 return true;
             }
 
-            /** Dose and grinder setting of the newest shot (what was set up for it) */
-            void noteRecipe(const float dose, const char* grind) {
+            /** Dose, grinder setting and beans of the newest shot (what was set up for it) */
+            void noteRecipe(const float dose, const char* grind, const char* beans = nullptr) {
                 if (count_ == 0) {
                     return;
                 }
 
                 const float t = dose * 10.0f;
                 shots_[0].doseTenths = std::isfinite(t) && t > 0.0f && t < 65535.0f ? static_cast<uint16_t>(t + 0.5f) : 0;
-                std::memset(shots_[0].grind, 0, sizeof(shots_[0].grind));
-
-                if (grind != nullptr) {
-                    std::strncpy(shots_[0].grind, grind, sizeof(shots_[0].grind) - 1);
-                }
+                copyText(shots_[0].grind, sizeof(shots_[0].grind), grind);
+                copyText(shots_[0].beans, sizeof(shots_[0].beans), beans);
             }
 
             /** Temperature at the start and the first drops of the newest shot (< 0: unknown) */
@@ -263,12 +261,34 @@ namespace orione {
 
                 for (auto& shot : shots_) {
                     shot.grind[sizeof(shot.grind) - 1] = '\0';
+                    shot.beans[sizeof(shot.beans) - 1] = '\0';
                 }
 
                 return true;
             }
 
         private:
+            /** Typed text into a fixed field; cut where it does not fit, but never inside a UTF-8 letter (ü, é) */
+            static void copyText(char* out, const size_t size, const char* in) {
+                std::memset(out, 0, size);
+
+                if (in == nullptr) {
+                    return;
+                }
+
+                size_t n = std::strlen(in);
+
+                if (n > size - 1) {
+                    n = size - 1;
+
+                    while (n > 0 && (static_cast<unsigned char>(in[n]) & 0xC0) == 0x80) {
+                        --n; // in[n] continues a letter that began before: cut before that letter
+                    }
+                }
+
+                std::memcpy(out, in, n);
+            }
+
             /**
              * Running number of the new shots_[0]: one after the previous newest, skipping numbers whose
              * curve slot (seq % kSize) a kept shot still uses. After a delete the numbers have a gap, and
@@ -296,7 +316,7 @@ namespace orione {
                 return seq;
             }
 
-            static constexpr uint8_t kVersion = 5; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead
+            static constexpr uint8_t kVersion = 6; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead, 6: beans
 
             Shot shots_[kSize];
             int count_ = 0;

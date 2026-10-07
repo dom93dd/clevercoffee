@@ -172,7 +172,7 @@ namespace shot_history {
         shotCurve.stopped();
 
         if (shotLog.record(static_cast<float>(seconds), grams, nowUtc(), millis())) {
-            shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str());
+            shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str(), config.get<String>("brew.beans").c_str());
             shotLog.noteFacts(startCelsius, grams < 0 ? -1.0f : flowMeter.firstDropSeconds());
             learnTarget = byWeight && grams >= 0 ? config.get<float>("brew.by_weight.target_weight") : 0.0f;
             learnLead = config.get<float>("brew.by_weight.lead");
@@ -234,11 +234,24 @@ namespace shot_history {
     }
 
     /**
-     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","r":2,"t0":93.4,"fd":6.2},...]},
+     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","b":"beans","r":2,"t0":93.4,"fd":6.2},...]},
      * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
      * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown); brew by weight:
      * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with
      */
+    /** Text typed by the user inside a JSON string: quotes and backslashes escaped, control characters left out */
+    inline void printJsonText(Print& out, const char* text) {
+        for (const char* c = text; *c != '\0'; ++c) {
+            if (*c == '"' || *c == '\\') {
+                out.print('\\');
+            }
+
+            if (static_cast<unsigned char>(*c) >= 0x20) {
+                out.print(*c);
+            }
+        }
+    }
+
     inline void writeJson(Print& out) {
         out.printf(R"({"now":%u,"bf":%u,"shots":[)", static_cast<unsigned>(nowUtc()), static_cast<unsigned>(shotLog.sinceBackflush()));
 
@@ -263,17 +276,9 @@ namespace shot_history {
             }
 
             out.print(R"(,"m":")");
-
-            for (const char* c = s.grind; *c != '\0'; ++c) { // typed by the user: escape for JSON
-                if (*c == '"' || *c == '\\') {
-                    out.print('\\');
-                }
-
-                if (static_cast<unsigned char>(*c) >= 0x20) {
-                    out.print(*c);
-                }
-            }
-
+            printJsonText(out, s.grind);
+            out.print(R"(","b":")");
+            printJsonText(out, s.beans);
             out.printf(R"(","r":%u,"t0":)", static_cast<unsigned>(s.taste));
             s.startTenths ? (void)out.printf("%d.%d", s.startTenths / 10, s.startTenths % 10) : (void)out.print("null");
             out.print(R"(,"fd":)");

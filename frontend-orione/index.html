@@ -784,6 +784,7 @@ function fillDetail(cv, x, i) {
   const info = [], d = curves[shotKey(x)];
   if (x.d) info.push(num(x.d, 1) + " " + t("coffeeG"));
   if (x.m) info.push(t("brew.grind") + " " + x.m);
+  if (x.b) info.push(t("brew.beans") + " " + x.b);
   if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
   if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
   if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
@@ -919,7 +920,9 @@ const store = { // localStorage can be missing or throw (private mode): then sim
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
 };
 const aiKey = () => store.get("orione.claude.key");
-const aiCache = x => `orione.ai.${shotKey(x)}.${x.r || 0}`; // the taste is part of it: rated anew, asked anew
+// the taste, grinder and beans are part of it: rated anew or the coffee changed, asked anew
+const textHash = t => [...String(t ?? "")].reduce((h, c) => (h * 31 + c.codePointAt(0)) >>> 0, 7).toString(36);
+const aiCache = x => `orione.ai.${shotKey(x)}.${x.r || 0}.${textHash((P["brew.grinder"]?.value ?? "") + "|" + (P["brew.beans"]?.value ?? ""))}`;
 const aiBusy = {}, aiLive = {};
 // streams the answer; onText gets the text so far. Without "think" the model answers right away:
 // its thinking block would otherwise come first and can use up a small token budget, leaving no text
@@ -955,7 +958,7 @@ function coffeeContext() {
   out.push("Maschine: Quick Mill Orione 3000, Einkreiser mit Thermoblock, Vibrationspumpe (Ulka), 3-Wege-Magnetventil, kein Überdruckventil, kein Druckprofil; Steuerung CleverCoffee mit PID.");
   out.push(`Brühtemperatur-Soll ${v("brew.setpoint")} °C${v("brew.temp_offset") ? `, Offset ${v("brew.temp_offset")} K` : ""}.`);
   if (v("brew.grinder")) out.push("Mühle: " + v("brew.grinder"));
-  if (v("brew.beans")) out.push("Bohne: " + v("brew.beans"));
+  if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans"));
   out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
   out.push("Letzte Bezüge, neuester zuerst:");
   shots.forEach((x, i) => {
@@ -964,6 +967,7 @@ function coffeeContext() {
     if (x.d) p.push(num(x.d, 1) + " g Kaffee");
     if (x.d && x.g != null) p.push("Verhältnis 1:" + num(x.g / x.d, 2));
     if (x.m) p.push("Mahlgrad " + x.m);
+    if (x.b) p.push("Bohne " + x.b);
     if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
     if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
     if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);

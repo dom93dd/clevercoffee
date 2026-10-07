@@ -679,6 +679,35 @@ test("Claude: Vorschlag zum neuesten Bezug, einmal; Bewertung fragt neu; ausfüh
   await ctx.close();
 });
 
+test("Claude: Bohne je Bezug; neue Bohne oder Mühle fragt neu", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000), form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+  await mock(BASE, "/__shot", {s: 27.0, g: 36.0, at: now - 900, d: 18.0, m: "12", b: "Alte Bohne, hell"});
+  await mock(BASE, "/__shot", {s: 24.1, g: 36.2, at: now - 300, d: 18.0, m: "11", b: "Röstwerk Nr. 5"});
+  await form("brew.grinder=" + encodeURIComponent("Eureka Mignon")); await form("brew.beans=" + encodeURIComponent("Röstwerk Nr. 5"));
+  let seen;
+  const opts = {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, "Passt so."); }};
+  const {page, ctx} = await open(browser, BASE, opts);
+  await view(page).locator("#shotList > .ai div", {hasText: "Passt so."}).waitFor();
+  const user = seen[0].body.messages[0].content;
+  for (const part of ["Mühle: Eureka Mignon", "Bohne jetzt in der Mühle: Röstwerk Nr. 5", "Mahlgrad 11, Bohne Röstwerk Nr. 5", "Mahlgrad 12, Bohne Alte Bohne, hell"]) assert.ok(user.includes(part), part);
+  await view(page).locator("#shotList .shot").nth(1).click();
+  assert.match(await view(page).locator("#shotList .curve:not([hidden]) .shotinfo").textContent(), /Mahlgrad 12 · Bohne Alte Bohne, hell/);
+  // the same coffee: kept; other beans or grinder: asked anew (the answers live in this browser's storage)
+  await page.reload(); await settle(page);
+  await view(page).locator("#shotList > .ai div", {hasText: "Passt so."}).waitFor();
+  assert.equal(seen.length, 1, "nothing new: from the browser");
+  await form("brew.beans=" + encodeURIComponent("Neue Bohne"));
+  await page.reload(); await settle(page);
+  await view(page).locator("#shotList > .ai div", {hasText: "Passt so."}).waitFor();
+  assert.equal(seen.length, 2, "other beans: asked again");
+  assert.ok(seen[1].body.messages[0].content.includes("Bohne jetzt in der Mühle: Neue Bohne"));
+  await form("brew.grinder=" + encodeURIComponent("Niche Zero"));
+  await page.reload(); await settle(page);
+  await view(page).locator("#shotList > .ai div", {hasText: "Passt so."}).waitFor();
+  assert.equal(seen.length, 3, "other grinder: asked again");
+  await ctx.close();
+});
+
 test("Claude: ohne Verbindung keine Vorschläge, abgelehnter Schlüssel wird getrennt", async ({browser}) => {
   await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: Math.floor(Date.now() / 1000) - 600});
   let seen;

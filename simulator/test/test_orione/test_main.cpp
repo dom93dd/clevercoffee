@@ -457,6 +457,29 @@ void test_curve_survives_save_and_restore() {
     TEST_ASSERT_FALSE(back.restore(&saved, sizeof(saved) - 2));
 }
 
+void test_shots_keep_the_beans_of_each_shot() {
+    orione::ShotLog log; // Dominik, 08.10.2026: older shots keep the beans they were made with
+    log.record(25.0f, 36.0f, 0, 0);
+    log.noteRecipe(18.0f, "12", "Gardelli Huila, hell");
+    log.record(26.0f, 37.0f, 0, 0);
+    log.noteRecipe(18.0f, "11", "Röstwerk Dunkel");
+    TEST_ASSERT_EQUAL_STRING("Röstwerk Dunkel", log.at(0).beans);
+    TEST_ASSERT_EQUAL_STRING("Gardelli Huila, hell", log.at(1).beans);
+    log.noteRecipe(18.0f, "11", nullptr);
+    TEST_ASSERT_EQUAL_STRING("", log.at(0).beans);
+    // 40 bytes fit; longer is cut, never inside a letter: "ö" is 2 bytes, the 41st byte would split it
+    const char* longBeans = "Espresso Bohne aus Brasilien, Hochland ölig"; // 39 ASCII bytes, then "ö" on bytes 40 and 41
+    log.noteRecipe(18.0f, "11", longBeans);
+    TEST_ASSERT_EQUAL_INT(39, static_cast<int>(std::strlen(log.at(0).beans)));
+    TEST_ASSERT_EQUAL_INT(0, std::strncmp(longBeans, log.at(0).beans, 39));
+    log.noteRecipe(18.0f, "11", "1234567890123456789012345678901234567890"); // exactly 40
+    TEST_ASSERT_EQUAL_STRING("1234567890123456789012345678901234567890", log.at(0).beans);
+    const auto saved = log.stored();
+    orione::ShotLog back;
+    TEST_ASSERT_TRUE(back.restore(&saved, sizeof(saved)));
+    TEST_ASSERT_EQUAL_STRING("Gardelli Huila, hell", back.at(1).beans);
+}
+
 void test_shots_keep_recipe_and_taste() {
     orione::ShotLog log;
     log.noteRecipe(18.0f, "12"); // no shot yet: nothing to note
@@ -862,6 +885,7 @@ int main() {
     RUN_TEST(test_curve_without_scale_or_sensor);
     RUN_TEST(test_curve_survives_save_and_restore);
     RUN_TEST(test_shots_keep_recipe_and_taste);
+    RUN_TEST(test_shots_keep_the_beans_of_each_shot);
     RUN_TEST(test_shots_count_since_backflush);
     RUN_TEST(test_flow_is_the_slope_over_the_last_second);
     RUN_TEST(test_flow_needs_some_time_and_ignores_a_lifted_cup);
