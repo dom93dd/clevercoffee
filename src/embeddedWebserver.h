@@ -506,10 +506,19 @@ inline void serverSetup() {
     });
 
 #ifdef CC_ORIONE
-    // why the ESP32 last started and for how long it has been running (orioneMachine.h)
+    // why the ESP32 last started, for how long it has been running (orioneMachine.h), and its memory: the heap now,
+    // its lowest point since the start and largest block, and for each task the stack it has never used (bytes)
     server.on("/boot", HTTP_GET, [](AsyncWebServerRequest* request) {
-        char json[80];
-        snprintf(json, sizeof(json), R"({"reason":"%s","uptime":%lu})", orione_machine::startReason, static_cast<unsigned long>(millis() / 1000));
+        const auto unused = [](const char* name) -> long {
+            TaskHandle_t t = xTaskGetHandle(name);
+            return t != nullptr ? static_cast<long>(uxTaskGetStackHighWaterMark(t)) : -1L;
+        };
+        char json[300];
+        snprintf(json, sizeof(json),
+                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld}})",
+                 orione_machine::startReason, static_cast<unsigned long>(millis() / 1000), static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+                 static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+                 unused("loopTask"), unused("async_tcp"), unused("nimble_host"), unused("scale"), unused("sse"), unused("loopGuard"));
         request->send(200, "application/json", json);
     });
 #endif
