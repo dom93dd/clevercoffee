@@ -10,6 +10,9 @@
 #include "display/languages.h"
 #include "hardware/scales/BluetoothScale.h"
 #include "hardware/scales/HX711Scale.h"
+#ifdef CC_ORIONE
+#include <OrioneFlow.h>
+#endif
 
 void displayScaleFailed();
 void displayWrappedMessage(const String& message, int x = 0, int startY = 0, int spacing = 2, boolean clearSend = true, boolean wrapWord = false);
@@ -20,6 +23,9 @@ inline int shottimerCounter = 10;
 inline float currReadingWeight = 0; // current weight reading
 inline float preBrewWeight = 0;     // weight before brew started
 inline float currBrewWeight = 0;    // weight of current brew
+#ifdef CC_ORIONE
+inline orione::BrewWeight brewWeight; // the shot's weight, a cup put down during it left out
+#endif
 inline float scaleDelayValue = 2.5; // delay compensation in grams
 inline bool scaleFailure = false;
 inline bool autoTareInProgress = false;
@@ -75,10 +81,12 @@ inline void checkBluetoothScaleConnection() {
                         LOG(INFO, "Activating brew-by-time fallback due to scale connection loss");
                         brewByWeightFallbackActive = true;
                     }
+#ifndef CC_ORIONE // Orione: the target time ends the shot instead (brewHandler.h, brewWeightFallback)
                     else if (brewByWeightEnabled) {
                         LOG(WARNING, "BLE Scale connection lost during brew-by-weight only mode, stopping brew");
                         currBrewState = kBrewFinished;
                     }
+#endif
                 }
             }
 
@@ -340,6 +348,9 @@ inline void shotTimerScale() {
                 }
 
                 preBrewWeight = currReadingWeight;
+#ifdef CC_ORIONE
+                brewWeight.start(currReadingWeight);
+#endif
                 shottimerCounter = 20;
 
                 // Reset fallback state at start of new brew
@@ -348,6 +359,11 @@ inline void shotTimerScale() {
             break;
 
         case 20:
+#ifdef CC_ORIONE
+            // a cup put down (or lifted) during the shot moves where it counts from, not the shot (OrioneFlow.h)
+            brewWeight.update(currReadingWeight);
+            preBrewWeight = brewWeight.base();
+#endif
             currBrewWeight = currReadingWeight - preBrewWeight;
 
             if (currBrewState == kBrewIdle) {

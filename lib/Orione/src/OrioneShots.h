@@ -6,10 +6,11 @@
  *
  * A shot is recorded when the brew ends. The scale keeps counting the drops for a few seconds
  * after the pump stopped, so the weight is updated until then (the highest reading: lifting the
- * cup must not count as zero) and only then is the log due for saving. Short runs are left out
- * (a flush through the group, a slip of the switch) unless the scale saw coffee in the cup: a shot
- * that ran through fast is just what one wants to see. No Arduino dependencies: tested in
- * simulator/test/test_orione.
+ * cup must not count as zero) and only then is the log due for saving. What is not a shot is left
+ * out: with a scale connected, under kMinGrams in the cup (a flush through the group however long,
+ * Dominik 08.10.2026; also a shot with the cup not on the scale); without one, under kMinSeconds
+ * (a slip of the switch). A shot that ran through fast with coffee in the cup counts: just what one
+ * wants to see. No Arduino dependencies: tested in simulator/test/test_orione.
  */
 
 #pragma once
@@ -74,13 +75,13 @@ namespace orione {
     class ShotLog {
         public:
             static constexpr int kSize = 5;
-            static constexpr float kMinSeconds = 10.0f; // shorter only with coffee on the scale
-            static constexpr float kMinGrams = 5.0f;
+            static constexpr float kMinSeconds = 10.0f; // without a scale
+            static constexpr float kMinGrams = 5.0f;    // with a scale
             static constexpr uint32_t kSettleMs = 4000;
 
-            /** @return false if it was not a shot (too short and no coffee on the scale) */
+            /** @return false if it was not a shot (see above) */
             bool record(const float seconds, const float grams, const uint32_t when, const uint32_t nowMs) {
-                if (!std::isfinite(seconds) || seconds <= 0.0f || !(seconds >= kMinSeconds || grams >= kMinGrams)) {
+                if (!std::isfinite(seconds) || seconds <= 0.0f || !(grams >= 0.0f ? grams >= kMinGrams : seconds >= kMinSeconds)) {
                     return false;
                 }
 
@@ -88,8 +89,8 @@ namespace orione {
                     shots_[i] = shots_[i - 1];
                 }
 
-                shots_[0] = Shot{seconds, grams, when, static_cast<uint16_t>(count_ ? shots_[1].seq + 1 : 0)};
                 count_ = count_ < kSize ? count_ + 1 : kSize;
+                shots_[0] = Shot{seconds, grams, when, nextSeq()};
                 sinceBackflush_ = sinceBackflush_ < 0xFFFF ? sinceBackflush_ + 1 : sinceBackflush_;
                 settleStart_ = nowMs;
                 settling_ = true;
@@ -158,6 +159,33 @@ namespace orione {
                 shots_[0].targetTenths = static_cast<uint16_t>(tenths(target, 65535.0f));
                 shots_[0].stopTenths = static_cast<uint16_t>(tenths(atStop, 65535.0f));
                 shots_[0].leadTenths = static_cast<uint8_t>(tenths(lead, 255.0f));
+            }
+
+            /**
+             * @brief Delete shot i (0 = newest), e.g. a test at the bench. The others keep their running
+             *        numbers and with them their curves. Counted since the last backflush: one less.
+             * @return false if there is no such shot
+             */
+            bool remove(const int i) {
+                if (i < 0 || i >= count_) {
+                    return false;
+                }
+
+                if (i == 0) {
+                    settling_ = false; // its drops are no longer wanted (and the next newest has its own)
+                }
+
+                if (i < sinceBackflush_) {
+                    --sinceBackflush_; // the newest sinceBackflush_ shots came after the last backflush
+                }
+
+                for (int k = i; k < kSize - 1; ++k) {
+                    shots_[k] = shots_[k + 1];
+                }
+
+                shots_[kSize - 1] = Shot{};
+                --count_;
+                return true;
             }
 
             /** @return false if there is no such shot or no such taste */
@@ -241,6 +269,33 @@ namespace orione {
             }
 
         private:
+            /**
+             * Running number of the new shots_[0]: one after the previous newest, skipping numbers whose
+             * curve slot (seq % kSize) a kept shot still uses. After a delete the numbers have a gap, and
+             * the plain next number could land on the slot of a shot that is still listed.
+             */
+            uint16_t nextSeq() const {
+                if (count_ < 2) {
+                    return 0; // the only one
+                }
+
+                uint16_t seq = static_cast<uint16_t>(shots_[1].seq + 1);
+
+                for (int tries = 0; tries < kSize; ++tries, ++seq) {
+                    bool used = false;
+
+                    for (int k = 1; k < count_; ++k) {
+                        used = used || shots_[k].seq % kSize == seq % kSize;
+                    }
+
+                    if (!used) {
+                        break;
+                    }
+                }
+
+                return seq;
+            }
+
             static constexpr uint8_t kVersion = 5; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead
 
             Shot shots_[kSize];

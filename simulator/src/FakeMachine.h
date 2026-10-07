@@ -27,6 +27,7 @@ class FakeMachine {
         bool bleScale = true;
         bool scaleConnected = true;
         bool scaleBroken = false;
+        bool warmupFlushPending = false; // cold start, sensor and setting on: it will flush by itself
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -252,6 +253,7 @@ class FakeMachine {
             m.emergencyResetTemp = brewSetpoint + 5.0f;
 
             m.brewTimerVisible = brewing_ || holdLeft_ > 0.0f;
+            m.warmupFlushPending = warmupFlushPending;
             m.brewSwitchReminder = !brewing_ && brewSwitch_ && phase_ == rd::BrewPhase::Finished && heldFor_ >= rd::BrewTimer::kRemindMs / 1000.0f;
             m.brewPhase = phase_;
             m.brewTime = brewTime_;

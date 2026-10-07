@@ -178,6 +178,104 @@ void test_shots_short_ones_are_left_out() {
     TEST_ASSERT_EQUAL_INT(2, log.count());
 }
 
+void test_shots_with_a_scale_need_coffee_in_the_cup() {
+    orione::ShotLog log; // Dominik, 08.10.2026: a flush with the scale on is not a shot, however long
+    TEST_ASSERT_FALSE(log.record(25.0f, 0.0f, 0, 0));
+    TEST_ASSERT_FALSE(log.record(40.0f, 4.9f, 0, 0));
+    TEST_ASSERT_TRUE(log.record(25.0f, orione::ShotLog::kMinGrams, 0, 0));
+    TEST_ASSERT_TRUE(log.record(25.0f, -1.0f, 0, 0)); // no scale connected: the time decides
+    TEST_ASSERT_EQUAL_INT(2, log.count());
+    TEST_ASSERT_EQUAL_UINT16(2, log.sinceBackflush());
+}
+
+void test_shots_delete_keeps_the_others_and_their_curves() {
+    orione::ShotLog log;
+
+    for (int i = 0; i < 5; ++i) {
+        log.record(20.0f + i, 30.0f + i, 0, 0); // seq 0..4, newest (24 s) first
+    }
+
+    TEST_ASSERT_FALSE(log.remove(5));
+    TEST_ASSERT_FALSE(log.remove(-1));
+    TEST_ASSERT_TRUE(log.remove(2)); // the 22 s shot
+    TEST_ASSERT_EQUAL_INT(4, log.count());
+    TEST_ASSERT_EQUAL_FLOAT(24.0f, log.at(0).seconds);
+    TEST_ASSERT_EQUAL_FLOAT(23.0f, log.at(1).seconds);
+    TEST_ASSERT_EQUAL_FLOAT(21.0f, log.at(2).seconds);
+    TEST_ASSERT_EQUAL_UINT16(1, log.at(2).seq); // its curve stays where it was
+    TEST_ASSERT_EQUAL_UINT16(4, log.sinceBackflush());
+
+    // the next shots must not take the curve slot of a shot still listed (seq 5 would be slot 0 = the 20 s shot)
+    for (int i = 0; i < 3; ++i) {
+        log.record(30.0f + i, 40.0f, 0, 0);
+        std::set<int> slots;
+
+        for (int k = 0; k < log.count(); ++k) {
+            slots.insert(log.at(k).seq % orione::ShotLog::kSize);
+        }
+
+        TEST_ASSERT_EQUAL_INT(log.count(), static_cast<int>(slots.size()));
+    }
+
+    TEST_ASSERT_EQUAL_FLOAT(32.0f, log.at(0).seconds);
+    TEST_ASSERT_EQUAL_FLOAT(23.0f, log.at(4).seconds);
+}
+
+void test_shots_delete_the_newest_while_its_drops_are_counted() {
+    orione::ShotLog log;
+    log.record(25.0f, 30.0f, 0, 0);
+    log.record(26.0f, 34.0f, 0, 10000);
+    TEST_ASSERT_TRUE(log.settling());
+    TEST_ASSERT_TRUE(log.remove(0));
+    TEST_ASSERT_FALSE(log.settling());
+    TEST_ASSERT_FALSE(log.settle(11000, 99.0f)); // the drops do not land on the shot before it
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, log.at(0).grams);
+    TEST_ASSERT_TRUE(log.remove(0));
+    TEST_ASSERT_EQUAL_INT(0, log.count());
+    TEST_ASSERT_FALSE(log.remove(0));
+    log.record(25.0f, 30.0f, 0, 0);
+    TEST_ASSERT_EQUAL_UINT16(0, log.at(0).seq);
+}
+
+void test_shots_delete_counts_since_backflush_only_for_newer_ones() {
+    orione::ShotLog log;
+    log.record(25.0f, 36.0f, 0, 0);
+    log.record(25.0f, 36.0f, 0, 0);
+    log.backflushDone();
+    log.record(25.0f, 36.0f, 0, 0); // the only one since
+    TEST_ASSERT_TRUE(log.remove(2)); // before the backflush
+    TEST_ASSERT_EQUAL_UINT16(1, log.sinceBackflush());
+    TEST_ASSERT_TRUE(log.remove(0));
+    TEST_ASSERT_EQUAL_UINT16(0, log.sinceBackflush());
+}
+
+void test_brew_weight_ignores_a_cup_put_on_during_the_shot() {
+    orione::BrewWeight w;
+    w.start(0.0f);
+    float g = 0.0f;
+
+    for (int i = 1; i <= 20; ++i) {
+        g = w.update(0.4f * static_cast<float>(i)); // 2 g/s at 5 readings a second
+    }
+
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.0f, g);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.0f, w.update(8.0f + 152.0f)); // a 152 g cup put down
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.4f, w.update(160.4f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.4f, w.update(8.4f));          // lifted again
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.8f, w.update(8.8f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.8f, w.update(0.0f / 0.0f));   // no reading
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, w.base());                 // on and off again: back where it started
+}
+
+void test_brew_weight_late_tare_is_not_a_negative_shot() {
+    orione::BrewWeight w;
+    w.start(212.0f); // the cup, the tare still on its way
+    w.update(212.3f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.3f, w.update(0.3f)); // tared
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.3f, w.update(2.3f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 9.8f, w.update(11.8f - 2.0f)); // steps under 10 g are coffee
+}
+
 void test_shots_drops_after_the_stop_are_counted() {
     orione::ShotLog log;
     log.record(25.0f, 34.2f, 0, 10000);
@@ -745,6 +843,12 @@ int main() {
     RUN_TEST(test_fixed_paths_are_unique);
     RUN_TEST(test_shots_newest_first_and_at_most_five);
     RUN_TEST(test_shots_short_ones_are_left_out);
+    RUN_TEST(test_shots_with_a_scale_need_coffee_in_the_cup);
+    RUN_TEST(test_shots_delete_keeps_the_others_and_their_curves);
+    RUN_TEST(test_shots_delete_the_newest_while_its_drops_are_counted);
+    RUN_TEST(test_shots_delete_counts_since_backflush_only_for_newer_ones);
+    RUN_TEST(test_brew_weight_ignores_a_cup_put_on_during_the_shot);
+    RUN_TEST(test_brew_weight_late_tare_is_not_a_negative_shot);
     RUN_TEST(test_shots_drops_after_the_stop_are_counted);
     RUN_TEST(test_shots_without_scale_keep_no_weight);
     RUN_TEST(test_shots_settle_across_millis_wrap);

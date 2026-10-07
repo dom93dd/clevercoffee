@@ -965,6 +965,95 @@ test("Reiter, der nicht laden konnte: Hinweis, beim nächsten Öffnen neu gelade
   await ctx.close();
 });
 
+const setp = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+
+test("Nach Gewicht ohne Waage: Stopp nach Zeit, angezeigt und einstellbar; Obergrenze genannt", async ({browser}) => {
+  await setp("brew.mode=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0");
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  assert.match(await row(page, "Stoppen").locator(".lbl p").last().textContent(), /^Jeder Bezug endet spätestens nach 60 s\.$/);
+  const fb = row(page, "Ohne Waage nach");
+  assert.match(await fb.locator(".lbl p").textContent(), /nicht verbunden/);
+  await fb.locator("button", {hasText: "+"}).click();
+  await settle(page);
+  assert.equal((await values(BASE))["brew.by_time.target_time"], 25.5);
+  await mock(BASE, "/__live", {state: 20, brewTime: 8.2, scale: 1});
+  await page.locator("#lsGoal", {hasText: "Waage nicht verbunden – Ziel 25,5 s"}).waitFor();
+  await mock(BASE, "/__live", {state: 20, brewTime: 12.0, scale: 2, weight: 14.0}); // back during the shot: still by time
+  await page.waitForTimeout(800);
+  assert.match(await page.locator("#lsGoal").textContent(), /^Waage nicht verbunden – Ziel 25,5 s/);
+  await mock(BASE, "/__live", {state: 20, brewTime: 1.0, scale: 2, weight: 0.3}); // the next shot (time went back): with the scale
+  await mock(BASE, "/__live", {state: 10, brewTime: 1.0, scale: 2});
+  await page.waitForTimeout(800);
+  await mock(BASE, "/__live", {state: 20, brewTime: 2.0, scale: 2, weight: 0.5});
+  await page.locator("#lsGoal", {hasText: /^Ziel 36 g/}).waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Bezug löschen: nach Rückfrage, der richtige, auch wenn inzwischen einer dazukam", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 120.0, g: 0.0, at: now - 900}); // a test at the bench
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.1, at: now - 600});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const rows = view(page).locator("#shotList .shot");
+  await rows.nth(1).click();
+  const del = view(page).locator("#shotList .curve:not([hidden]) button", {hasText: "Bezug löschen"});
+  await del.waitFor();
+  await mock(BASE, "/__shot", {s: 27.0, g: 38.0, at: now - 60}); // made meanwhile
+  await del.click(); // Playwright says "no" to the question
+  await page.waitForTimeout(600);
+  assert.equal((await mock(BASE, "/shots")).shots.length, 3, "not confirmed: nothing deleted");
+  let asked = "";
+  page.once("dialog", d => { asked = d.message(); d.accept(); });
+  await del.click();
+  await toast(page, "Gelöscht");
+  await settle(page);
+  assert.equal(asked, "Diesen Bezug (120,0 s · 0,0 g) löschen?");
+  assert.deepEqual((await mock(BASE, "/shots")).shots.map(x => x.s), [27.0, 25.3]);
+  assert.deepEqual(await rows.locator("b").allTextContents(), ["27,0 s", "25,3 s"]);
+  assert.equal(await view(page).locator("#shotList .curve:not([hidden])").count(), 0, "its curve closed");
+  assert.equal((await fetch(BASE + `/shot/delete?i=0&at=${now - 600}&s=25.3`, {method: "POST"})).status, 409, "the machine checks which shot");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Wartung: Spülen gesperrt, solange der Bezugsschalter an ist", async ({browser}) => {
+  await setp("hardware.sensors.watertank.enabled=1");
+  await mock(BASE, "/__live", {state: 10, warmup: 0});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  await page.locator("#flushBtn:not([disabled])").waitFor();
+  await mock(BASE, "/__live", {state: 10, warmup: 0, sw: true});
+  await page.locator("#flushBtn[disabled]").waitFor();
+  assert.equal(await page.locator("#flushSt").textContent(), "Erst den Bezugsschalter auf AUS stellen.");
+  await mock(BASE, "/__live", {state: 10, warmup: 0, sw: false});
+  await page.locator("#flushBtn:not([disabled])").waitFor();
+  assert.equal(await page.locator("#flushSt").textContent(), "");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Backflush: nach dem vollständigen Backflush ist der Modus aus, auch auf der Seite", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  const sw = () => row(page, "Backflush-Modus").locator(".sw");
+  await sw().click();
+  await settle(page);
+  assert.match(await sw().getAttribute("class"), /\bon\b/);
+  await mock(BASE, "/__live", {state: 50});
+  await page.waitForTimeout(800);
+  await mock(BASE, "/toggleBackflush", ""); // the firmware switches it off after the last cycle ...
+  await mock(BASE, "/__live", {state: 10}); // ... and the machine is ready again
+  for (let k = 0; k < 50 && /\bon\b/.test(await sw().getAttribute("class")); k++) await page.waitForTimeout(100);
+  assert.doesNotMatch(await sw().getAttribute("class"), /\bon\b/, "the page follows the machine");
+  await tab(page, "Maschine");
+  assert.equal(await page.locator(".note", {hasText: "Backflush-Modus aktiv"}).count(), 0);
+  await tab(page, "Wartung");
+  await sw().click(); // on again: one toggle, not two
+  await settle(page);
+  assert.equal((await values(BASE))["BACKFLUSH_ON"], 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("App-Symbol für den Home-Bildschirm", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE);
   assert.equal(await page.locator("link[rel=manifest]").getAttribute("href"), "/manifest.json");

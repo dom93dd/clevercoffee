@@ -40,4 +40,10 @@ namespace bench {
     // water level sensor (the setting must be on): POST /bench/tank?empty=1
     inline bool tankEmpty = false;
 
+    // simulated scale (CC_FAKE_SCALE): POST /bench/scale?off=1 switched off, ?cup=150 a cup put down (grams,
+    // negative: lifted), ?miss=1 the coffee misses the scale
+    inline bool scaleOff = false;
+    inline volatile float scaleAddGrams = 0.0f; // taken by the scale's next reading
+    inline bool scaleMissed = false;
+
 } // namespace bench

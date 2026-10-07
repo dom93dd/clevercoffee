@@ -544,6 +544,7 @@ namespace rd {
         h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16);
         h = hashAdd(h, m.offlineMode | m.wifiConnected << 1 | m.wifiBars << 2 | m.mqttEnabled << 5 | m.mqttConnected << 6);
         h = hashAdd(h, q(m.emergencyResetTemp, 0.1f));
+        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1);
 
         if (screen_ == Screen::EmergencyStop || screen_ == Screen::SensorError) {
             h = hashAdd(h, static_cast<int32_t>(nowMs / 500 % 2)); // blinking ring
@@ -1297,7 +1298,11 @@ namespace rd {
         snprintf(buf, sizeof(buf), "%s %s°", s.setpoint, num);
         p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
 
-        if (drawConnectionHint(p, kRowBY)) {
+        if (m.warmupFlushPending) {
+            // it is about to run valve and pump by itself: before a portafilter with coffee goes in
+            p.text(fonts::hint(), s.flushSoon, kCx, kRowBY, kBrew);
+        }
+        else if (drawConnectionHint(p, kRowBY)) {
             // a connection problem is shown instead
         }
         else if (!heating && shotCount_ >= 2) {
@@ -1421,6 +1426,12 @@ namespace rd {
             }
             else if (!scaleConnected) {
                 p.text(fonts::hint(), s.scaleDisconnected, kCx, kRowAY, kTextDim);
+
+                if (m.brewTargetTime > 0.0f && !(done && m.brewSwitchReminder)) { // by weight without the scale: the time ends it
+                    formatNumber(num, sizeof(num), m.brewTargetTime, 0, m.language);
+                    snprintf(buf, sizeof(buf), "%s %s s", s.target, num);
+                    p.text(fonts::textSmall(), buf, kCx, kRowBY + 6.0f, kTextDim);
+                }
             }
             else {
                 formatNumber(num, sizeof(num), m.brewWeight, 1, m.language);

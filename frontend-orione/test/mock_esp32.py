@@ -235,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False}
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
@@ -305,6 +305,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not (0 <= i < min(5, len(S.shots)) and 0 <= t <= 3):
                     return self.send(400, "bad rating")
                 S.shots[i]["r"] = t
+            return self.send(200, "OK")
+        if url.path == "/shot/delete":  # as src/embeddedWebserver.h: by place, checked against time and seconds
+            q = urllib.parse.parse_qs(url.query)
+            i = int(q.get("i", ["-1"])[0])
+            at, sec = int(q.get("at", ["-1"])[0]), float(q.get("s", ["-1"])[0])
+            with S.lock:
+                shots = S.shots[:5]
+                if not (0 <= i < len(shots) and int(shots[i].get("at", 0)) == at and abs(shots[i]["s"] - sec) < 0.06):
+                    return self.send(409, "not that shot")
+                del S.shots[i]
             return self.send(200, "OK")
         if url.path == "/__bf":  # JSON {"bf": shots since the last backflush}
             with S.lock:

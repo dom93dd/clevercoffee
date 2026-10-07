@@ -212,7 +212,10 @@ const T = {
     bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, dann in Wartung den Backflush-Modus einschalten.",
     "backflush.remind_after": "Erinnern nach", "backflush.remind_afterHint": "Bezügen (0 = nie)",
     alarmOver: "Übertemperatur", alarmOverHint: "Die Heizung bleibt aus, bis die Temperatur gesunken ist.", alarmSensor: "Sensorfehler", alarmSensorHint: "Die Heizung ist aus. Temperaturfühler und Kabel prüfen.", alarmTank: "Wassertank leer", alarmTankHint: "Bitte nachfüllen, dann geht es weiter.", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
-    stopHint: "Gewicht: erst Waage einschalten",
+    stopHint: "Gewicht: erst Waage einschalten", stopMax: "Jeder Bezug endet spätestens nach {n} s.",
+    fallbackTime: "Ohne Waage nach", fallbackTimeHint: "Ist die Waage nicht verbunden, stoppt der Bezug nach dieser Zeit",
+    noScaleGoal: "Waage nicht verbunden – Ziel {n} s", flushSwitch: "Erst den Bezugsschalter auf AUS stellen.",
+    deleteShot: "Bezug löschen", reallyDelete: "Diesen Bezug ({s}) löschen?", deleted: "Gelöscht",
     "brew.mode": "Bezugsart", "brew.modeHint": "Automatisch: Zeit oder Gewicht beendet den Bezug",
     "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
     "hardware.sensors.scale.enabled": "Bluetooth-Waage", "hardware.sensors.scale.enabledHint": "Änderung wirkt nach einem Neustart",
@@ -274,7 +277,10 @@ const T = {
     bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, then switch on backflush mode in Care.",
     "backflush.remind_after": "Remind after", "backflush.remind_afterHint": "shots (0 = never)",
     alarmOver: "Overtemperature", alarmOverHint: "The heater stays off until the temperature has dropped.", alarmSensor: "Sensor error", alarmSensorHint: "The heater is off. Check the temperature sensor and its cable.", alarmTank: "Water tank empty", alarmTankHint: "Please refill, then it goes on.", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
-    stopHint: "Weight: switch the scale on first",
+    stopHint: "Weight: switch the scale on first", stopMax: "Every shot ends after {n} s at the latest.",
+    fallbackTime: "Without the scale after", fallbackTimeHint: "If the scale is not connected, the shot stops after this time",
+    noScaleGoal: "Scale not connected – target {n} s", flushSwitch: "Switch the brew switch off first.",
+    deleteShot: "Delete shot", reallyDelete: "Delete this shot ({s})?", deleted: "Deleted",
     "brew.mode": "Brew mode", "brew.modeHint": "Automatic: time or weight ends the shot",
     "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
     "hardware.sensors.scale.enabled": "Bluetooth scale", "hardware.sensors.scale.enabledHint": "Takes effect after a restart",
@@ -625,6 +631,7 @@ function shotCard() {
   }
   const l = el("div", "lbl"); l.append(el("div", null, t("stop")));
   if (modes.length < 3) l.append(el("p", null, t("stopHint")));
+  l.append(el("p", null, t("stopMax").replace("{n}", fmt(longestShot())))); // brewMaxMs() in src/brewHandler.h
   r.classList.add("stack");
   r.append(l, seg); c.append(r);
   const id = cur === "time" ? "brew.by_time.target_time" : cur === "weight" ? "brew.by_weight.target_weight" : null;
@@ -632,6 +639,11 @@ function shotCard() {
     const v = el("div", "row"); v.append(lbl(id), stepCtl(id)); c.append(v);
     if (cur === "weight") { const q = el("p"); q.id = "ratio"; v.firstChild.append(q); setTimeout(paintRatio); }
     if (cur === "weight" && P["brew.by_weight.lead"]) { const s = el("div", "row"); s.append(lbl("brew.by_weight.lead"), stepCtl("brew.by_weight.lead")); c.append(s); }
+    if (cur === "weight" && P["brew.by_time.target_time"]) { // the firmware stops at the target time when the scale is missing
+      const f = el("div", "row"), fl = el("div", "lbl");
+      fl.append(el("div", null, t("fallbackTime")), el("p", null, t("fallbackTimeHint")));
+      f.append(fl, stepCtl("brew.by_time.target_time")); c.append(f);
+    }
   }
   if (P["TARE_ON"]) { // only with the scale
     const b = el("button", "btn", t("tare"));
@@ -742,6 +754,10 @@ async function rateShot(x, i, taste) {
   paintShots();
   if (i === 0) suggest(); // a new suggestion with the taste
 }
+// what ended (or ends) the shot: by weight without the scale the target time does
+const shotMode = x => { const m = stopMode(); return m === "weight" && x?.noScale ? "time" : m; };
+// no shot runs longer: 60 s, or the target time + 10 s (brewMaxMs() in src/brewHandler.h)
+const longestShot = () => Math.max(60, (P["brew.by_time.target_time"]?.value ?? 0) + 10);
 // how long the result stays after the shot: the display's setting (10 s in the Orione build)
 const doneHoldMs = () => Math.max(3, P["display.post_brew_timer_duration"]?.value ?? 10) * 1000;
 // brew by weight: what ended up in the cup against the target (null if not stopped by weight)
@@ -785,6 +801,20 @@ function fillDetail(cv, x, i) {
     cv.append(cmp);
   }
   if (i > 0) { const a = aiBox(x, false); if (a) cv.append(a); } // the newest one has its box above the list
+  const dw = el("div", "btns"), del = el("button", "btn bad", t("deleteShot"));
+  del.onclick = e => { e.stopPropagation(); deleteShot(x, i); };
+  dw.append(del); cv.append(dw);
+}
+async function deleteShot(x, i) {
+  if (!confirm(t("reallyDelete").replace("{s}", num(x.s, 1) + " s" + (x.g != null ? " · " + num(x.g, 1) + " g" : "")))) return;
+  // by place in the machine's list, which it checks against time and seconds: a shot since then moves the places
+  try { const j = await (await call("/shots")).json(); i = j.shots.findIndex(o => shotKey(o) === shotKey(x)); } catch (e) {}
+  const r = i < 0 ? null : await post(`/shot/delete?i=${i}&at=${x.at}&s=${x.s}`).catch(() => null);
+  if (!r?.ok) { toast(t("failed")); loadShots(); return; }
+  if (openShot === shotKey(x)) openShot = null;
+  toast(t("deleted"));
+  await pause(400); // the machine deletes it in its loop
+  await loadShots();
 }
 function drawShotCharts() {
   const box = $("#shotList");
@@ -1046,7 +1076,10 @@ function paintShotLive() {
     bat.replaceChildren(...(b == null ? [] : [" · ", el("span", b <= 20 ? "low" : "", `${t("battery")} ${b} %` + (b <= 20 ? " – " + t("batteryLow") : ""))]));
   }
   const brewing = live.ok && live.state === 20;
-  if (brewing) lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, until: 0};
+  if (brewing) { // without the scale at any point of the shot, the firmware stops it by time (brewWeightFallback)
+    const same = lastShot && !lastShot.until;
+    lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, until: 0, noScale: (same && lastShot.noScale) || live.scale !== 2};
+  }
   else if (lastShot && !lastShot.until) { // the first value after the shot carries its final time; the result stays a little
     lastShot.t = Math.max(lastShot.t, live.brewTime || 0); lastShot.doneAt = Date.now(); lastShot.sw = lastShot.w;
     lastShot.until = Date.now() + doneHoldMs();
@@ -1058,7 +1091,7 @@ function paintShotLive() {
   const x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
   ls.hidden = !x;
   if (!x) return;
-  const m = stopMode(), id = m === "weight" ? "brew.by_weight.target_weight" : m === "time" ? "brew.by_time.target_time" : null, goal = id ? P[id]?.value : null;
+  const mode = stopMode(), m = shotMode(x), id = m === "weight" ? "brew.by_weight.target_weight" : m === "time" ? "brew.by_time.target_time" : null, goal = id ? P[id]?.value : null;
   $("#lsLab").textContent = t(brewing ? "liveBrew" : "liveDone");
   $("#lsTime").textContent = num(x.t, 1) + " s";
   $("#lsWeight").textContent = x.w == null ? "" : num(x.w, 1) + " g";
@@ -1066,7 +1099,7 @@ function paintShotLive() {
   if (goal) $("#lsBar").style.transform = `scaleX(${Math.max(0, Math.min(1, (m === "weight" ? x.w ?? 0 : x.t) / goal))})`;
   const remind = !brewing && live.held && x.doneAt && Date.now() - x.doneAt >= 60000; // left on for a minute
   $("#lsHint").hidden = !remind; if (remind) $("#lsHint").textContent = t("switchBack");
-  $("#lsGoal").textContent = (goal ? `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}` : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "")
+  $("#lsGoal").textContent = (goal ? (m !== mode ? t("noScaleGoal").replace("{n}", fmt(goal)) : `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}`) : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "")
     + (!brewing && m === "weight" && goal && x.sw != null && x.w != null ? ` · ${t("atStop")} ${num(x.sw, 1)} g · ${signed(Math.round((x.w - goal) * 10) / 10)} g` : "");
 }
 // During a shot (and for a moment after it) the machine tab shows what the round display shows:
@@ -1078,7 +1111,7 @@ function paintDial() {
   card.hidden = !x;
   if (hero) hero.hidden = !!x;
   if (!x) return;
-  const m = stopMode(), goalT = P["brew.by_time.target_time"]?.value, goalW = P["brew.by_weight.target_weight"]?.value;
+  const m = shotMode(x), goalT = P["brew.by_time.target_time"]?.value, goalW = P["brew.by_weight.target_weight"]?.value;
   const remind = !brewing && live.held && x.doneAt && Date.now() - x.doneAt >= 60000; // as the display: switch left on for a minute
   drawDial($("#dial"), {time: x.t, weight: x.w, done: !brewing, byWeight: m === "weight" && x.w != null && goalW > 0, goalT: m === "time" ? goalT : 0, goalW, remind});
 }
@@ -1175,7 +1208,10 @@ function connectLive() {
       P["pid.enabled"].value = pidNow;
       const sw = $("#pidSw"); if (sw) { sw.classList.toggle("on", !!pidNow); sw.setAttribute("aria-checked", String(!!pidNow)); }
     }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, ok: true});
+    // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
+    const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
+    if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1219,9 +1255,9 @@ function paintFlush() {
   if (note) note.hidden = !(live.ok && live.warmup === 1);
   if (!b || !P["hardware.sensors.watertank.enabled"]?.value) return;
   b.textContent = t(run ? "flushStop" : "flushNow");
-  b.disabled = !run && !(live.ok && live.state === 10); // the firmware starts only from "ready" (kPidNormal)
+  b.disabled = !run && !(live.ok && live.state === 10 && !live.sw); // the firmware starts only from "ready" (kPidNormal), switch off
   st.textContent = run ? t(live.warmup === 2 ? "flushPulse" : "flushPause").replace("{n}", live.warmup === 2 ? live.pulse : live.pulse + 1)
-    : live.ok && live.warmup === 1 ? t("flushPending") : b.disabled && live.ok ? t("flushBusy") : "";
+    : live.ok && live.sw ? t("flushSwitch") : live.ok && live.warmup === 1 ? t("flushPending") : b.disabled && live.ok ? t("flushBusy") : "";
 }
 // Bluetooth scale (src/hardware/scales/BluetoothScale.h): only the scale chosen here is connected.
 // GET /scale {state: 0 off, 1 chosen not connected, 2 connected, 3 none chosen, name, address, battery,

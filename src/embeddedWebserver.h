@@ -105,6 +105,7 @@ namespace live_events {
             int pulse;     // its pulse, 0 when not running
             double cup;    // while the drops after a shot are counted: in the cup since the start, < 0 otherwise
             bool held;     // the shot stopped by itself and the brew switch is still on
+            bool sw;       // the brew switch is on (or not back off yet)
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -130,7 +131,7 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
-                snprintf(json + n, sizeof(json) - n, R"(,"held":%s})", v.held ? "true" : "false");
+                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s})", v.held ? "true" : "false", v.sw ? "true" : "false");
                 events.send(json, "new_temps", millis());
             }
         }
@@ -529,6 +530,24 @@ inline void serverSetup() {
         request->send(200, "text/plain", bench::tankEmpty ? "tank empty" : "tank full");
     });
 
+#ifdef CC_FAKE_SCALE
+    server.on("/bench/scale", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (request->hasParam("off")) {
+            bench::scaleOff = request->getParam("off")->value() == "1";
+        }
+
+        if (request->hasParam("miss")) {
+            bench::scaleMissed = request->getParam("miss")->value() == "1";
+        }
+
+        if (request->hasParam("cup")) {
+            bench::scaleAddGrams = bench::scaleAddGrams + request->getParam("cup")->value().toFloat();
+        }
+
+        request->send(200, "text/plain", "OK");
+    });
+#endif
+
     server.on("/bench/wifi-outage", HTTP_POST, [](AsyncWebServerRequest* request) {
         const long s = request->hasParam("s") ? request->getParam("s")->value().toInt() : 180;
         bench::wifiOutageUntilMs = millis() + static_cast<uint32_t>(constrain(s, 10L, 1800L)) * 1000;
@@ -633,6 +652,21 @@ inline void serverSetup() {
         }
 
         shot_history::requestRating(static_cast<int>(i), static_cast<uint8_t>(t));
+        request->send(200, "text/plain", "OK");
+    });
+
+    // delete shot i (a test at the bench, a flush that counted); at and s say which one the page means
+    server.on("/shot/delete", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const long i = request->hasParam("i") ? request->getParam("i")->value().toInt() : -1;
+        const uint32_t at = request->hasParam("at") ? static_cast<uint32_t>(request->getParam("at")->value().toInt()) : 0;
+        const float s = request->hasParam("s") ? request->getParam("s")->value().toFloat() : -1.0f;
+
+        if (!shot_history::isShot(static_cast<int>(i), at, s)) {
+            request->send(409, "text/plain", "not that shot");
+            return;
+        }
+
+        shot_history::requestDelete(static_cast<int>(i), at, s);
         request->send(200, "text/plain", "OK");
     });
 
@@ -932,7 +966,7 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
                           warmup_flush::livePhase(), warmup_flush::flush.pulse(),
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
-                          brewSwitchHeldAfterBrew()});
+                          brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

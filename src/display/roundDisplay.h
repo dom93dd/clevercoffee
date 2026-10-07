@@ -81,9 +81,14 @@ inline rd::Model roundDisplayModel() {
     m.brewPhase = rd::brewPhaseFromState(currBrewState);
     m.brewTime = static_cast<float>(currBrewTime / 1000);
 #ifdef CC_ORIONE
-    // the target only when the time ends the shot, as on the web page; by hand or by weight the ring is a stopwatch
-    const bool stopByTime = config.get<int>("brew.mode") != 0 && config.get<bool>("brew.by_time.enabled");
+    // the target only when the time ends the shot, as on the web page: by time, or by weight without the scale
+    // (for the shot on the screen: as it ran; otherwise: is the scale there now). By hand, or by weight with
+    // the scale, the ring is a stopwatch.
+    const bool automatic = config.get<int>("brew.mode") != 0;
+    const bool weightWithoutScale = automatic && config.get<bool>("brew.by_weight.enabled") && (m.brewTimerVisible ? brewWeightFallback : !brewScaleReady());
+    const bool stopByTime = automatic && (config.get<bool>("brew.by_time.enabled") || weightWithoutScale);
     m.brewTargetTime = stopByTime ? static_cast<float>(totalTargetBrewTime / 1000) : 0.0f;
+    m.warmupFlushPending = warmup_flush::livePhase() == orione::WarmupFlush::kWaiting;
 #else
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);
 #endif
@@ -128,6 +133,11 @@ inline rd::Model roundDisplayModel() {
         if (config.get<bool>("brew.by_weight.enabled") && config.get<int>("brew.mode") != 0) {
             m.brewTargetWeight = config.get<float>("brew.by_weight.target_weight");
         }
+#ifdef CC_ORIONE
+        if (weightWithoutScale) {
+            m.brewTargetWeight = 0.0f; // the time ring, also if the scale comes back during the shot
+        }
+#endif
     }
 
     m.backflushPhase = rd::backflushPhaseFromState(currBackflushState);

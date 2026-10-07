@@ -209,6 +209,19 @@ namespace sim {
                  m.scale = true;
                  m.setHeater(100);
              }},
+            {"heating-flush", "Aufheizen, spült danach von selbst",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(61.4f);
+                 m.setHeater(100);
+                 m.warmupFlushPending = true;
+             }},
+            {"ready-flush", "Bereit, spült gleich von selbst",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.nudgeTemperature(0.1f);
+                 m.setHeater(18);
+                 m.warmupFlushPending = true;
+             }},
             {"heating", "Aufheizen",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(61.4f);
@@ -247,6 +260,15 @@ namespace sim {
                  m.nudgeTemperature(-0.7f);
                  m.setHeater(100);
                  m.setBrewing(18.2f, 21.6f);
+             }},
+            {"scale-missing", "Nach Gewicht, Waage nicht verbunden: Stopp nach Zeit",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.scale = true;
+                 m.scaleConnected = false;
+                 m.settle();
+                 m.nudgeTemperature(-0.7f);
+                 m.setHeater(100);
+                 m.setBrewing(12.4f, 0);
              }},
             {"scale-8", "Waage, Bezug 8 s", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 8.0f); }},
             {"scale-18", "Waage, Bezug 18 s", [](FakeMachine& m, rd::RoundUi& ui) { runScaleShot(m, ui, 18.0f); }},

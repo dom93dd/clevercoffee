@@ -36,6 +36,9 @@ inline bool brewPidDisabled = false;                      // is PID disabled for
 #ifdef CC_ORIONE
 inline bool brewStoppedByWeight = false; // the last shot stopped at its target weight (minus the lead)
 inline bool brewEndedSwitchOn = false;   // the switch waits for release because a brew (not a backflush) stopped by itself
+inline bool brewWeightFallback = false;  // this shot: by weight, but without the scale, so the target time ends it
+inline bool backflushCompleted = false;  // all cycles ran: backflush mode goes off (kBackflushFinished)
+constexpr double kBrewMaxSeconds = 60.0;  // no shot runs longer (unless the target time is longer)
 #endif
 
 // Backflush values
@@ -71,6 +74,19 @@ inline void valveSafetyShutdownCheck() {
 }
 
 #ifdef CC_ORIONE
+/** @brief A scale switched on in the settings and connected */
+inline bool brewScaleReady() {
+    return scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected();
+}
+
+/**
+ * @brief The longest shot, also by hand: 60 s, or the target time + 10 s when that is longer. Without an
+ *        over-pressure valve the pump should not run on for ever (Dominik, 08.10.2026).
+ */
+inline double brewMaxMs() {
+    return std::max(kBrewMaxSeconds * 1000.0, totalTargetBrewTime + 10000.0);
+}
+
 /**
  * @brief The brew stopped by itself (time, weight, scale lost) and the brew switch is still on: the round display and
  *        the page keep the shot until it goes off (Dominik, 07.10.2026). Includes the one loop between the stop
@@ -94,6 +110,16 @@ inline void brewSafetyStop() {
         pumpRelay->off();
         valveRelay->off();
         currBrewState = kBrewFinished;
+    }
+
+    // the same for a backflush: valveSafetyShutdownCheck() closes the valve, but the pump would run on
+    if (currBackflushState != kBackflushIdle && currBackflushState != kBackflushFinished && machineState != kBackflush) {
+        LOGF(WARNING, "Backflush stopped: machine left the backflush state (%d)", static_cast<int>(machineState));
+        pumpRelay->off();
+        valveRelay->off();
+        currBackflushState = kBackflushIdle;
+        currBackflushCycles = 1;
+        brewSwitchWasOff = false; // again only after the switch went off: not by itself when the machine is back
     }
 }
 #endif
@@ -300,6 +326,12 @@ inline bool brew() {
                 LOG(INFO, "Brew started");
 #ifdef CC_ORIONE
                 brewStoppedByWeight = false;
+                // by weight without the scale (off, not chosen): the target time ends this shot (Dominik, 08.10.2026)
+                brewWeightFallback = brewByWeightEnabled && !brewScaleReady();
+
+                if (brewWeightFallback) {
+                    LOGF(WARNING, "Brew by weight without the scale: stops at the target time (%.0f s)", totalTargetBrewTime / 1000);
+                }
 #endif
 #ifdef CC_ORIONE
                 shot_history::brewStarted(temperature);
@@ -371,11 +403,28 @@ inline bool brew() {
                 pumpRelay->on();
                 debugPumpState("BrewRunning", "on");
 
+#ifdef CC_ORIONE
+                if (brewByWeightEnabled && !brewWeightFallback && !brewScaleReady()) {
+                    LOGF(WARNING, "Scale lost during the shot: stops at the target time (%.0f s)", totalTargetBrewTime / 1000);
+                    brewWeightFallback = true; // for the rest of this shot, also if it comes back: its weight missed a part
+                }
+
+                if (currBrewTime > totalTargetBrewTime && totalTargetBrewTime > 0 && (brewByTimeEnabled || brewWeightFallback)) {
+                    LOG(INFO, "Brew reached time target");
+                    currBrewState = kBrewFinished;
+                }
+                else if (currBrewTime >= brewMaxMs()) {
+                    LOGF(WARNING, "Brew reached the longest shot (%.0f s)", brewMaxMs() / 1000);
+                    currBrewState = kBrewFinished;
+                }
+                else if (brewByWeightEnabled && !brewWeightFallback) {
+#else
                 if (currBrewTime > totalTargetBrewTime && brewByTimeEnabled) {
                     LOG(INFO, "Brew reached time target");
                     currBrewState = kBrewFinished;
                 }
                 else if (scale && config.get<bool>("hardware.sensors.scale.enabled")) {
+#endif
                     const auto targetBrewWeight = ParameterRegistry::getInstance().getParameterById("brew.by_weight.target_weight")->getValueAs<float>();
 
 #ifdef CC_ORIONE
@@ -565,6 +614,7 @@ inline void backflush() {
                 currBackflushState = kBackflushFinished;
 #ifdef CC_ORIONE
                 shot_history::backflushDone(); // all cycles run: the reminder starts counting again
+                backflushCompleted = true;
 #endif
             }
 
@@ -578,6 +628,15 @@ inline void backflush() {
             currBackflushCycles = 1;
             brewSwitchWasOff = false;
             currBackflushState = kBackflushIdle;
+#ifdef CC_ORIONE
+            // done: backflush mode goes off, the next shot is coffee again (Dominik, 08.10.2026); stopped by hand
+            // before the end it stays on, to start again
+            if (backflushCompleted) {
+                backflushCompleted = false;
+                backflushOn = false;
+                LOG(INFO, "Backflush mode off");
+            }
+#endif
 
             break;
 

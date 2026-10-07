@@ -17,6 +17,44 @@
 
 namespace orione {
 
+    /**
+     * The weight of a shot: the reading less where it started. Coffee comes at a few grams a second, a
+     * reading every 100-200 ms; a cup put on the scale (or lifted) moves the reading by its whole weight
+     * at once. A step of more than kJump between two readings moves the start instead of the shot weight
+     * (Dominik, 08.10.2026): a cup put down after the switch no longer stops "by weight" a second later,
+     * and a tare that comes late does not make the shot negative.
+     */
+    class BrewWeight {
+        public:
+            static constexpr float kJump = 10.0f;
+
+            void start(const float reading) {
+                base_ = last_ = std::isfinite(reading) ? reading : 0.0f;
+            }
+
+            /** @return the shot weight; call with every reading */
+            float update(const float reading) {
+                if (std::isfinite(reading)) {
+                    if (std::fabs(reading - last_) > kJump) {
+                        base_ += reading - last_;
+                    }
+
+                    last_ = reading;
+                }
+
+                return last_ - base_;
+            }
+
+            /** The reading the shot weight counts from */
+            float base() const {
+                return base_;
+            }
+
+        private:
+            float base_ = 0.0f;
+            float last_ = 0.0f;
+    };
+
     class FlowMeter {
         public:
             static constexpr int kSamples = 32;            // a little over 1.5 s at 20 Hz

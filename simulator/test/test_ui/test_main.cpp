@@ -186,6 +186,22 @@ void test_redraw_when_a_shown_value_changes() {
     TEST_ASSERT_TRUE(ui.needsRedraw(80));
 }
 
+void test_redraw_when_a_hint_comes_up() {
+    // the switch reminder and the flush warning change no number: they must still redraw at once
+    RoundUi ui;
+    Model m = normal(94.0f);
+    ui.update(m, 0);
+    render(ui, 0);
+    m.warmupFlushPending = true;
+    ui.update(m, 1000);
+    TEST_ASSERT_TRUE(ui.needsRedraw(1000));
+    render(ui, 1000);
+    m.warmupFlushPending = false;
+    m.brewSwitchReminder = true;
+    ui.update(m, 2000);
+    TEST_ASSERT_TRUE(ui.needsRedraw(2000));
+}
+
 void test_refresh_after_max_interval() {
     RoundUi ui;
     ui.update(normal(), 0);
@@ -728,6 +744,7 @@ int main() {
     RUN_TEST(test_first_frame_is_always_drawn);
     RUN_TEST(test_no_redraw_without_visible_change);
     RUN_TEST(test_redraw_when_a_shown_value_changes);
+    RUN_TEST(test_redraw_when_a_hint_comes_up);
     RUN_TEST(test_refresh_after_max_interval);
     RUN_TEST(test_new_message_text_in_the_same_buffer_redraws);
     RUN_TEST(test_alarm_ring_blinks);

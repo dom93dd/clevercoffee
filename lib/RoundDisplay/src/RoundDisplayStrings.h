@@ -51,6 +51,7 @@ namespace rd {
             const char* noWifi;
             const char* scaleDisconnected;
             const char* switchReminder; // short: the bottom row of the done screen
+            const char* flushSoon;      // the warm-up flush will start by itself (bottom row)
     };
 
     inline constexpr Strings kGerman = {
@@ -89,6 +90,7 @@ namespace rd {
         "Kein WLAN",
         "Waage getrennt",
         "Schalter aus",
+        "Spült gleich",
     };
 
     inline constexpr Strings kEnglish = {
@@ -127,6 +129,7 @@ namespace rd {
         "No WiFi",
         "Scale not connected",
         "Switch off",
+        "Flush coming",
     };
 
     inline const Strings& strings(const Language lang) {

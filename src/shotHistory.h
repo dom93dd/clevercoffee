@@ -90,6 +90,24 @@ namespace shot_history {
         portEXIT_CRITICAL(&rateLock);
     }
 
+    /** Shot i still the one the page means: its time (UTC) and seconds as the page has them */
+    inline bool isShot(const int i, const uint32_t when, const float seconds) {
+        return i >= 0 && i < shotLog.count() && shotLog.at(i).when == when && std::fabs(shotLog.at(i).seconds - seconds) < 0.06f;
+    }
+
+    // A delete from the web page, applied in loop() like a rating; checked there again (a shot may have come)
+    inline int deleteIndex = -1;
+    inline uint32_t deleteWhen = 0;
+    inline float deleteSeconds = 0;
+
+    inline void requestDelete(const int i, const uint32_t when, const float seconds) {
+        portENTER_CRITICAL(&rateLock);
+        deleteIndex = i;
+        deleteWhen = when;
+        deleteSeconds = seconds;
+        portEXIT_CRITICAL(&rateLock);
+    }
+
     /** Log only (the newest curve may still be recording) */
     inline void saveLog() {
         Preferences prefs;
@@ -188,6 +206,24 @@ namespace shot_history {
 
             if (shotLog.rate(i, taste) && !shotLog.settling()) {
                 saveLog(); // while settling, the save after the drops takes it along
+            }
+        }
+
+        if (deleteIndex >= 0) {
+            portENTER_CRITICAL(&rateLock);
+            const int i = deleteIndex;
+            const uint32_t when = deleteWhen;
+            const float seconds = deleteSeconds;
+            deleteIndex = -1;
+            portEXIT_CRITICAL(&rateLock);
+
+            if (isShot(i, when, seconds) && shotLog.remove(i)) {
+                if (i == 0) {
+                    learnPending = false; // a deleted shot teaches the lead nothing
+                }
+
+                saveLog();
+                LOGF(INFO, "Shot deleted: %.1f s", static_cast<double>(seconds));
             }
         }
 

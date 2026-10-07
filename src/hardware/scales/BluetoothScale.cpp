@@ -49,6 +49,7 @@ bool BluetoothScale::hasTarget() {
  * 2 g/s within 3 s and slowly more towards the end; after the pump stops 3 s of drops; reported
  * 10 times a second with a little noise.
  */
+#include "benchSwitch.h"
 #include "hardware/GPIOPin.h"
 
 extern GPIOPin* pumpRelayPin;
@@ -111,7 +112,12 @@ bool BluetoothScale::update() {
         simDrip = std::max(0.0f, simDrip - dt / 6.0f); // 0.5 g/s down to 0 in 3 s
     }
 
-    simGrams += flow * dt;
+    if (bench::scaleMissed) {
+        flow = 0.0f;
+    }
+
+    simGrams += flow * dt + bench::scaleAddGrams;
+    bench::scaleAddGrams = 0.0f;
     currentWeight = simGrams - simTare + (static_cast<int>(now / 100) % 5 - 2) * 0.02f;
     lastUpdateTime = now;
     return true;
@@ -135,7 +141,7 @@ void BluetoothScale::resetTimer() const {}
 void BluetoothScale::setSamples(int samples) {}
 
 bool BluetoothScale::isConnected() const {
-    return connected;
+    return connected && !bench::scaleOff;
 }
 
 void BluetoothScale::startConnectionTask() {}
