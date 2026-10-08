@@ -462,7 +462,12 @@ inline void serverSetup() {
                 }
             }
 
+#ifdef CC_ORIONE
+            // saved by loop() (processPeriodicSave, 2 s after the last change): writing config.json to LittleFS here, in
+            // the web server's task, left 340 of its 4096 bytes of stack unused (measured 08.10.2026, GET /boot)
+#else
             registry.forceSave();
+#endif
             writeSysParamsToMQTT(true);
 
             AsyncWebServerResponse* response = request->beginResponse(200, "text/plain", hasErrors ? "Partial Success" : "OK");
