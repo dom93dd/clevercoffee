@@ -633,10 +633,13 @@ void test_heap_watch_restarts_after_a_minute_low_but_not_during_a_shot() {
     TEST_ASSERT_TRUE(w.update(160000, true, false));
 }
 
-void test_heap_watch_uses_the_brake_limits_and_survives_millis_wrap() {
-    TEST_ASSERT_TRUE(orione::HeapWatch::low(30 * 1024, 7 * 1024));  // fragmented
-    TEST_ASSERT_TRUE(orione::HeapWatch::low(17 * 1024, 16 * 1024)); // too little
+void test_heap_watch_uses_the_restart_limits_and_survives_millis_wrap() {
+    TEST_ASSERT_TRUE(orione::HeapWatch::low(30 * 1024, 4 * 1024));  // fragmented
+    TEST_ASSERT_TRUE(orione::HeapWatch::low(9 * 1024, 8 * 1024));   // too little
     TEST_ASSERT_FALSE(orione::HeapWatch::low(30 * 1024, 16 * 1024));
+    // under the brake but working (scale connected, app open, 08.10.2026: free 15.8 KB, block 7 KB): no restart
+    TEST_ASSERT_FALSE(orione::HeapWatch::low(15764, 7156));
+    TEST_ASSERT_TRUE(orione::gateDecide(0, 0, 15764, 7156) != orione::GateAction::Start); // the brake still refuses pages
     orione::HeapWatch w;
     TEST_ASSERT_FALSE(w.update(0xFFFFF000u, true, false));
     TEST_ASSERT_TRUE(w.update(0xFFFFF000u + 60000u, true, false)); // wraps past 0
@@ -1148,7 +1151,7 @@ int main() {
     RUN_TEST(test_flow_needs_some_time_and_ignores_a_lifted_cup);
     RUN_TEST(test_flow_skips_calls_between_scale_reports);
     RUN_TEST(test_heap_watch_restarts_after_a_minute_low_but_not_during_a_shot);
-    RUN_TEST(test_heap_watch_uses_the_brake_limits_and_survives_millis_wrap);
+    RUN_TEST(test_heap_watch_uses_the_restart_limits_and_survives_millis_wrap);
     RUN_TEST(test_shots_keep_start_temperature_and_first_drops);
     RUN_TEST(test_curve_keeps_the_flow);
     RUN_TEST(test_flush_after_a_cold_start_three_pulses_once_settled);

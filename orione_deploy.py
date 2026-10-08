@@ -4,6 +4,7 @@ Orione build (CC_ORIONE): update the machine over WiFi, as safely as over USB.
 
     /opt/homebrew/bin/python3 orione_deploy.py --host 192.168.178.59            # firmware (with the web page)
     /opt/homebrew/bin/python3 orione_deploy.py --host 192.168.178.59 --log      # only show GET /log
+    /opt/homebrew/bin/python3 orione_deploy.py --host 192.168.178.59 --decode   # GET /log, crash backtraces as source lines
 
 1. Asks the machine what runs and refuses while a shot, flush or backflush runs (the firmware also
    ignores an update then).
@@ -13,11 +14,14 @@ Orione build (CC_ORIONE): update the machine over WiFi, as safely as over USB.
    confirm itself (src/firmwareGuard.h: a firmware that fails at the start makes the ESP32 go back to
    the one before; that is reported). The settings in LittleFS are not touched.
 4. Compares settings, shots and beans with the backup and checks that the page loads.
+5. Keeps the firmware's ELF per version (--backup-dir/elf/<commit>.elf): --decode turns the backtrace a
+   crash leaves in GET /log (src/panicLog.h) into functions and source lines.
 """
 
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -87,9 +91,36 @@ def wait_restarted(host, since, timeout=150):
     return None
 
 
-def pio(target, host, password, extra_env=None):
+def addr2line():
+    for root in [os.path.expanduser("~/.platformio/packages")]:
+        for dirpath, _, names in os.walk(root):
+            if "xtensa-esp32-elf-addr2line" in names:
+                return os.path.join(dirpath, "xtensa-esp32-elf-addr2line")
+    return None
+
+
+def decode(host, backup_dir, elf=None):
+    """Prints GET /log with every backtrace turned into functions and lines"""
+    log = get(host, "/log", 10)
+    version = (try_get(host, "/version") or "").strip()
+    elf = elf or os.path.join(backup_dir, "elf", version.rsplit(".", 1)[-1] + ".elf")
+    tool = addr2line()
+    for line in log.splitlines():
+        print(line)
+        if line.startswith("Backtrace:"):
+            if not os.path.exists(elf) or not tool:
+                print(f"    (keine ELF-Datei {elf} oder kein addr2line: Adressen nicht übersetzbar)")
+                continue
+            addrs = line.split()[1:]
+            out = subprocess.run([tool, "-pfiaC", "-e", elf] + addrs, capture_output=True, text=True).stdout
+            for l in out.strip().splitlines():
+                print("    " + l.replace(ROOT + "/", ""))
+    return 0
+
+
+def pio(target, host, password, extra_env=None, environment=ENV):
     env = dict(os.environ, PLATFORMIO_UPLOAD_FLAGS=f"--auth={password}", **(extra_env or {}))
-    cmd = ["pio", "run", "-e", ENV, "-t", target, "--upload-port", host]
+    cmd = ["pio", "run", "-e", environment, "-t", target, "--upload-port", host]
     print("  $ " + " ".join(cmd))
     p = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
     tail = [l for l in (p.stdout + p.stderr).splitlines() if any(k in l for k in ("Uploading", "Error", "error", "Authenticat", "SUCCESS", "FAILED", "Sending"))]
@@ -103,6 +134,9 @@ def main():
     ap.add_argument("--host", default=os.environ.get("ORIONE_HOST", "orione.local"))
     ap.add_argument("--force", action="store_true", help="also while the machine is busy (the firmware still refuses during a shot)")
     ap.add_argument("--log", action="store_true", help="only print GET /log")
+    ap.add_argument("--decode", action="store_true", help="print GET /log with crash backtraces as source lines")
+    ap.add_argument("--elf", help="ELF for --decode (default: the one kept for the version that runs)")
+    ap.add_argument("--env", default=ENV, help="build environment to send (default esp32_round_ota)")
     ap.add_argument("--backup-dir", default=os.path.join(ROOT, ".device-backups"))
     a = ap.parse_args()
     host = a.host
@@ -110,6 +144,9 @@ def main():
     if a.log:
         print(get(host, "/log", 10))
         return 0
+
+    if a.decode:
+        return decode(host, a.backup_dir, a.elf)
 
     # 1. what runs now
     version = try_get(host, "/version")
@@ -148,9 +185,12 @@ def main():
     dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     print(f"Firmware {head}{' (mit nicht committeten Änderungen)' if dirty else ''} per WLAN …")
     since = time.time()
-    if not pio("upload", host, password):
+    if not pio("upload", host, password, environment=a.env):
         print("Firmware-Update fehlgeschlagen; auf der Maschine läuft weiter die alte.")
         return 1
+    elf_dir = os.path.join(a.backup_dir, "elf")
+    os.makedirs(elf_dir, exist_ok=True)
+    shutil.copyfile(os.path.join(ROOT, ".pio", "build", a.env, "firmware.elf"), os.path.join(elf_dir, head + (".crashtest" if "crashtest" in a.env else "") + ".elf"))
     if not wait_restarted(host, since):
         print("Nach dem Update startet die Maschine nicht wieder im WLAN (USB nötig?).")
         return 1

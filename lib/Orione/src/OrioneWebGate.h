@@ -32,6 +32,10 @@ namespace orione {
             size_t brakeBlock = 8 * 1024;      // emergency brake: below this largest free block ...
             size_t brakeFree = 18 * 1024;      // ... or below this free heap: 503
             size_t abortBlock = 4 * 1024;      // below this: reset, not even a 503 any more
+            // the safety net restarts only below these for a minute: with the scale connected and the app open the heap
+            // sits around 16-21 KB, under the brake but working; a restart at the brake came every minute (08.10.2026)
+            size_t restartFree = 10 * 1024;
+            size_t restartBlock = 5 * 1024;
     };
 
     /**
@@ -61,9 +65,8 @@ namespace orione {
     }
 
     /**
-     * Safety net behind the brake: when the heap stays below the brake's limits for a minute (it
-     * fragments or something leaks), every page request is refused and only a restart helps. Then
-     * restart, but never during a shot or a backflush (busy).
+     * Safety net behind the brake: when the heap stays critically low for a minute (it fragments or
+     * something leaks), only a restart helps. Then restart, but never during a shot or a backflush (busy).
      */
     class HeapWatch {
         public:
@@ -83,9 +86,9 @@ namespace orione {
                 return !busy && nowMs - since_ >= kGraceMs;
             }
 
-            /** heap below the brake's limits */
+            /** heap so low that only a restart helps (below the brake, which only refuses page requests) */
             static bool low(const size_t freeHeap, const size_t largestBlock, const GateLimits& l = GateLimits{}) {
-                return largestBlock < l.brakeBlock || freeHeap < l.brakeFree;
+                return largestBlock < l.restartBlock || freeHeap < l.restartFree;
             }
 
         private:

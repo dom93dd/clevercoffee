@@ -252,6 +252,7 @@ Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 m
 #ifdef CC_ORIONE
 #include "firmwareGuard.h"
 #include "orioneLog.h"
+#include "panicLog.h"
 #include "orioneMachine.h"
 #include "warmupFlush.h"
 
@@ -1670,7 +1671,7 @@ void loopPid() {
             const bool busy = checkBrewActive() || machineState == kBackflush || currBackflushState != kBackflushIdle;
 
             if (heapWatch.update(millis(), orione::HeapWatch::low(heapFree, heapBlock), busy)) {
-                LOGF(ERROR, "Heap below the web server's brake for a minute (free %u, largest block %u): restarting", static_cast<unsigned>(heapFree), static_cast<unsigned>(heapBlock));
+                LOGF(ERROR, "Heap critically low for a minute (free %u, largest block %u): restarting", static_cast<unsigned>(heapFree), static_cast<unsigned>(heapBlock));
                 orione_machine::markHeapRestart();
                 firmware_guard::skipOnRestart = true; // trouble, not a sign of a good firmware
                 delay(200);
