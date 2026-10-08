@@ -21,6 +21,11 @@
 #include "LittleFS.h"
 #include "webRequestGate.h"
 #ifdef CC_ORIONE
+#include <OrionePointerSet.h>
+#include <mutex>
+#include "heapDiag.h"
+#endif
+#ifdef CC_ORIONE
 #include "flashAssets.h"
 #endif
 #ifdef CC_ORIONE
@@ -97,6 +102,11 @@ inline String getTempString() {
  */
 namespace live_events {
 
+    // The live-value clients. The library sets each one's send limit anew (16 KB / clients) whenever a client comes
+    // or goes, over the 2.9 KB set when it connected: set again before every send (found 09.10.2026)
+    inline orione::PointerSet<AsyncEventSourceClient, 4> clients;
+    inline std::mutex clientsLock; // connect/disconnect in the web server task, sending in this one
+
     struct Values {
             double temp;
             double target;
@@ -136,6 +146,11 @@ namespace live_events {
             web_gate::sseWaiting = static_cast<uint8_t>(events.avgPacketsWaiting());
 
             if (events.count() > 0) {
+                {
+                    std::lock_guard<std::mutex> guard(clientsLock);
+                    clients.forEach([](AsyncEventSourceClient* c) { c->set_max_inflight_bytes(SSE_MIN_INFLIGH); });
+                }
+
                 int n = snprintf(json, sizeof(json), R"({"currentTemp":%.2f,"targetTemp":%.2f,"heaterPower":%.1f,"state":%d,"brewTime":%.1f,"scale":%d)", v.temp, v.target, v.power, v.state, v.brewTime, v.scale);
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f)" : R"(,"weight":null)", v.weight);
                 n += snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f)" : R"(,"flow":null)", v.flow);
@@ -546,14 +561,17 @@ inline void serverSetup() {
         };
         nvs_stats_t nvs{};
         nvs_get_stats(nullptr, &nvs);
-        char json[420];
+        const heap_diag::TcpUse tcp = heap_diag::tcpUse();
+        char json[600];
         snprintf(json, sizeof(json),
-                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u},"fw":"%s","updateFailed":%s,"rssi":%d})",
+                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u},"fw":"%s","updateFailed":%s,"rssi":%d,"tcpConn":{"open":%u,"closing":%u,"queued":%u},"sse":%u,"allocFail":{"n":%u,"max":%u,"task":"%s"}})",
                  orione_machine::startReason, static_cast<unsigned long>(millis() / 1000), static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
                  static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
                  unused("loopTask"), unused("async_tcp"), unused("nimble_host"), unused("scale"), unused("sse"), unused("loopGuard"),
                  static_cast<unsigned>(nvs.used_entries), static_cast<unsigned>(nvs.free_entries), firmware_guard::pending ? "pending" : "ok",
-                 firmware_guard::lastUpdateFailed ? "true" : "false", static_cast<int>(WiFi.RSSI())); // dBm: inside the steel housing it got slow (08.10.2026)
+                 firmware_guard::lastUpdateFailed ? "true" : "false", static_cast<int>(WiFi.RSSI()), // dBm: inside the steel housing it got slow (08.10.2026)
+                 tcp.open, tcp.closing, static_cast<unsigned>(tcp.held), static_cast<unsigned>(events.count()), static_cast<unsigned>(heap_diag::allocFails),
+                 static_cast<unsigned>(heap_diag::allocFailMax), heap_diag::allocFailTask); // heapDiag.h
         request->send(200, "application/json", json);
     });
 
@@ -1007,9 +1025,30 @@ inline void serverSetup() {
 #ifdef CC_ORIONE
         // A phone that keeps the connection but stops reading (locked, tab in the background) would
         // tie up to 16 KB here; heap ran down to an 11 KB block with the brake on (02.10.2026)
-        client->set_max_inflight_bytes(SSE_MIN_INFLIGH);
+        client->set_max_inflight_bytes(SSE_MIN_INFLIGH); // the library raises it again right after: live_events::run()
+        {
+            std::lock_guard<std::mutex> guard(live_events::clientsLock);
+            live_events::clients.add(client);
+        }
+
+        // No acknowledgement for 5 s (a phone locked or out of reach): abort, which frees what the TCP stack still
+        // holds for it at once. The library's close() hands the connection to lwIP with its unacknowledged data,
+        // kept until lwIP gives up after 12 retransmissions, minutes later (heap down to 1.3 KB, 08.10.2026)
+        client->client()->onTimeout([](void*, AsyncClient* c, uint32_t) { c->abort(); }, nullptr);
 #endif
     });
+#ifdef CC_ORIONE
+    events.onDisconnect([](AsyncEventSourceClient* client) {
+        std::lock_guard<std::mutex> guard(live_events::clientsLock);
+        live_events::clients.remove(client);
+    });
+
+    // the same for every request: an answer nobody acknowledges is aborted, not closed (see onConnect above)
+    server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
+        request->client()->onTimeout([](void*, AsyncClient* c, uint32_t) { c->abort(); }, nullptr);
+        next();
+    });
+#endif
 
     server.addHandler(&events);
 #ifdef CC_ORIONE

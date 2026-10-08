@@ -1099,6 +1099,7 @@ void setup() {
 #endif
 #ifdef CC_ORIONE
     orione_machine::noteStart();
+    heap_diag::begin(); // failed allocations from the start on
     orione_log::begin(orione_machine::startReason); // from here on every log line also goes to GET /log
     LOGF(INFO, "Started after: %s", orione_machine::startReason);
     firmware_guard::begin();
@@ -1768,6 +1769,9 @@ void loopPid() {
             }
         }
     }
+
+    // a log line at each new heap low and on failed allocations, with the TCP connections then (heapDiag.h)
+    heap_diag::loop(web_gate::sseClients, scale == nullptr || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : scale->isConnected() ? 2 : 1);
 
     // curve of the running shot and the drops after it (the brew weight stays frozen once the brew is over);
     // < 0 means no scale, so a connected scale's noise just under zero after taring counts as 0

@@ -12,6 +12,7 @@
 #include <OrioneFlow.h>
 #include <OrioneBeans.h>
 #include <OrioneCare.h>
+#include <OrionePointerSet.h>
 #include <OrioneHeat.h>
 #include <OrioneLogRing.h>
 #include <OrioneShots.h>
@@ -1119,6 +1120,27 @@ void test_standby_wakes_only_on_a_switch_turned_on_during_it() {
     TEST_ASSERT_TRUE(o.update(0x00000010u, true));
 }
 
+void test_pointer_set_keeps_a_few_without_heap() {
+    int a = 1, b = 2, c = 3;
+    orione::PointerSet<int, 2> set;
+    TEST_ASSERT_TRUE(set.add(&a));
+    TEST_ASSERT_TRUE(set.add(&a)); // twice: kept once
+    TEST_ASSERT_EQUAL(1, set.size());
+    TEST_ASSERT_TRUE(set.add(&b));
+    TEST_ASSERT_FALSE(set.add(&c)); // full
+    TEST_ASSERT_FALSE(set.contains(&c));
+    TEST_ASSERT_FALSE(set.add(nullptr));
+    set.remove(&a);
+    TEST_ASSERT_FALSE(set.contains(&a));
+    TEST_ASSERT_TRUE(set.add(&c)); // the freed slot
+    int sum = 0;
+    set.forEach([&](int* p) { sum += *p; });
+    TEST_ASSERT_EQUAL(5, sum);
+    set.remove(&c);
+    set.remove(&c); // not there any more: nothing happens
+    TEST_ASSERT_EQUAL(1, set.size());
+}
+
 void test_water_estimates() {
     TEST_ASSERT_EQUAL_UINT32(50, orione::Water::shotMl(33.4f, 16.5f, 28.0f)); // cup + what the puck keeps
     TEST_ASSERT_EQUAL_UINT32(56, orione::Water::shotMl(-1.0f, 16.5f, 28.0f)); // no scale: the time
@@ -1317,6 +1339,7 @@ int main() {
     RUN_TEST(test_log_ring_keeps_the_newest_lines);
     RUN_TEST(test_schedule_fires_once_at_its_minute_on_its_days);
     RUN_TEST(test_standby_wakes_only_on_a_switch_turned_on_during_it);
+    RUN_TEST(test_pointer_set_keeps_a_few_without_heap);
     RUN_TEST(test_water_estimates);
     RUN_TEST(test_stats_count_days_weeks_and_descaling);
     RUN_TEST(test_cleaning_with_detergent_then_rinse);
