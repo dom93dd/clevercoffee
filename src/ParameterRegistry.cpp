@@ -53,6 +53,9 @@ const char* relayTriggerTypes[2] = {"Low Trigger", "High Trigger"};
 static constexpr const char* const brewModes[] = {"Manual", "Automatic"};
 static constexpr const char* const displayTemplates[] = {"Standard", "Minimal", "Temp only", "Scale", "Upright"};
 static constexpr const char* const displayLanguages[] = {"Deutsch", "English", "Español"};
+#ifdef CC_ORIONE
+static constexpr const char* const grindScales[] = {"Not known", "Higher is finer", "Higher is coarser"};
+#endif
 static constexpr const char* const blinkingModes[] = {"Off", "Near Setpoint", "Away From Setpoint"};
 static constexpr const char* const logLevels[] = {"TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "SILENT"};
 static constexpr const char* const oledTypes[] = {"SH1106 (1.3\")", "SSD1306 (0.96\")"};
@@ -308,13 +311,13 @@ void ParameterRegistry::initialize(Config& config) {
     addStringConfigParam("brew.grind", "Grind setting", sBrewSection, 326, nullptr, BREW_GRIND_MAX_LENGTH, "Grinder setting of the next shot");
     addStringConfigParam("brew.grinder", "Grinder", sBrewSection, 327, nullptr, GRINDER_MAX_LENGTH, "Grinder model");
     addStringConfigParam("brew.beans", "Beans", sBrewSection, 328, nullptr, GRINDER_MAX_LENGTH, "Beans in the grinder");
+    addEnumConfigParam("brew.grind_scale", "Grinder scale", sBrewSection, 335, nullptr, grindScales, 3, "Which way the numbers of the grinder go, for suggestions");
     addNumericConfigParam<int>("backflush.remind_after", "Backflush reminder", kInteger, sMaintenanceSection, 404, nullptr, 0, BACKFLUSH_REMIND_MAX,
                                "Remind of a backflush after this many shots (0 = never)");
     addBoolConfigParam("brew.warmup_flush", "Warm-up flush after a cold start", sMaintenanceSection, 405, nullptr,
                        "Three short flushes once the temperature has settled after a cold start (only with a water level sensor)");
 #endif
 
-#ifndef CC_ORIONE // not used on the Orione (slim-firmware-analysis.md)
         addBoolConfigParam(
             "brew.pre_infusion.enabled",
             "Pre-Infusion",
@@ -347,6 +350,9 @@ void ParameterRegistry::initialize(Config& config) {
             PRE_INFUSION_PAUSE_MAX,
             "Pause to let the puck bloom after the initial pre-infusion while turning off the pump and leaving the 3-way valve open"
         );
+#ifdef CC_ORIONE
+        addBoolConfigParam("brew.pre_infusion.valve_open", "Valve open in the pause", sBrewSection, 334, nullptr,
+                           "Open: the Pulsor board pulses the pump during the pause (a slow trickle). Closed: the 3-way valve vents the group, nothing flows");
 #endif
 
         // Maintenance Section

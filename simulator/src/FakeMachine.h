@@ -324,6 +324,10 @@ class FakeMachine {
             phase_ = rd::BrewPhase::Running;
         }
 
+        void setBrewPhase(const rd::BrewPhase phase) {
+            phase_ = phase;
+        }
+
         void setBrewDone(const float seconds, const float weight) {
             brewing_ = false;
             brewTime_ = seconds;

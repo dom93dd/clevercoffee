@@ -163,6 +163,18 @@ namespace sim {
                  m.toggleBrewSwitch();
                  runMachine(m, ui, 12.5f);
              }},
+            {"brew-preinfusion", "Pre-Infusion: Pumpstoß (1,2 s)",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setBrewing(1.2f, 0.0f);
+                 m.setBrewPhase(rd::BrewPhase::Preinfusion);
+             }},
+            {"brew-pi-pause", "Pre-Infusion: Pause (4,0 s)",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setBrewing(4.0f, 0.0f);
+                 m.setBrewPhase(rd::BrewPhase::PreinfusionPause);
+             }},
             {"done-average", "Bezug fertig mit Ø-Temperatur",
              [](FakeMachine& m, rd::RoundUi& ui) {
                  m.settle();

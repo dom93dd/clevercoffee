@@ -110,6 +110,7 @@ namespace live_events {
             bool held;     // the shot stopped by itself and the brew switch is still on
             bool sw;       // the brew switch is on (or not back off yet)
             int steam;     // steam from the original switch, seen from the temperature: 0 no, 1 steam, 2 cooling down after it
+            int pi;        // pre-infusion: 0 not now, 1 the burst, 2 the pause
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -117,7 +118,7 @@ namespace live_events {
     inline TaskHandle_t task = nullptr;
 
     inline void run(void*) {
-        char json[240];
+        char json[256];
 
         for (;;) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -135,7 +136,7 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
-                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d})", v.held ? "true" : "false", v.sw ? "true" : "false", v.steam);
+                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d})", v.held ? "true" : "false", v.sw ? "true" : "false", v.steam, v.pi);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -1010,7 +1011,8 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
                           warmup_flush::livePhase(), warmup_flush::flush.pulse(),
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
-                          brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle, static_cast<int>(orione_machine::steam.phase())});
+                          brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle, static_cast<int>(orione_machine::steam.phase()),
+                          currBrewState == kPreinfusion ? 1 : currBrewState == kPreinfusionPause ? 2 : 0});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

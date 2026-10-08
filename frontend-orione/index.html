@@ -222,6 +222,11 @@ const T = {
     claudeCredit: "Der Schlüssel ist gültig, aber das API-Guthaben ist leer. In der Anthropic-Konsole unter „Plans & Billing“ Guthaben aufladen; ein Claude-Abo zählt dafür nicht.",
     claudeModel: "Das Modell ist mit diesem Schlüssel nicht verfügbar.", claudeBusy: "Anthropic ist gerade ausgelastet. Bitte gleich noch einmal.", claudeOther: "Anthropic meldet: ",
     suggestion: "Vorschlag zum letzten Bezug", suggestionOf: "Vorschlag", analysis: "Auswertung", analyze: "Ausführlich auswerten",
+    sPreinf: "Pre-Infusion (Test)", "brew.pre_infusion.enabled": "Pre-Infusion", "brew.pre_infusion.enabledHint": "kurzer Pumpstoß, Pause, dann der Bezug; die Bezugszeit enthält beides",
+    "brew.pre_infusion.time": "Pumpstoß", "brew.pre_infusion.timeHint": "Pumpe und Ventil an", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "Pumpe aus",
+    "brew.pre_infusion.valve_open": "Ventil in der Pause offen", "brew.pre_infusion.valve_openHint": "Offen: das Pulsor-Board pulst die Pumpe weiter, es tröpfelt langsam nach. Zu: das Ventil entlüftet die Gruppe, der Puck ruht ohne Druck",
+    piShot: "Pre-Infusion {b} s + {p} s Pause", piOpen: "Ventil offen", piClosed: "Ventil zu", piOn: "Pre-Infusion an: {b} s Pumpstoß, {p} s Pause, {v}", livePi: "Pre-Infusion", livePause: "Pause",
+    "brew.grind_scale": "Skala der Mühle", "brew.grind_scaleHint": "für Claudes Vorschläge",
     finer: "feiner", coarser: "gröber", aiApply: "Übernehmen", aiApplied: "Übernommen", aiChanges: "Für den nächsten Bezug", aiAppliedToast: "Vorschlag übernommen", "brew.setpoint": "Brühtemperatur",
     bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, dann in Wartung den Backflush-Modus einschalten.",
     "backflush.remind_after": "Erinnern nach", "backflush.remind_afterHint": "Bezügen (0 = nie)",
@@ -295,6 +300,11 @@ const T = {
     claudeCredit: "The key is valid, but the API credit is used up. Buy credits in the Anthropic console under “Plans & Billing”; a Claude subscription does not count for it.",
     claudeModel: "The model is not available with this key.", claudeBusy: "Anthropic is busy right now. Please try again in a moment.", claudeOther: "Anthropic says: ",
     suggestion: "Suggestion on the last shot", suggestionOf: "Suggestion", analysis: "Analysis", analyze: "Analyse in depth",
+    sPreinf: "Pre-infusion (test)", "brew.pre_infusion.enabled": "Pre-infusion", "brew.pre_infusion.enabledHint": "a short burst, a pause, then the shot; the brew time includes both",
+    "brew.pre_infusion.time": "Burst", "brew.pre_infusion.timeHint": "pump and valve on", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "pump off",
+    "brew.pre_infusion.valve_open": "Valve open in the pause", "brew.pre_infusion.valve_openHint": "Open: the Pulsor board keeps pulsing the pump, a slow trickle. Closed: the valve vents the group, the puck rests without pressure",
+    piShot: "Pre-infusion {b} s + {p} s pause", piOpen: "valve open", piClosed: "valve closed", piOn: "Pre-infusion on: {b} s burst, {p} s pause, {v}", livePi: "Pre-infusion", livePause: "Pause",
+    "brew.grind_scale": "Grinder scale", "brew.grind_scaleHint": "for Claude's suggestions",
     finer: "finer", coarser: "coarser", aiApply: "Apply", aiApplied: "Applied", aiChanges: "For the next shot", aiAppliedToast: "Suggestion applied", "brew.setpoint": "Brew temperature",
     bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, then switch on backflush mode in Care.",
     "backflush.remind_after": "Remind after", "backflush.remind_afterHint": "shots (0 = never)",
@@ -340,7 +350,7 @@ const T = {
 };
 let lang = "de";
 const t = k => T[lang][k] ?? T.de[k] ?? k;
-const OPTION_DE = {"Manual": "Manuell", "Automatic": "Automatisch", "Normally Open": "Schließer", "Normally Closed": "Öffner"};
+const OPTION_DE = {"Manual": "Manuell", "Automatic": "Automatisch", "Normally Open": "Schließer", "Normally Closed": "Öffner", "Not known": "unbekannt", "Higher is finer": "höher = feiner", "Higher is coarser": "höher = gröber"};
 const optLabel = l => lang === "de" ? (OPTION_DE[l] ?? l) : l;
 
 // ---------- what the tabs show (ids of the firmware's parameters) ----------
@@ -351,16 +361,17 @@ const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1,
   "brew.by_weight.target_weight": .5, "brew.by_weight.lag": .05, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
-UNIT["brew.dose"] = "g";
+UNIT["brew.dose"] = "g"; UNIT["brew.pre_infusion.time"] = UNIT["brew.pre_infusion.pause"] = "s"; STEP["brew.pre_infusion.time"] = STEP["brew.pre_infusion.pause"] = .5;
 const TABS = [
   {id: "status", icon: "i-status", names: ["pid.enabled", "brew.setpoint", "BACKFLUSH_ON", "display.language", "display.blinking.delta", "backflush.remind_after"]},
   {id: "brew", icon: "i-brew", shot: true, cards: []},
   {id: "settings", icon: "i-set", cards: [
     // most used first: what changes a shot, then the machine, the rarely touched ones folded
     ["sPresets", ["brew.presets"]], // presetCard()
-    ["sCoffee", ["brew.grinder", "brew.beans"]],
+    ["sCoffee", ["brew.grinder", "brew.grind_scale", "brew.beans"]],
     ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
     ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn", "display.blescale_brew_timer"]],
+    ["sPreinf", ["brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause", "brew.pre_infusion.valve_open"]],
     ["sTemp", ["brew.temp_offset", "display.blinking.delta"]],
     ["sStandby", ["standby.enabled", "standby.time"]],
     ["sDisplay", ["display.language", "display.post_brew_timer_duration"]],
@@ -373,9 +384,9 @@ const TABS = [
 ];
 
 // rows shown only while their switch is on
-const SHOWN_IF = {"standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
+const SHOWN_IF = {"brew.pre_infusion.time": "brew.pre_infusion.enabled", "brew.pre_infusion.pause": "brew.pre_infusion.enabled", "brew.pre_infusion.valve_open": "brew.pre_infusion.enabled", "standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
   "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled"};
-const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint"];
+const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint", "brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause", "brew.pre_infusion.valve_open"];
 // what a bean keeps (src/beanProfiles.h): switching beans sets these
 const RECIPE = ["brew.dose", "brew.grind", "brew.by_weight.target_weight", "brew.setpoint", "brew.by_weight.lag"];
 // settings the firmware only shows depending on another one (ParameterRegistry show conditions)
@@ -552,7 +563,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -682,6 +693,7 @@ function shotCard() {
     b.onclick = async () => { if (mo !== stopMode() && await setStop(mo)) refresh(); };
     seg.append(b);
   }
+  if (P["brew.pre_infusion.enabled"]?.value) c.append(el("p", "shotinfo pinote", piText()));
   const l = el("div", "lbl"); l.append(el("div", null, t("stop")));
   if (modes.length < 3) l.append(el("p", null, t("stopHint")));
   l.append(el("p", null, t("stopMax").replace("{n}", fmt(longestShot())))); // brewMaxMs() in src/brewHandler.h
@@ -749,6 +761,8 @@ function paintLag() {
   const last = shots?.find(x => x.fs != null), f = last ? last.fs : 2;
   q.textContent = t(last ? "lagLast" : "lagAt").replace("{f}", num(f, 1)).replace("{g}", num(Math.min(6, lag * f), 1)); // at most 6 g: BrewLag::kMaxLeadGrams
 }
+const piText = () => t("piOn").replace("{b}", num(P["brew.pre_infusion.time"]?.value ?? 0, 1)).replace("{p}", num(P["brew.pre_infusion.pause"]?.value ?? 0, 1))
+  .replace("{v}", t(P["brew.pre_infusion.valve_open"]?.value ? "piOpen" : "piClosed"));
 function paintRatio() {
   const r = $("#ratio"), d = P["brew.dose"]?.value, g = P["brew.by_weight.target_weight"]?.value;
   if (r) r.textContent = d && g ? `${t("ratio")} 1:${num(g / d, 1)}` : "";
@@ -832,8 +846,10 @@ async function rateShot(x, i, taste) {
 }
 // what ended (or ends) the shot: by weight without the scale the target time does
 const shotMode = x => { const m = stopMode(); return m === "weight" && x?.noScale ? "time" : m; };
+// pre-infusion runs before the target time counts (totalTargetBrewTime in src/brewHandler.h)
+const piSeconds = () => P["brew.pre_infusion.enabled"]?.value ? (P["brew.pre_infusion.time"]?.value ?? 0) + (P["brew.pre_infusion.pause"]?.value ?? 0) : 0;
 // no shot runs longer: 60 s, or the target time + 10 s (brewMaxMs() in src/brewHandler.h)
-const longestShot = () => Math.max(60, (P["brew.by_time.target_time"]?.value ?? 0) + 10);
+const longestShot = () => Math.max(60, (P["brew.by_time.target_time"]?.value ?? 0) + piSeconds() + 10);
 // how long the result stays after the shot: the display's setting (10 s in the Orione build)
 const doneHoldMs = () => Math.max(3, P["display.post_brew_timer_duration"]?.value ?? 10) * 1000;
 // brew by weight: what ended up in the cup against the target (null if not stopped by weight)
@@ -846,6 +862,7 @@ function fillDetail(cv, x, i) {
   if (x.m) info.push(t("brew.grind") + " " + x.m);
   if (x.b) info.push(t("brew.beans") + " " + x.b);
   if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
+  if (x.pi) info.push(t("piShot").replace("{b}", num(x.pi[0], 1)).replace("{p}", num(x.pi[1], 1)) + ` (${t(x.pi[2] ? "piOpen" : "piClosed")})`);
   if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
   if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
   if (x.tw != null) info.push(`${t("target")} ${num(x.tw, 1)} g`);
@@ -899,7 +916,7 @@ function drawShotCharts() {
   drawShotBars(box.querySelector(".bars"));
   const k = shots.findIndex(x => shotKey(x) === openShot), cv = k < 0 ? null : box.querySelectorAll(".curve")[k];
   const other = compareShot && curves[compareShot] !== "none" ? curves[compareShot] : null;
-  if (cv && curves[openShot] && curves[openShot] !== "none") drawCurve(cv.querySelector("canvas"), curves[openShot], other, shots[k].tw);
+  if (cv && curves[openShot] && curves[openShot] !== "none") drawCurve(cv.querySelector("canvas"), curves[openShot], other, shots[k].tw, shots[k].pi);
 }
 function canvas2d(c) { // sharp on high-density screens; null while hidden
   if (!c || !c.clientWidth) return null;
@@ -932,7 +949,7 @@ function drawShotBars(c) {
 }
 // one shot: weight (left scale) and brew temperature (right scale) over the seconds, dashed line where
 // the pump stopped; another shot (o) dashed and paler behind it, on the same scales
-function drawCurve(c, d, o, target) {
+function drawCurve(c, d, o, target, pi) {
   const g = canvas2d(c);
   if (!g || d.t.length < 2) return;
   const w = c.clientWidth, h = c.clientHeight, L = 30, R = w - 34, T = 10, B = h - 20, all = o ? [d, o] : [d];
@@ -949,6 +966,12 @@ function drawCurve(c, d, o, target) {
   if (wts.length) for (const f of [0, .5, 1]) g.fillText(Math.round(gHi / 1.1 * f) + " g", L - 4, yG(gHi / 1.1 * f) + 4);
   g.textAlign = "left";
   g.fillText(num(tHi, 1) + "°", R + 4, T + 8); g.fillText(num(tLo, 1) + "°", R + 4, B);
+  if (pi) { // pre-infusion: the burst, then the pause, shaded behind the lines
+    const px = sec => L + Math.min(sec, total) / total * (R - L);
+    g.fillStyle = "rgba(125,190,255,.10)"; g.fillRect(L, T, px(pi[0]) - L, B - T);
+    g.fillStyle = "rgba(125,190,255,.05)"; g.fillRect(px(pi[0]), T, px(pi[0] + pi[1]) - px(pi[0]), B - T);
+    g.fillStyle = "#7dbeff"; g.textAlign = "left"; g.fillText("PI", L + 3, B - 4);
+  }
   if (d.stop >= 0 && d.stop < d.t.length) { g.setLineDash([4, 4]); g.strokeStyle = "#56565c"; g.beginPath(); g.moveTo(X(d, d.stop), T); g.lineTo(X(d, d.stop), B); g.stroke(); }
   if (target && d.w) { // the target weight: how far the drops carried it over
     g.setLineDash([2, 3]); g.strokeStyle = "rgba(236,226,208,.55)"; g.beginPath(); g.moveTo(L, yG(target)); g.lineTo(R, yG(target)); g.stroke();
@@ -1038,7 +1061,10 @@ function coffeeContext() {
   if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans"));
   out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
   if (m === "weight") out.push(`Der Stopp nach Gewicht regelt sich selbst: Die Pumpe stoppt um Nachlaufzeit × aktuellem Durchfluss vor dem Ziel, damit der Nachlauf das Ziel auffüllt; die Nachlaufzeit (jetzt ${num(v("brew.by_weight.lag") ?? 0, 2)} s) ${v("brew.by_weight.learn") ? "lernt die Maschine nach jedem Bezug selbst nach. Abweichungen vom Zielgewicht bis etwa ±1 g gleicht sie von allein aus: Schlag nicht vor, früher oder später zu stoppen, und nicht, die Nachlaufzeit zu ändern" : "ist fest eingestellt, das Lernen ist aus"}.`);
-  out.push("Druck, Pre-Infusion und Durchfluss lassen sich an dieser Maschine nicht einstellen; einstellbar sind nur Mahlgrad, Dosis, Zielgewicht bzw. Bezugszeit und Brühtemperatur.");
+  if (v("brew.pre_infusion.enabled")) out.push(`Pre-Infusion ist eingeschaltet (ein Test): ${num(v("brew.pre_infusion.time"), 1)} s Pumpstoß mit offenem Ventil, dann ${num(v("brew.pre_infusion.pause"), 1)} s Pause, ${v("brew.pre_infusion.valve_open") ? "in der Pause mit offenem Ventil, dabei pulst die Pumpe langsam weiter" : "in der Pause mit geschlossenem Ventil, die Gruppe ist dabei drucklos"}; die Bezugszeit enthält beides. Nur zum Einordnen, schlag dazu nichts vor.`);
+  out.push("Druck und Durchfluss lassen sich an dieser Maschine nicht einstellen; einstellbar sind nur Mahlgrad, Dosis, Zielgewicht bzw. Bezugszeit und Brühtemperatur.");
+  const scale = v("brew.grind_scale");
+  if (scale === 1 || scale === 2) out.push(`Skala der Mühle: eine höhere Zahl mahlt ${scale === 1 ? "feiner" : "gröber"}, eine kleinere ${scale === 1 ? "gröber" : "feiner"}.`);
   const next = [];
   if (v("brew.dose")) next.push(`Dosis ${num(v("brew.dose"), 1)} g`);
   if (v("brew.grind")) next.push(`Mahlgrad ${v("brew.grind")}`);
@@ -1055,6 +1081,7 @@ function coffeeContext() {
     if (x.m) p.push("Mahlgrad " + x.m);
     if (x.b) p.push("Bohne " + x.b);
     if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
+    if (x.pi) p.push(`mit Pre-Infusion ${num(x.pi[0], 1)} s + ${num(x.pi[1], 1)} s Pause (Ventil ${x.pi[2] ? "offen" : "zu"})`);
     if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
     if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel${x.lg != null && x.fs != null ? `: gelernte Nachlaufzeit ${num(x.lg, 2)} s × Durchfluss beim Stopp ${num(x.fs, 1)} g/s` : ""}), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
     if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
@@ -1135,7 +1162,13 @@ function aiChanges(raw) {
     const p = P[id];
     if (p.type === 4) {
       const v = String(raw[field]).trim().slice(0, p.max || 40);
-      const how = {feiner: "finer", "gröber": "coarser"}[raw.mahlgrad_richtung];
+      let how = {feiner: "finer", "gröber": "coarser"}[raw.mahlgrad_richtung];
+      const scale = P["brew.grind_scale"]?.value, a = parseFloat(String(p.value ?? "").replace(",", ".")), b = parseFloat(v.replace(",", "."));
+      if ((scale === 1 || scale === 2) && isFinite(a) && isFinite(b) && a !== b) { // the numbers say which way it goes
+        const finer = scale === 1 ? b > a : b < a;
+        if (how && how !== (finer ? "finer" : "coarser")) continue; // the number and the word disagree: not offered
+        how = finer ? "finer" : "coarser";
+      }
       if (v && v !== String(p.value ?? "")) out.push({id, from: p.value ?? "", to: v, how});
       continue;
     }
@@ -1248,8 +1281,8 @@ function paintShotLive() {
   const x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
   ls.hidden = !x;
   if (!x) return;
-  const mode = stopMode(), m = shotMode(x), id = m === "weight" ? "brew.by_weight.target_weight" : m === "time" ? "brew.by_time.target_time" : null, goal = id ? P[id]?.value : null;
-  $("#lsLab").textContent = t(brewing ? "liveBrew" : "liveDone");
+  const mode = stopMode(), m = shotMode(x), id = m === "weight" ? "brew.by_weight.target_weight" : m === "time" ? "brew.by_time.target_time" : null, goal = id ? (P[id]?.value ?? 0) + (m === "time" ? piSeconds() : 0) || null : null;
+  $("#lsLab").textContent = t(!brewing ? "liveDone" : live.pi === 1 ? "livePi" : live.pi === 2 ? "livePause" : "liveBrew");
   $("#lsTime").textContent = num(x.t, 1) + " s";
   $("#lsWeight").textContent = x.w == null ? "" : num(x.w, 1) + " g";
   $("#lsBarBox").hidden = !goal;
@@ -1368,7 +1401,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();

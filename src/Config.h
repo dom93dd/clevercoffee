@@ -402,18 +402,21 @@ class Config {
             _configDefs.emplace("brew.grind", ConfigDef::forString("", BREW_GRIND_MAX_LENGTH));
             _configDefs.emplace("brew.grinder", ConfigDef::forString("", GRINDER_MAX_LENGTH));
             _configDefs.emplace("brew.beans", ConfigDef::forString("", GRINDER_MAX_LENGTH));
+            _configDefs.emplace("brew.grind_scale", ConfigDef::forInt(0, 0, 2)); // 0 not known, 1 higher number = finer, 2 higher number = coarser
             _configDefs.emplace("backflush.remind_after", ConfigDef::forInt(BACKFLUSH_REMIND_AFTER, 0, BACKFLUSH_REMIND_MAX));
             _configDefs.emplace("brew.warmup_flush", ConfigDef::forBool(true)); // only with a water level sensor (src/warmupFlush.h)
 #endif
 
             // Pre-infusion
-#ifndef CC_ORIONE
             _configDefs.emplace("brew.pre_infusion.enabled", ConfigDef::forBool(false));
-#endif
-#ifndef CC_ORIONE
+#ifdef CC_ORIONE
+            // a test on the Orione (Dominik, 08.10.2026): a short burst, a pause, then the shot; in the pause the valve
+            // closed (the group vents, nothing flows) or open (the Pulsor board pulses the pump: a slow trickle)
+            _configDefs.emplace("brew.pre_infusion.time", ConfigDef::forDouble(2.0, 0.0, 10.0));
+            _configDefs.emplace("brew.pre_infusion.pause", ConfigDef::forDouble(4.0, 0.0, 15.0));
+            _configDefs.emplace("brew.pre_infusion.valve_open", ConfigDef::forBool(false));
+#else
             _configDefs.emplace("brew.pre_infusion.time", ConfigDef::forDouble(PRE_INFUSION_TIME, PRE_INFUSION_TIME_MIN, PRE_INFUSION_TIME_MAX));
-#endif
-#ifndef CC_ORIONE
             _configDefs.emplace("brew.pre_infusion.pause", ConfigDef::forDouble(PRE_INFUSION_PAUSE_TIME, PRE_INFUSION_PAUSE_MIN, PRE_INFUSION_PAUSE_MAX));
 #endif
 

@@ -941,6 +941,7 @@ void test_shots_from_format_6_are_taken_over() {
     TEST_ASSERT_EQUAL_UINT8(17, x.leadTenths);
     TEST_ASSERT_EQUAL_STRING("Ettli Don Pedro", x.beans);
     TEST_ASSERT_EQUAL_UINT16(0, x.lagCs); // not known then
+    TEST_ASSERT_EQUAL_UINT8(0, x.piTenths);
     TEST_ASSERT_EQUAL_FLOAT(30.1f, log.at(1).seconds);
     const auto now = log.stored(); // saved again as this format
     orione::ShotLog back;
@@ -1032,6 +1033,32 @@ void test_shot_keeps_target_weight_at_stop_and_lead() {
     TEST_ASSERT_EQUAL(83, back.at(1).lagCs);
 }
 
+void test_shot_keeps_its_preinfusion() {
+    orione::ShotLog log;
+    log.record(29.0f, 36.0f, 0, 0);
+    log.notePreinfusion(2.0f, 4.0f, false);
+    TEST_ASSERT_EQUAL(20, log.at(0).piTenths);
+    TEST_ASSERT_EQUAL(40, log.at(0).piPauseTenths);
+    TEST_ASSERT_EQUAL(0, log.at(0).piFlags);
+    log.record(30.0f, 36.0f, 0, 10000);
+    log.notePreinfusion(1.5f, 6.0f, true);
+    TEST_ASSERT_EQUAL(orione::ShotLog::kPauseValveOpen, log.at(0).piFlags);
+    log.record(26.0f, 36.0f, 0, 20000);
+    log.notePreinfusion(0.0f, 0.0f, true); // none: no flag either
+    TEST_ASSERT_EQUAL(0, log.at(0).piTenths);
+    TEST_ASSERT_EQUAL(0, log.at(0).piFlags);
+    log.record(26.0f, 36.0f, 0, 30000);
+    log.notePreinfusion(40.0f, NAN, false); // over 25.5 s: kept at the limit; not a number: none
+    TEST_ASSERT_EQUAL(255, log.at(0).piTenths);
+    TEST_ASSERT_EQUAL(0, log.at(0).piPauseTenths);
+    const auto stored = log.stored();
+    orione::ShotLog back;
+    TEST_ASSERT_TRUE(back.restore(&stored, sizeof(stored)));
+    TEST_ASSERT_EQUAL(15, back.at(2).piTenths); // newest first: the second shot is third now
+    TEST_ASSERT_EQUAL(60, back.at(2).piPauseTenths);
+    TEST_ASSERT_EQUAL(orione::ShotLog::kPauseValveOpen, back.at(2).piFlags);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -1103,5 +1130,6 @@ int main() {
     RUN_TEST(test_beans_keep_a_recipe_each);
     RUN_TEST(test_beans_the_longest_unused_makes_room);
     RUN_TEST(test_shot_keeps_target_weight_at_stop_and_lead);
+    RUN_TEST(test_shot_keeps_its_preinfusion);
     return UNITY_END();
 }

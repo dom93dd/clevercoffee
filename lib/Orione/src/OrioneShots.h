@@ -46,6 +46,9 @@ namespace orione {
             char beans[41] = {};          // beans in the grinder then (setting brew.beans, up to 40 bytes), as typed
             uint16_t lagCs = 0;           // the lead in seconds of flow it stopped with (BrewLag), 0.01 s
             uint16_t flowStopCs = 0;      // the flow when the pump stopped, 0.01 g/s
+            uint8_t piTenths = 0;         // pre-infusion: the pump's burst, 0.1 s, 0 = none
+            uint8_t piPauseTenths = 0;    // and the pause after it, 0.1 s
+            uint8_t piFlags = 0;          // kPauseValveOpen: the valve stayed open in the pause (the Pulsor board pulsed)
     };
 
     /** A shot as saved by format 6 (before lagCs and flowStopCs): read once after the update, then saved as 7 */
@@ -182,6 +185,23 @@ namespace orione {
                 shots_[0].doseTenths = std::isfinite(t) && t > 0.0f && t < 65535.0f ? static_cast<uint16_t>(t + 0.5f) : 0;
                 copyText(shots_[0].grind, sizeof(shots_[0].grind), grind);
                 copyText(shots_[0].beans, sizeof(shots_[0].beans), beans);
+            }
+
+            static constexpr uint8_t kPauseValveOpen = 1;
+
+            /** Pre-infusion of the newest shot: burst and pause in seconds (burst and pause 0: none) */
+            void notePreinfusion(const float burstSeconds, const float pauseSeconds, const bool valveOpen) {
+                if (count_ == 0) {
+                    return;
+                }
+
+                const auto tenths = [](const float v) {
+                    const float t = v * 10.0f;
+                    return std::isfinite(t) && t > 0.0f ? static_cast<uint8_t>(t > 254.5f ? 255 : static_cast<int>(t + 0.5f)) : static_cast<uint8_t>(0);
+                };
+                shots_[0].piTenths = tenths(burstSeconds);
+                shots_[0].piPauseTenths = tenths(pauseSeconds);
+                shots_[0].piFlags = (shots_[0].piTenths || shots_[0].piPauseTenths) && valveOpen ? kPauseValveOpen : 0;
             }
 
             /** Temperature at the start and the first drops of the newest shot (< 0: unknown) */
@@ -424,7 +444,7 @@ namespace orione {
                 return seq;
             }
 
-            static constexpr uint8_t kVersion = 7; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead, 6: beans, 7: lag and flow at the stop
+            static constexpr uint8_t kVersion = 7; // 2: running number for the curves, 3: dose, grind, taste, backflush counter, 4: start temperature, first drops, 5: target, weight at the stop, lead, 6: beans, 7: lag and flow at the stop, pre-infusion
 
             Shot shots_[kSize];
             int count_ = 0;

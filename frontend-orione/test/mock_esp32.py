@@ -55,6 +55,11 @@ BASE = {
     "brew.grind": dict(type=4, value="12", min=0, max=9),
     "brew.grinder": dict(type=4, value="", min=0, max=40),
     "brew.beans": dict(type=4, value="", min=0, max=40),
+    "brew.grind_scale": dict(type=5, value=0, min=0, max=2, options=["Not known", "Higher is finer", "Higher is coarser"]),
+    "brew.pre_infusion.enabled": dict(type=1, value=0, min=0, max=1),
+    "brew.pre_infusion.time": dict(type=2, value=2.0, min=0, max=10),
+    "brew.pre_infusion.pause": dict(type=2, value=4.0, min=0, max=15),
+    "brew.pre_infusion.valve_open": dict(type=1, value=0, min=0, max=1),
     "backflush.remind_after": dict(type=0, value=50, min=0, max=500),
     "backflush.cycles": dict(type=0, value=5, min=2, max=20),
     "backflush.fill_time": dict(type=2, value=5.0, min=3, max=10),
@@ -242,7 +247,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, ASSETS[name], kind)
         if url.path == "/shots":
             with S.lock:
-                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 0, "lg": None, "fs": None, **x} for x in S.shots[:5]]
+                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 0, "lg": None, "fs": None, "pi": None, **x} for x in S.shots[:5]]
                 return self.send(200, json.dumps({"now": int(time.time()), "bf": S.bf, "shots": shots}), "application/json")
         if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
             i = int(q.get("i", ["0"])[0])
@@ -305,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False, "steam": 0}
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()

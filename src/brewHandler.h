@@ -386,7 +386,13 @@ inline bool brew() {
             break;
 
         case kPreinfusionPause:
+#ifdef CC_ORIONE
+            // open, the valve also powers the Pulsor board, which then pulses the pump (orione-full-build.md 6.2): a slow
+            // trickle; closed, the 3-way valve vents the group and the puck rests without pressure (a test, 08.10.2026)
+            config.get<bool>("brew.pre_infusion.valve_open") ? valveRelay->on() : valveRelay->off();
+#else
             valveRelay->on();
+#endif
             pumpRelay->off();
             debugPumpState("Pause", "off");
 

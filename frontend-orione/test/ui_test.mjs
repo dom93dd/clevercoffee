@@ -791,6 +791,72 @@ test("Claude: schlägt Einstellungen vor, Übernehmen setzt sie, nur gültige We
   await ctx.close();
 });
 
+test("Pre-Infusion (Test): einschalten, Zeiten und Ventil in den Einstellungen", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  const card = view(page).locator('[data-card="sPreinf"]');
+  assert.equal(await card.locator("h2").textContent(), "Pre-Infusion (Test)");
+  assert.equal(await card.locator(".row").count(), 1, "times and valve only once it is on");
+  await row(page, "Pre-Infusion").locator(".sw").click();
+  await row(page, "Pumpstoß").waitFor();
+  await row(page, "Pumpstoß").locator("button", {hasText: "+"}).click();
+  await row(page, "Ventil in der Pause offen").locator(".sw").click();
+  await settle(page);
+  const v = await values(BASE);
+  assert.equal(v["brew.pre_infusion.enabled"], 1); assert.equal(v["brew.pre_infusion.time"], 2.5); assert.equal(v["brew.pre_infusion.valve_open"], 1);
+  assert.equal(await row(page, "Pause").locator("input").inputValue(), "4,0 s");
+  await card.screenshot({path: OUT + "settings-preinfusion.png"});
+  await tab(page, "Bezug");
+  assert.equal(await view(page).locator(".pinote").textContent(), "Pre-Infusion an: 2,5 s Pumpstoß, 4,0 s Pause, Ventil offen");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Pre-Infusion (Test): Phase im Live-Bezug, im Bezugsdetail, in der Kurve und für Claude", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000), form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+  await form("brew.pre_infusion.enabled=1&brew.pre_infusion.time=2&brew.pre_infusion.pause=4");
+  await mock(BASE, "/__shot", {s: 31.0, g: 36.0, at: now - 300, d: 18.0, m: "12", fd: 7.5, pi: [2.0, 4.0, 0]});
+  let seen;
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, "Passt."); }});
+  await view(page).locator("#shotList > .ai div", {hasText: "Passt."}).waitFor();
+  const user = seen[0].body.messages[0].content;
+  assert.ok(user.includes("Pre-Infusion ist eingeschaltet (ein Test): 2,0 s Pumpstoß mit offenem Ventil, dann 4,0 s Pause, in der Pause mit geschlossenem Ventil"), user);
+  assert.ok(user.includes("mit Pre-Infusion 2,0 s + 4,0 s Pause (Ventil zu)"));
+  await view(page).locator("#shotList .shot").first().click();
+  const info = view(page).locator("#shotList .curve:not([hidden]) .shotinfo");
+  await info.waitFor();
+  assert.match(await info.textContent(), /Pre-Infusion 2,0 s \+ 4,0 s Pause \(Ventil zu\) · erster Tropfen nach 7,5 s/);
+  await view(page).locator("#shotList .curve:not([hidden]) canvas").waitFor();
+  await page.screenshot({path: OUT + "brew-preinfusion-curve.png", fullPage: true});
+  for (const [pi, label] of [[1, "Pre-Infusion"], [2, "Pause"], [0, "Bezug läuft"]]) {
+    await mock(BASE, "/__live", {state: 20, brewTime: 1.5 + pi, weight: 0, scale: 2, pi});
+    await page.locator("#lsLab", {hasText: new RegExp("^" + label + "$")}).waitFor();
+  }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Claude: Mahlgrad-Vorschlag passt zur Skala der Mühle", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000), form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
+  await form("brew.grind_scale=1&brew.grind=21");
+  await mock(BASE, "/__shot", {s: 19.0, g: 36.0, at: now - 300, d: 18.0, m: "21", r: 1});
+  // "finer" but a smaller number, on a grinder where higher is finer: not offered
+  let seen;
+  let {page, ctx} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, {text: "Sauer: eine Stufe feiner.", tool: {mahlgrad: "20", mahlgrad_richtung: "feiner"}}); }});
+  await view(page).locator("#shotList > .ai div", {hasText: "eine Stufe feiner"}).waitFor();
+  await settle(page);
+  assert.equal(await view(page).locator("#shotList > .ai .apply").count(), 0, "number and word disagree");
+  assert.ok(seen[0].body.messages[0].content.includes("Skala der Mühle: eine höhere Zahl mahlt feiner, eine kleinere gröber."));
+  await ctx.close();
+  // the number alone: the direction comes from the scale
+  ({page, ctx} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { await fakeClaude(pg, {text: "Sauer: eine Stufe feiner.", tool: {mahlgrad: "22"}}); }}));
+  await view(page).locator("#shotList > .ai .apply span").first().waitFor();
+  assert.equal((await view(page).locator("#shotList > .ai .apply span").first().textContent()), "Mahlgrad 21 → 22 (feiner)");
+  await tab(page, "Einstellungen");
+  assert.deepEqual(await row(page, "Skala der Mühle").locator("button").allTextContents(), ["unbekannt", "höher = feiner", "höher = gröber"]);
+  assert.equal(await row(page, "Skala der Mühle").locator("button.on").textContent(), "höher = feiner");
+  await ctx.close();
+});
+
 test("Claude: Bohne je Bezug; neue Bohne oder Mühle fragt neu", async ({browser}) => {
   const now = Math.floor(Date.now() / 1000), form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
   await mock(BASE, "/__shot", {s: 27.0, g: 36.0, at: now - 900, d: 18.0, m: "12", b: "Alte Bohne, hell"});

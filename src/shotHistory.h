@@ -138,6 +138,11 @@ namespace shot_history {
         stopFlow = flow;
     }
 
+    // pre-infusion of the running shot, as set when it started
+    inline float piBurst = 0.0f;
+    inline float piPause = 0.0f;
+    inline bool piValveOpen = false;
+
     inline void learnFromShot(); // below
 
     inline void brewStarted(const double celsius) {
@@ -148,6 +153,10 @@ namespace shot_history {
 
         startCelsius = static_cast<float>(celsius);
         noteStop(0.0f, 0.0f);
+        const bool pi = config.get<bool>("brew.pre_infusion.enabled");
+        piBurst = pi ? static_cast<float>(config.get<double>("brew.pre_infusion.time")) : 0.0f;
+        piPause = pi ? static_cast<float>(config.get<double>("brew.pre_infusion.pause")) : 0.0f;
+        piValveOpen = pi && config.get<bool>("brew.pre_infusion.valve_open");
         shotCurve.begin(millis());
         flowMeter.start(millis());
     }
@@ -184,6 +193,7 @@ namespace shot_history {
         if (shotLog.record(static_cast<float>(seconds), grams, nowUtc(), millis())) {
             shotLog.noteRecipe(config.get<float>("brew.dose"), config.get<String>("brew.grind").c_str(), config.get<String>("brew.beans").c_str());
             shotLog.noteFacts(startCelsius, grams < 0 ? -1.0f : flowMeter.firstDropSeconds());
+            shotLog.notePreinfusion(piBurst, piPause, piValveOpen);
             learnTarget = byWeight && grams >= 0 ? config.get<float>("brew.by_weight.target_weight") : 0.0f;
             learnPending = learnTarget > 0.0f;
 
@@ -254,7 +264,8 @@ namespace shot_history {
      * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
      * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown); brew by weight:
      * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with,
-     * lg that lead as seconds of flow, fs the flow when the pump stopped (g/s; both null if unknown)
+     * lg that lead as seconds of flow, fs the flow when the pump stopped (g/s; both null if unknown);
+     * pi pre-infusion [burst s, pause s, 1 if the valve stayed open in the pause] or null
      */
     /** Text typed by the user inside a JSON string: quotes and backslashes escaped, control characters left out */
     inline void printJsonText(Print& out, const char* text) {
@@ -308,6 +319,10 @@ namespace shot_history {
             s.lagCs ? (void)out.printf("%u.%02u", s.lagCs / 100u, s.lagCs % 100u) : (void)out.print("null");
             out.print(R"(,"fs":)");
             s.flowStopCs ? (void)out.printf("%u.%02u", s.flowStopCs / 100u, s.flowStopCs % 100u) : (void)out.print("null");
+            out.print(R"(,"pi":)");
+            s.piTenths || s.piPauseTenths ? (void)out.printf("[%u.%u,%u.%u,%u]", s.piTenths / 10u, s.piTenths % 10u, s.piPauseTenths / 10u, s.piPauseTenths % 10u,
+                                                             s.piFlags & orione::ShotLog::kPauseValveOpen ? 1u : 0u)
+                                          : (void)out.print("null");
             out.print("}");
         }
 
