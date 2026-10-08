@@ -207,6 +207,7 @@ class AcaiaArduinoBLE {
         bool _requireTarget = false; // Orione
         bool _cleanupComplete;
         unsigned long _lastScanClear;
+        unsigned long _scanRestUntil = 0; // Orione: no scan until then (0: scanning or no rest due)
 
         int _connectionAttempts;
 

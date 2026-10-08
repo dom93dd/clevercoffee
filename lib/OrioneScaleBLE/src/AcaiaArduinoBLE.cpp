@@ -256,20 +256,13 @@ bool AcaiaArduinoBLE::updateConnection() {
 
     switch (_connectionState) {
         case SCANNING:
-            // Clear scan results every 30 seconds during long scans to prevent memory buildup
-            if (millis() - _lastScanClear > 30000) {
-                clearScanResults();
-                _lastScanClear = millis();
-            }
+            // Orione: between two scans the radio is left to WiFi (see the timeout below)
+            if (_scanRestUntil != 0) {
+                if (static_cast<long>(millis() - _scanRestUntil) < 0) {
+                    return false;
+                }
 
-            // Reduced timeout for scanning - 15 seconds instead of 30
-            if (millis() - _connectionStartTime > 15000) {
-                if (_debug) Serial.println("Scan timeout - no scales found");
-                // Orione: no scale around is not a failed connection. Going to FAILED here ended in a
-                // NimBLE stack reset after every scan (see FAILED below): ~50 bytes of heap lost each
-                // time and ~33 KB needed at once (measured with simulator/esp32-bench env ble_leak).
-                // Restarting the scan loses nothing.
-                clearScanResults();
+                _scanRestUntil = 0;
 
                 if (_pBLEScan) {
                     _pBLEScan->start(0);
@@ -277,6 +270,45 @@ bool AcaiaArduinoBLE::updateConnection() {
 
                 _connectionStartTime = millis();
                 _lastScanClear = millis();
+            }
+
+            // Clear scan results every 30 seconds during long scans to prevent memory buildup
+            if (millis() - _lastScanClear > 30000) {
+                clearScanResults();
+                _lastScanClear = millis();
+            }
+
+            // Orione: 6 s of scanning, then 15 s of rest. ESP32 WiFi and BLE share one radio: an endless scan while
+            // the scale was off took a fifth of the airtime, and in the assembled machine (weak signal) WiFi got
+            // seconds slow (08.10.2026). A scale switched on is found within ~20 s; a search from the settings
+            // (discover()) scans at once and without rest.
+            if (millis() - _connectionStartTime > (_pAdvertisedDeviceCallbacks->discovering() ? 15000UL : 6000UL)) {
+                if (_debug) Serial.println("Scan timeout - no scales found");
+                // Orione: no scale around is not a failed connection. Going to FAILED here ended in a
+                // NimBLE stack reset after every scan (see FAILED below): ~50 bytes of heap lost each
+                // time and ~33 KB needed at once (measured with simulator/esp32-bench env ble_leak).
+                clearScanResults();
+
+                if (_pAdvertisedDeviceCallbacks->discovering()) {
+                    if (_pBLEScan) {
+                        _pBLEScan->start(0);
+                    }
+
+                    _connectionStartTime = millis();
+                    _lastScanClear = millis();
+                }
+                else {
+                    if (_pBLEScan && _pBLEScan->isScanning()) {
+                        _pBLEScan->stop();
+                    }
+
+                    _scanRestUntil = millis() + 15000UL;
+
+                    if (_scanRestUntil == 0) {
+                        _scanRestUntil = 1;
+                    }
+                }
+
                 break;
             }
 
@@ -1191,7 +1223,9 @@ void AcaiaArduinoBLE::discover(const uint32_t ms) {
 
     // a search needs a running scan; while connected there is none (and the chosen scale is known)
     if (_connectionState == SCANNING && _pBLEScan && !_pBLEScan->isScanning()) {
+        _scanRestUntil = 0; // Orione: no rest while searching
         _pBLEScan->start(0);
+        _connectionStartTime = millis();
     }
 }
 

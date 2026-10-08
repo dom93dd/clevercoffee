@@ -19,3 +19,8 @@ commit 9afd589, MIT, see `LICENSE`) with three fixes for the slim Orione build. 
    or lost connection `createClient()` returned `nullptr` until the stack reset.
 3. **Callbacks are detached before they are deleted** (scan and client), so a late event cannot call
    into freed memory.
+4. **No endless scan while no scale is around** (08.10.2026): 6 s of scanning, then 15 s of rest. The ESP32
+   shares one radio between WiFi and BLE; the endless active scan (window 62.5 ms every 312.5 ms) took a
+   fifth of the airtime, and in the assembled machine, with a weak WiFi signal, the web page got seconds
+   slow. A scale switched on is found within ~20 s; `discover()` (the search in the settings) scans at once
+   and without rest.
