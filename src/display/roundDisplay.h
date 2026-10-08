@@ -103,6 +103,7 @@ inline rd::Model roundDisplayModel() {
     const bool stopByTime = automatic && (config.get<bool>("brew.by_time.enabled") || weightWithoutScale);
     m.brewTargetTime = stopByTime ? static_cast<float>(totalTargetBrewTime / 1000) : 0.0f;
     m.warmupFlushPending = warmup_flush::livePhase() == orione::WarmupFlush::kWaiting;
+    m.flushReminder = shot_history::flushPending;
 #else
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);
 #endif

@@ -86,6 +86,7 @@ namespace warmup_flush {
         else if (wasRunning) {
             LOGF(INFO, "Warm-up flush over after %lu s", static_cast<unsigned long>(currBrewTime / 1000));
             currBrewTime = 0;
+            shot_history::flushed();
 
             if (machineState == kManualFlush) {
                 machineState = kPidNormal;

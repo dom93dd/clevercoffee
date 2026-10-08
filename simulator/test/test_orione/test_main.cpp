@@ -179,6 +179,8 @@ void test_shots_short_ones_are_left_out() {
     TEST_ASSERT_TRUE(log.record(orione::ShotLog::kMinSeconds, -1.0f, 0, 0));
     TEST_ASSERT_TRUE(log.record(8.0f, 36.0f, 0, 0));          // ran through fast: coffee in the cup
     TEST_ASSERT_EQUAL_INT(2, log.count());
+    TEST_ASSERT_FALSE(log.record(2.8f, 26.0f, 0, 0));         // the rinse after a shot: its water on the scale
+    TEST_ASSERT_TRUE(log.record(orione::ShotLog::kFlushSeconds, 20.0f, 0, 0));
 }
 
 void test_shots_with_a_scale_need_coffee_in_the_cup() {

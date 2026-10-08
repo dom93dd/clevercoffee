@@ -54,6 +54,7 @@ namespace rd {
             const char* flushSoon;      // the warm-up flush will start by itself (bottom row)
             const char* steamThermostat; // steam from the original switch: the thermostat holds it, not a setpoint
             const char* tooHotFlush;     // after steam: too hot for espresso (bottom row)
+            const char* pleaseFlush;     // a shot since the last rinse (bottom row)
     };
 
     inline constexpr Strings kGerman = {
@@ -95,6 +96,7 @@ namespace rd {
         "Spült gleich",
         "über Thermostat",
         "Zu heiß, spülen",
+        "Bitte spülen",
     };
 
     inline constexpr Strings kEnglish = {
@@ -136,6 +138,7 @@ namespace rd {
         "Flush coming",
         "by thermostat",
         "Too hot, flush",
+        "Please flush",
     };
 
     inline const Strings& strings(const Language lang) {

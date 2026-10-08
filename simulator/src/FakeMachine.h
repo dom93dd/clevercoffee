@@ -30,6 +30,7 @@ class FakeMachine {
         bool warmupFlushPending = false; // cold start, sensor and setting on: it will flush by itself
         bool steamFromSwitch = false;    // Orione: steam by the original switch, seen from the temperature
         bool steamCooling = false;       // Orione: after steam, too hot for espresso
+        bool flushReminder = false;      // Orione: a shot since the last rinse
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -257,6 +258,7 @@ class FakeMachine {
             m.brewTimerVisible = brewing_ || holdLeft_ > 0.0f;
             m.warmupFlushPending = warmupFlushPending;
             m.steamCooling = steamCooling;
+            m.flushReminder = flushReminder;
 
             if (steamFromSwitch) {
                 m.mode = rd::Mode::Steam;

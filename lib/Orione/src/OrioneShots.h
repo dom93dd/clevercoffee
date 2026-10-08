@@ -9,8 +9,9 @@
  * cup must not count as zero) and only then is the log due for saving. What is not a shot is left
  * out: with a scale connected, under kMinGrams in the cup (a flush through the group however long,
  * Dominik 08.10.2026; also a shot with the cup not on the scale); without one, under kMinSeconds
- * (a slip of the switch). A shot that ran through fast with coffee in the cup counts: just what one
- * wants to see. No Arduino dependencies: tested in simulator/test/test_orione.
+ * (a slip of the switch); and never under kFlushSeconds: the short rinse after a shot (portafilter out,
+ * brew switch on for 2-3 s, Dominik 08.10.2026) pours its water onto the scale. A shot that ran through
+ * fast with coffee in the cup counts: just what one wants to see. No Arduino dependencies: tested in simulator/test/test_orione.
  */
 
 #pragma once
@@ -118,6 +119,7 @@ namespace orione {
             static constexpr int kSize = 5;
             static constexpr float kMinSeconds = 10.0f; // without a scale
             static constexpr float kMinGrams = 5.0f;    // with a scale
+            static constexpr float kFlushSeconds = 5.0f; // shorter is a rinse, whatever the scale says
             // The drops after the stop are counted until the weight has not risen for kSettleQuietMs, at least
             // kSettleMs and at most kSettleMaxMs. A fixed 4 s missed half of it with water at 11 g/s, which ran
             // on for 15-20 s (Dominik's test in the machine, 08.10.2026); with a puck it is done in a few seconds.
@@ -128,7 +130,7 @@ namespace orione {
 
             /** @return false if it was not a shot (see above) */
             bool record(const float seconds, const float grams, const uint32_t when, const uint32_t nowMs) {
-                if (!std::isfinite(seconds) || seconds <= 0.0f || !(grams >= 0.0f ? grams >= kMinGrams : seconds >= kMinSeconds)) {
+                if (!std::isfinite(seconds) || seconds < kFlushSeconds || !(grams >= 0.0f ? grams >= kMinGrams : seconds >= kMinSeconds)) {
                     return false;
                 }
 

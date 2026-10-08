@@ -207,6 +207,7 @@ const T = {
     flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist (kein Bezug, Backflush oder Standby, Wasser im Tank).",
     flushNeedsSensor: "Nur mit Wasserstandssensor: ohne ihn könnte die Pumpe bei leerem Tank trocken laufen. Einschalten unter Einstellungen → Wassertank.",
     flushNote: "Gleich wird automatisch gespült (3 × kurz), sobald die Temperatur 2 min stabil am Soll ist. Siebträger leer eingespannt lassen, Tasse unterstellen.",
+    rinseNote: "Bitte spülen: Siebträger raus, ausklopfen, Bezugsschalter 2–3 s an. So bleibt kein Kaffee am Duschsieb.", piAfter: "Bezug danach {s} s", piOf: "davon {s} s Pre-Infusion",
     sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
     scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?", battery: "Akku", batteryLow: "bitte laden",
     scaleNone: "Keine Waage gewählt – unter Einstellungen → Waage suchen", scaleWith: "Verbunden mit {n}", scaleWaiting: "{n} gewählt, nicht verbunden – Waage einschalten",
@@ -284,6 +285,7 @@ const T = {
     flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready (no shot, backflush or standby, water in the tank).",
     flushNeedsSensor: "Only with a water level sensor: without one the pump could run dry with an empty tank. Switch it on under Settings → Water tank.",
     flushNote: "The machine will flush by itself (3 × briefly) once the temperature has been steady at the setpoint for 2 min. Leave the empty portafilter in, put a cup under it.",
+    rinseNote: "Please rinse: portafilter out, knock it out, brew switch on for 2–3 s. No coffee stays on the shower screen.", piAfter: "brew after it {s} s", piOf: "{s} s of it pre-infusion",
     sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
     scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?", battery: "Battery", batteryLow: "please charge",
     scaleNone: "No scale chosen – search under Settings → Scale", scaleWith: "Connected to {n}", scaleWaiting: "{n} chosen, not connected – switch the scale on",
@@ -561,7 +563,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, fp: false, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -574,6 +576,7 @@ function statusView(m) {
   if (P["BACKFLUSH_ON"]?.value) m.append(el("div", "note", t("bfActive")));
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
+  const rn = el("div", "note", t("rinseNote")); rn.className = "note rinse"; rn.hidden = true; m.append(rn); // paintFlush()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
     const sw = switchCtl("pid.enabled"); sw.id = "pidSw";
@@ -673,6 +676,7 @@ function shotCard() {
   c.append(el("h2", null, t("sShot")));
   const ls = el("div", "liveshot", `<div class="lab" id="lsLab"></div><div class="nums"><b id="lsTime"></b><span id="lsWeight"></span></div><div class="bar" id="lsBarBox"><b id="lsBar"></b></div><div class="goal" id="lsGoal"></div><div class="goal hint" id="lsHint" hidden></div>`);
   ls.id = "liveShot"; ls.hidden = true; c.append(ls);
+  const rn = el("div", "note rinse", t("rinseNote")); rn.hidden = true; c.append(rn); // paintFlush()
   const cur = stopMode(), r = el("div", "row"), seg = el("div", "seg");
   if (P["brew.presets"]) {
     const chips = el("div", "chips"); chips.id = "chips";
@@ -859,7 +863,8 @@ function fillDetail(cv, x, i) {
   if (x.m) info.push(t("brew.grind") + " " + x.m);
   if (x.b) info.push(t("brew.beans") + " " + x.b);
   if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
-  if (x.pi) info.push(t("piShot").replace("{b}", num(x.pi[0], 1)).replace("{p}", num(x.pi[1], 1)) + (x.pi[2] ? "" : ` (${t("piClosed")})`)); // closed: the test of 08.10.2026
+  if (x.pi) info.push(t("piShot").replace("{b}", num(x.pi[0], 1)).replace("{p}", num(x.pi[1], 1)) + (x.pi[2] ? "" : ` (${t("piClosed")})`), // closed: the test of 08.10.2026
+    t("piAfter").replace("{s}", num(Math.max(0, x.s - x.pi[0] - x.pi[1]), 1)));
   if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
   if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
   if (x.tw != null) info.push(`${t("target")} ${num(x.tw, 1)} g`);
@@ -1037,7 +1042,7 @@ async function claude(key, system, user, maxTokens, onText, think = false, tool 
 }
 const AI_SYSTEM = () => `Du bist ein erfahrener Barista und kennst Siebträgermaschinen auch technisch. Du bekommst die Daten der letzten Espresso-Bezüge einer Maschine. Antworte ${lang === "de" ? "auf Deutsch" : "in English"}, ohne Einleitung, ohne Aufzählungszeichen und ohne Markdown.`;
 const AI_TOOL_HINT = " Schreib zuerst den Text. Empfiehlt er eine Änderung an Mahlgrad, Dosis, Zielgewicht, Bezugszeit oder Temperatur, dann rufe danach immer das Werkzeug einstellungen_vorschlagen mit den neuen Werten auf (beim Mahlgrad den neuen Wert auf der Skala der Mühle und die Richtung), damit der Nutzer sie mit einem Tipp übernehmen kann. Empfiehlst du keine Änderung, rufe es nicht auf.";
-const AI_SHORT = "Bewerte den neuesten Bezug in höchstens 35 Wörtern und nenne genau einen konkreten nächsten Schritt (zum Beispiel Mahlgrad eine Stufe feiner oder gröber, Dosis ±0,5 g, anderes Verhältnis, Temperatur ±1 °C). Ein Espresso läuft meist 25–30 s bei etwa 1:2; sauer spricht eher für feiner, heißer oder ein längeres Verhältnis, bitter für gröber, kühler oder ein kürzeres. Passt alles, sag das und schlag nichts vor." + AI_TOOL_HINT;
+const AI_SHORT = "Bewerte den neuesten Bezug in höchstens 35 Wörtern und nenne genau einen konkreten nächsten Schritt (zum Beispiel Mahlgrad eine Stufe feiner oder gröber, Dosis ±0,5 g, anderes Verhältnis, Temperatur ±1 °C). Ein Espresso läuft meist 25–30 s bei etwa 1:2 (gezählt ohne Pre-Infusion, also ab dem Ende der Pause); sauer spricht eher für feiner, heißer oder ein längeres Verhältnis, bitter für gröber, kühler oder ein kürzeres. Passt alles, sag das und schlag nichts vor." + AI_TOOL_HINT;
 const AI_LONG = "Werte die Bezüge gründlich aus: was Zeit, Gewichtsverlauf (Durchfluss, Anlauf, Kanalbildung), Temperaturverlauf und die Konstanz über die letzten Bezüge zeigen, mögliche Ursachen und eine Reihenfolge von höchstens drei Schritten. Höchstens 150 Wörter in kurzen Absätzen." + AI_TOOL_HINT.replace("mit genau den Werten", "mit den Werten des ersten Schritts");
 // what Claude may change: each value checked against the setting's limits before it is offered (aiChanges)
 const AI_TOOL = {name: "einstellungen_vorschlagen", description: "Schlägt Einstellungen für den nächsten Bezug vor, die der Nutzer mit einem Tipp übernehmen kann. Nur die Werte angeben, die sich ändern sollen, und nur solche, die im Text empfohlen werden.",
@@ -1058,6 +1063,7 @@ function coffeeContext() {
   if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans"));
   out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
   if (m === "weight") out.push(`Der Stopp nach Gewicht regelt sich selbst: Die Pumpe stoppt um Nachlaufzeit × aktuellem Durchfluss vor dem Ziel, damit der Nachlauf das Ziel auffüllt; die Nachlaufzeit (jetzt ${num(v("brew.by_weight.lag") ?? 0, 2)} s) ${v("brew.by_weight.learn") ? "lernt die Maschine nach jedem Bezug selbst nach. Abweichungen vom Zielgewicht bis etwa ±1 g gleicht sie von allein aus: Schlag nicht vor, früher oder später zu stoppen, und nicht, die Nachlaufzeit zu ändern" : "ist fest eingestellt, das Lernen ist aus"}.`);
+  if (v("brew.pre_infusion.enabled") || shots.some(x => x.pi)) out.push("Die Bezugszeiten enthalten eine Pre-Infusion, wo sie angegeben ist: die Laufzeit-Faustregel gilt für die Zeit danach; auch der erste Tropfen kommt dadurch später.");
   if (v("brew.pre_infusion.enabled")) out.push(`Pre-Infusion ist eingeschaltet (ein Test): ${num(v("brew.pre_infusion.time"), 1)} s Pumpstoß mit offenem Ventil, dann ${num(v("brew.pre_infusion.pause"), 1)} s Pause, in der Pause bleibt das Ventil offen und die Pumpe pulst langsam weiter; die Bezugszeit enthält beides. Nur zum Einordnen, schlag dazu nichts vor.`);
   out.push("Druck und Durchfluss lassen sich an dieser Maschine nicht einstellen; einstellbar sind nur Mahlgrad, Dosis, Zielgewicht bzw. Bezugszeit und Brühtemperatur.");
   const scale = v("brew.grind_scale");
@@ -1071,7 +1077,7 @@ function coffeeContext() {
   out.push("Eingestellt für den nächsten Bezug: " + next.join(", ") + ".");
   out.push("Letzte Bezüge, neuester zuerst:");
   shots.forEach((x, i) => {
-    const p = [num(x.s, 1) + " s"];
+    const p = [num(x.s, 1) + " s" + (x.pi ? ` (davon ${num(x.pi[0] + x.pi[1], 1)} s Pre-Infusion, Bezug danach ${num(Math.max(0, x.s - x.pi[0] - x.pi[1]), 1)} s)` : "")];
     if (x.g != null) p.push(num(x.g, 1) + " g in der Tasse");
     if (x.d) p.push(num(x.d, 1) + " g Kaffee");
     if (x.d && x.g != null) p.push("Verhältnis 1:" + num(x.g / x.d, 2));
@@ -1287,7 +1293,8 @@ function paintShotLive() {
   const remind = !brewing && live.held && x.doneAt && Date.now() - x.doneAt >= 60000; // left on for a minute
   $("#lsHint").hidden = !remind; if (remind) $("#lsHint").textContent = t("switchBack");
   $("#lsGoal").textContent = (goal ? (m !== mode ? t("noScaleGoal").replace("{n}", fmt(goal)) : `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}`) : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "")
-    + (!brewing && m === "weight" && goal && x.sw != null && x.w != null ? ` · ${t("atStop")} ${num(x.sw, 1)} g · ${signed(Math.round((x.w - goal) * 10) / 10)} g` : "");
+    + (!brewing && m === "weight" && goal && x.sw != null && x.w != null ? ` · ${t("atStop")} ${num(x.sw, 1)} g · ${signed(Math.round((x.w - goal) * 10) / 10)} g` : "")
+    + (!brewing && piSeconds() && x.t > piSeconds() ? ` · ${t("piOf").replace("{s}", fmt(piSeconds()))}` : "");
 }
 // During a shot (and for a moment after it) the machine tab shows what the round display shows:
 // the ring fills with the time, or with the weight when the scale stops the shot (lib/RoundDisplay drawBrew)
@@ -1398,7 +1405,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1440,6 +1447,9 @@ function flushCard() {
 function paintFlush() {
   const b = $("#flushBtn"), st = $("#flushSt"), note = $("#flushNote"), run = live.ok && flushRunning();
   if (note) note.hidden = !(live.ok && live.warmup === 1);
+  // a shot since the last rinse (shot_history::flushPending): not while brewing or the result is still shown
+  const rinse = live.ok && live.fp && live.state !== 20 && !(lastShot?.until && Date.now() < lastShot.until);
+  document.querySelectorAll(".note.rinse").forEach(e => { e.hidden = !rinse; });
   if (!b || !P["hardware.sensors.watertank.enabled"]?.value) return;
   b.textContent = t(run ? "flushStop" : "flushNow");
   b.disabled = !run && !(live.ok && live.state === 10 && !live.sw); // the firmware starts only from "ready" (kPidNormal), switch off

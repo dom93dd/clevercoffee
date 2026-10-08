@@ -544,7 +544,7 @@ namespace rd {
         h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16);
         h = hashAdd(h, m.offlineMode | m.wifiConnected << 1 | m.wifiBars << 2 | m.mqttEnabled << 5 | m.mqttConnected << 6);
         h = hashAdd(h, q(m.emergencyResetTemp, 0.1f));
-        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3);
+        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3 | m.flushReminder << 4);
 
         if (screen_ == Screen::EmergencyStop || screen_ == Screen::SensorError) {
             h = hashAdd(h, static_cast<int32_t>(nowMs / 500 % 2)); // blinking ring
@@ -1305,6 +1305,10 @@ namespace rd {
         else if (m.steamCooling) {
             // after steam the block is far over the setpoint: a flush through the group cools it fastest
             p.text(fonts::hint(), s.tooHotFlush, kCx, kRowBY, kCool);
+        }
+        else if (m.flushReminder) {
+            // coffee left on the shower screen: portafilter out, brew switch on for 2-3 s
+            p.text(fonts::hint(), s.pleaseFlush, kCx, kRowBY, kCool);
         }
         else if (drawConnectionHint(p, kRowBY)) {
             // a connection problem is shown instead

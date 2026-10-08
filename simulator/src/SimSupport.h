@@ -234,6 +234,12 @@ namespace sim {
                  m.setHeater(18);
                  m.warmupFlushPending = true;
              }},
+            {"ready-rinse", "Bereit nach einem Bezug: bitte spülen",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setHeater(18);
+                 m.flushReminder = true;
+             }},
             {"steam-switch", "Dampf über den Originalschalter (Thermostat heizt)",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(124.3f);

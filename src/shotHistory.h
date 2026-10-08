@@ -120,7 +120,19 @@ namespace shot_history {
         }
     }
 
+    // a shot since the last rinse: the display and the page say "Bitte spülen" (as GaggiMate's "flush pending") until
+    // the brew switch runs the group briefly (a brew under ShotLog::kFlushSeconds), a warm-up flush or a backflush
+    inline volatile bool flushPending = false;
+
+    inline void flushed() {
+        if (flushPending) {
+            flushPending = false;
+            LOG(INFO, "Group rinsed");
+        }
+    }
+
     inline void backflushDone() {
+        flushed();
         shotLog.backflushDone();
         saveLog();
         LOG(INFO, "Backflush done: shot counter reset");
@@ -205,10 +217,15 @@ namespace shot_history {
             }
 
             LOGF(INFO, "Shot logged: %.1f s, %.1f g", seconds, grams);
+            flushPending = true;
         }
         else {
             shotCurve.end(); // not a shot: no curve either
             flowMeter.stop();
+
+            if (seconds >= 1.0) { // the pump ran: a rinse (shorter: a slip of the switch)
+                flushed();
+            }
         }
     }
 

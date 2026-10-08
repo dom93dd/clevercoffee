@@ -820,10 +820,12 @@ test("Pre-Infusion (Test): Phase im Live-Bezug, im Bezugsdetail, in der Kurve un
   const user = seen[0].body.messages[0].content;
   assert.ok(user.includes("Pre-Infusion ist eingeschaltet (ein Test): 2,0 s Pumpstoß mit offenem Ventil, dann 4,0 s Pause, in der Pause bleibt das Ventil offen und die Pumpe pulst langsam weiter"), user);
   assert.ok(user.includes("mit Pre-Infusion 2,0 s + 4,0 s Pause (Ventil zu)"));
+  assert.ok(user.includes("31,0 s (davon 6,0 s Pre-Infusion, Bezug danach 25,0 s)"), "the time without it");
+  assert.ok(user.includes("die Laufzeit-Faustregel gilt für die Zeit danach"));
   await view(page).locator("#shotList .shot").first().click();
   const info = view(page).locator("#shotList .curve:not([hidden]) .shotinfo");
   await info.waitFor();
-  assert.match(await info.textContent(), /Pre-Infusion 2,0 s \+ 4,0 s Pause \(Ventil zu\) · erster Tropfen nach 7,5 s/);
+  assert.match(await info.textContent(), /Pre-Infusion 2,0 s \+ 4,0 s Pause \(Ventil zu\) · Bezug danach 25,0 s · erster Tropfen nach 7,5 s/);
   await view(page).locator("#shotList .curve:not([hidden]) canvas").waitFor();
   await page.screenshot({path: OUT + "brew-preinfusion-curve.png", fullPage: true});
   for (const [pi, label] of [[1, "Pre-Infusion"], [2, "Pause"], [0, "Bezug läuft"]]) {
@@ -866,6 +868,24 @@ test("Wartung: Protokoll über WLAN, Hinweis auf ein nicht gestartetes Update", 
   assert.equal(await view(page).locator("#bootInfo + p.err").textContent(), "Das letzte Update ist nicht gestartet, die vorige Firmware läuft.");
   const text = await (await fetch(BASE + "/log")).text();
   assert.match(text, /Round display ready/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Spülen nach dem Bezug: Hinweis, bis gespült ist; nicht während des Bezugs", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  const note = view(page).locator(".note.rinse");
+  assert.equal(await note.isVisible(), false, "no shot yet");
+  await mock(BASE, "/__live", {state: 10, fp: true});
+  await note.waitFor();
+  assert.equal(await note.textContent(), "Bitte spülen: Siebträger raus, ausklopfen, Bezugsschalter 2–3 s an. So bleibt kein Kaffee am Duschsieb.");
+  await tab(page, "Bezug");
+  await view(page).locator(".note.rinse").waitFor();
+  await mock(BASE, "/__live", {state: 20, brewTime: 1.2, fp: true}); // the rinse itself runs: not now
+  await view(page).locator(".note.rinse").waitFor({state: "hidden"});
+  await mock(BASE, "/__live", {state: 10, fp: false});
+  await page.waitForTimeout(1200);
+  assert.equal(await view(page).locator(".note.rinse").isVisible(), false, "rinsed");
   assert.deepEqual(errors, []);
   await ctx.close();
 });
