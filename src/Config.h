@@ -58,6 +58,7 @@ class Config {
             initializeConfigDefs();
 #ifdef CC_ORIONE
             pruneUnknownKeys();
+            addMissingDefaults();
 #endif
 
             return true;
@@ -325,6 +326,61 @@ class Config {
             if (!unknown.empty() && !save()) {
                 LOG(ERROR, "Failed to save config after dropping unused settings");
             }
+        }
+
+        /**
+         * @brief Settings a newer firmware brings get their defaults when an older config.json lacks them. get() would
+         *        read them as 0: after the update of 08.10.2026 the drop time brew.by_weight.lag was 0 s instead of 1 s.
+         */
+        void addMissingDefaults() {
+            int added = 0;
+
+            for (const auto& [path, def] : _configDefs) {
+                if (hasPath(path.c_str())) {
+                    continue;
+                }
+
+                const String p(path.c_str());
+
+                switch (def.type) {
+                    case ConfigDef::BOOL:
+                        setJsonValue(_doc, p, def.boolVal);
+                        break;
+                    case ConfigDef::INT:
+                        setJsonValue(_doc, p, def.intVal);
+                        break;
+                    case ConfigDef::DOUBLE:
+                        setJsonValue(_doc, p, def.doubleVal);
+                        break;
+                    case ConfigDef::STRING:
+                        setJsonValue(_doc, p, def.stringVal);
+                        break;
+                    default:
+                        continue;
+                }
+
+                LOGF(INFO, "New setting %s: its default", p.c_str());
+                added++;
+            }
+
+            if (added > 0 && !save()) {
+                LOG(ERROR, "Failed to save config after adding new settings");
+            }
+        }
+
+        bool hasPath(const char* path) const {
+            JsonVariantConst current = _doc.as<JsonVariantConst>();
+            const char* segment = path;
+
+            for (const char* dot; (dot = strchr(segment, '.')) != nullptr; segment = dot + 1) {
+                current = current[JsonString(segment, static_cast<size_t>(dot - segment))];
+
+                if (current.isNull()) {
+                    return false;
+                }
+            }
+
+            return !current[JsonString(segment, strlen(segment))].isNull();
         }
 
         void collectUnknownKeys(JsonObjectConst object, const String& prefix, std::vector<String>& unknown) const {
