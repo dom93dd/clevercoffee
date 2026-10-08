@@ -540,12 +540,12 @@ inline void serverSetup() {
         nvs_get_stats(nullptr, &nvs);
         char json[420];
         snprintf(json, sizeof(json),
-                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u},"fw":"%s","updateFailed":%s})",
+                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u},"fw":"%s","updateFailed":%s,"rssi":%d})",
                  orione_machine::startReason, static_cast<unsigned long>(millis() / 1000), static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
                  static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
                  unused("loopTask"), unused("async_tcp"), unused("nimble_host"), unused("scale"), unused("sse"), unused("loopGuard"),
                  static_cast<unsigned>(nvs.used_entries), static_cast<unsigned>(nvs.free_entries), firmware_guard::pending ? "pending" : "ok",
-                 firmware_guard::lastUpdateFailed ? "true" : "false");
+                 firmware_guard::lastUpdateFailed ? "true" : "false", static_cast<int>(WiFi.RSSI())); // dBm: inside the steel housing it got slow (08.10.2026)
         request->send(200, "application/json", json);
     });
 
