@@ -255,6 +255,10 @@ Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 m
 #include "orioneMachine.h"
 #include "warmupFlush.h"
 
+// loop() never used more than ~3 KB of its 8 KB (GET /boot, 08.10.2026, also while saving settings): 6 KB, the
+// 2 KB go to the web server's task (platformio.ini)
+SET_LOOP_TASK_STACK_SIZE(6 * 1024);
+
 // A firmware from WiFi stays "pending verify" until firmware_guard confirms it (src/firmwareGuard.h), instead of
 // Arduino confirming it before setup(): a firmware that fails at the start goes back to the previous one
 extern "C" bool verifyRollbackLater() {

@@ -70,5 +70,5 @@ inline void loopGuardTask(void*) {
  * @brief Starts the watcher (once, at the end of setup())
  */
 inline void loopGuardStart() {
-    xTaskCreatePinnedToCore(loopGuardTask, "loopGuard", 2048, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(loopGuardTask, "loopGuard", 1536, nullptr, 2, nullptr, 0); // used ~0.7 KB at most (GET /boot)
 }
