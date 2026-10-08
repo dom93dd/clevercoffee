@@ -461,6 +461,13 @@ class Config {
             _configDefs.emplace("brew.grind_scale", ConfigDef::forInt(0, 0, 2)); // 0 not known, 1 higher number = finer, 2 higher number = coarser
             _configDefs.emplace("backflush.remind_after", ConfigDef::forInt(BACKFLUSH_REMIND_AFTER, 0, BACKFLUSH_REMIND_MAX));
             _configDefs.emplace("brew.warmup_flush", ConfigDef::forBool(true)); // only with a water level sensor (src/warmupFlush.h)
+            // src/machineCare.h, lib/Orione/src/OrioneCare.h
+            _configDefs.emplace("schedule.enabled", ConfigDef::forBool(false));
+            _configDefs.emplace("schedule.days", ConfigDef::forInt(127, 0, 127)); // bit 0 = Monday
+            _configDefs.emplace("schedule.on", ConfigDef::forInt(390, 0, 1439));  // minute of the day, local time
+            _configDefs.emplace("schedule.off", ConfigDef::forInt(1440, 0, 1440)); // 1440: no off time
+            _configDefs.emplace("descale.litres", ConfigDef::forDouble(40.0, 0.0, 300.0)); // 0: no reminder
+            _configDefs.emplace("brew.temp_end", ConfigDef::forDouble(0.0, -5.0, 5.0));
 #endif
 
             // Pre-infusion

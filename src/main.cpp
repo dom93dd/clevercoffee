@@ -813,6 +813,29 @@ void handleMachineState() {
                     }
                 }
 
+#ifdef CC_ORIONE
+                // The brew switch only wakes the machine: heating and display on, no water through the cold group. A
+                // shot needs the switch off and on again, as the first touch on professional machines only wakes them
+                // (Dominik, 08.10.2026: "standby soll dann deaktiviert werden mit s3 bezug on off oder?")
+                // Only a switch turned on during standby wakes it, not one left on when the standby began (OrioneCare.h)
+                static orione::StandbyWake standbyWake;
+                checkBrewSwitch();
+
+                if (standbyWake.update(millis(), currBrewSwitchState != kBrewSwitchIdle)) {
+                    currBrewSwitchState = kBrewSwitchWaitForRelease;
+                    brewSwitchWasOff = false;
+                    setRuntimePidState(true);
+                    machineState = kPidNormal;
+                    resetStandbyTimer(machineState);
+                    LOG(INFO, "Brew switch: woken from standby");
+
+                    if (u8g2 != nullptr) {
+                        u8g2->setPowerSave(0);
+                    }
+
+                    break;
+                }
+#else
                 if (brew()) {
                     setRuntimePidState(true);
                     machineState = kBrew;
@@ -822,6 +845,7 @@ void handleMachineState() {
                         u8g2->setPowerSave(0);
                     }
                 }
+#endif
 
                 if (manualFlush()) {
                     setRuntimePidState(true);
@@ -1239,6 +1263,7 @@ void setup() {
 #ifdef CC_ORIONE
     shot_history::begin();
     bean_profiles::begin();
+    care::begin();
 #endif
 
     ROUND_TIMING_DO(round_timing::heapMark("before wifi"));
@@ -1456,6 +1481,55 @@ void setup() {
         }
     }
 }
+
+#ifdef CC_ORIONE
+/**
+ * Heating schedule (machineCare.h, OrioneCare.h): at the on time the controller goes on (out of standby too), at the
+ * off time the machine goes into standby with the display off, as the standby timer does it. Needs the main switch on.
+ * An off time during a shot or a backflush waits until the machine is idle.
+ */
+void scheduleLoop() {
+    static unsigned long lastCheck = 0;
+    static bool offPending = false;
+
+    if (millis() - lastCheck < 1000) {
+        return;
+    }
+
+    lastCheck = millis();
+    struct tm t;
+
+    if (!care::localNow(t)) {
+        return; // no clock yet
+    }
+
+    const auto action = care::schedule.update(config.get<bool>("schedule.enabled"), static_cast<uint8_t>(config.get<int>("schedule.days")), static_cast<uint16_t>(config.get<int>("schedule.on")),
+                                              static_cast<uint16_t>(config.get<int>("schedule.off")), (t.tm_wday + 6) % 7, t.tm_hour * 60 + t.tm_min);
+
+    if (action == orione::Schedule::kOn) {
+        offPending = false;
+
+        if (!pidON || machineState == kStandby) {
+            LOG(INFO, "Schedule: heating on");
+            setRuntimePidState(true);
+        }
+    }
+    else if (action == orione::Schedule::kOff) {
+        offPending = true;
+    }
+
+    if (offPending && (machineState == kPidNormal || machineState == kPidDisabled || machineState == kWaterTankEmpty || machineState == kStandby)) {
+        offPending = false;
+
+        if (machineState != kStandby) {
+            LOG(INFO, "Schedule: standby");
+            machineState = kStandby;
+            setRuntimePidState(false);
+            standbyModeRemainingTimeDisplayOffMillis = 0; // display off now
+        }
+    }
+}
+#endif
 
 void loop() {
 #ifdef ROUND_DISPLAY
@@ -1719,9 +1793,19 @@ void loopPid() {
         setpoint = brewSetpoint;
     }
 
+#ifdef CC_ORIONE
+    // temperature course during the shot (brew.temp_end, OrioneCare.h): from the brew temperature to it plus the
+    // setting over the target time (30 s without one); the display and the page keep showing the set temperature
+    if (machineState == kBrew && checkBrewActive() && !steamON) {
+        setpoint = orione::TempProfile::setpoint(brewSetpoint, config.get<double>("brew.temp_end"), currBrewTime / 1000.0, totalTargetBrewTime > 0 ? totalTargetBrewTime / 1000.0 : 30.0);
+    }
+#endif
+
     updateStandbyTimer();
     handleMachineState();
 #ifdef CC_ORIONE
+    scheduleLoop();
+    care::loop(checkBrewActive() || machineState == kBackflush);
     brewSafetyStop();
     warmup_flush::loop();
     orione_machine::loop();

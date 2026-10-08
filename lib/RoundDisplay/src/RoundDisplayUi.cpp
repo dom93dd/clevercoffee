@@ -541,7 +541,7 @@ namespace rd {
         h = hashAdd(h, m.scaleEnabled | m.scaleFault << 1 | m.bleScale << 2 | m.bleScaleConnected << 3);
         h = hashAdd(h, q(m.brewWeight, 0.1f));
         h = hashAdd(h, q(m.brewTargetWeight, 0.1f));
-        h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16);
+        h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16 | m.cleaningPhase << 24);
         h = hashAdd(h, m.offlineMode | m.wifiConnected << 1 | m.wifiBars << 2 | m.mqttEnabled << 5 | m.mqttConnected << 6);
         h = hashAdd(h, q(m.emergencyResetTemp, 0.1f));
         h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3 | m.flushReminder << 4 | m.backflushDone << 5);
@@ -1645,16 +1645,29 @@ namespace rd {
         p.setLayer(Layer::Content);
         p.text(fonts::label(), s.backflush, kCx, kLabelY, kBrew);
 
+        const bool ending = m.backflushPhase == BackflushPhase::Ending || m.backflushPhase == BackflushPhase::Finished;
+
         if (running) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%d/%d", m.backflushCycle, m.backflushCycles);
             p.text(fonts::big(), buf, kCx, kValueY, kText);
             p.text(fonts::textSmall(), m.backflushPhase == BackflushPhase::Filling ? s.filling : s.flushing, kCx, kRowAY, kTextDim);
         }
+        else if (m.cleaningPhase == 2 || (ending && m.cleaningPhase == 1)) {
+            // detergent cycles done: the basket comes out for a rinse, then the same cycles with clear water
+            p.text(fonts::text(), s.rinseBasket, kCx, 124.0f, kText);
+            p.text(fonts::text(), s.switchOffOn, kCx, 150.0f, kTextDim);
+        }
         else {
-            const bool ending = m.backflushPhase == BackflushPhase::Ending || m.backflushPhase == BackflushPhase::Finished;
             p.text(fonts::text(), ending ? s.switchOff : s.switchOn, kCx, 124.0f, kText);
             p.text(fonts::text(), ending ? s.toFinish : s.toStart, kCx, 150.0f, kTextDim);
+        }
+
+        if (m.cleaningPhase == 1 && !ending) {
+            p.text(fonts::hint(), s.cleaner, kCx, kRowBY, kHeat);
+        }
+        else if (m.cleaningPhase == 3) {
+            p.text(fonts::hint(), s.clearWater, kCx, kRowBY, kCool);
         }
     }
 

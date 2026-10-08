@@ -88,6 +88,7 @@ namespace rd {
             BackflushPhase backflushPhase = BackflushPhase::Idle;
             uint8_t backflushCycle = 0;
             uint8_t backflushCycles = 0;
+            uint8_t cleaningPhase = 0; // cleaning with detergent (Orione): 1 detergent cycles, 2 rinse the basket out, 3 clear water
 
             // Connectivity
             bool offlineMode = false;

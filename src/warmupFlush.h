@@ -15,6 +15,7 @@ namespace warmup_flush {
 
     inline orione::WarmupFlush flush;
     inline bool flowing = false;
+    inline unsigned long flowSince = 0;
 
     inline portMUX_TYPE requestLock = portMUX_INITIALIZER_UNLOCKED;
     inline int8_t request = 0; // set by the web server task: 1 start, -1 stop
@@ -64,10 +65,12 @@ namespace warmup_flush {
             if (flow) {
                 valveRelay->on();
                 pumpRelay->on();
+                flowSince = millis();
             }
             else {
                 pumpRelay->off();
                 valveRelay->off();
+                care::rinse((millis() - flowSince) / 1000.0f); // water through the block, for the descaling reminder
             }
         }
 

@@ -116,6 +116,7 @@ namespace live_events {
             int pi;        // pre-infusion: 0 not now, 1 the burst, 2 the pause
             bool fp;       // a shot since the last rinse (shot_history::flushPending)
             bool bfd;      // backflush done, brew switch still on (backflushSwitchReminder)
+            int clean;     // cleaning with detergent: orione::CleaningProgram::Phase
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -141,8 +142,8 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
-                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s})", v.held ? "true" : "false", v.sw ? "true" : "false", v.steam,
-                         v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false");
+                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s,"clean":%d})", v.held ? "true" : "false", v.sw ? "true" : "false",
+                         v.steam, v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false", v.clean);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -279,6 +280,12 @@ inline void serverSetup() {
             return request->requestAuthentication();
         }
 
+#ifdef CC_ORIONE
+        if (request->hasParam("cleaner")) { // cleaning with detergent: backflush mode on with the program (orioneMachine.h)
+            care::cleaningRequested = true;
+            return request->send(202, "text/plain", "ok");
+        }
+#endif
         backflushOn = !backflushOn;
         LOGF(DEBUG, "Toggle backflush mode: %s", backflushOn ? "on" : "off");
 
@@ -746,6 +753,44 @@ inline void serverSetup() {
         request->send(response);
     }));
 
+    // shot i becomes the reference under the curves (?i=&at=&s= as for delete), ?clear=1 removes it
+    server.on("/shot/reference", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (request->hasParam("clear")) {
+            shot_history::requestReference(shot_history::kRefClear, 0, 0);
+            return request->send(200, "text/plain", "OK");
+        }
+
+        const long i = request->hasParam("i") ? request->getParam("i")->value().toInt() : -1;
+        const uint32_t at = request->hasParam("at") ? static_cast<uint32_t>(request->getParam("at")->value().toInt()) : 0;
+        const float s = request->hasParam("s") ? request->getParam("s")->value().toFloat() : -1.0f;
+
+        if (!shot_history::isShot(static_cast<int>(i), at, s)) {
+            return request->send(409, "text/plain", "not that shot");
+        }
+
+        shot_history::requestReference(static_cast<int>(i), at, s);
+        request->send(200, "text/plain", "OK");
+    });
+
+    server.on("/reference", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        shot_history::writeReferenceJson(*response);
+        request->send(response);
+    }));
+
+    // counters and the water since the last descaling (machineCare.h)
+    server.on("/care", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        const int standby = standbyModeOn && machineState != kStandby ? static_cast<int>((standbyModeRemainingTimeMillis + 59999) / 60000) : -1;
+        care::writeJson(*response, config.get<float>("descale.litres"), standby, static_cast<int>(WiFi.RSSI()));
+        request->send(response);
+    }));
+
+    server.on("/care/descaled", HTTP_POST, [](AsyncWebServerRequest* request) {
+        care::descaled(shot_history::nowUtc());
+        request->send(200, "text/plain", "OK");
+    });
+
     server.on("/shot", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         const int i = request->hasParam("i") ? request->getParam("i")->value().toInt() : 0;
         AsyncResponseStream* response = request->beginResponseStream("application/json");
@@ -1043,7 +1088,7 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
                           brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle, static_cast<int>(orione_machine::steam.phase()),
                           currBrewState == kPreinfusion ? 1 : currBrewState == kPreinfusionPause ? 2 : 0, shot_history::flushPending,
-                          backflushSwitchReminder});
+                          backflushSwitchReminder, static_cast<int>(care::cleaning.phase())});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

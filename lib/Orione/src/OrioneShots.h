@@ -49,7 +49,7 @@ namespace orione {
             uint16_t flowStopCs = 0;      // the flow when the pump stopped, 0.01 g/s
             uint8_t piTenths = 0;         // pre-infusion: the pump's burst, 0.1 s, 0 = none
             uint8_t piPauseTenths = 0;    // and the pause after it, 0.1 s
-            uint8_t piFlags = 0;          // kPauseValveOpen: the valve stayed open in the pause (the Pulsor board pulsed)
+            uint8_t piFlags = 0;          // kPauseValveOpen: the valve stayed open in the pause (the Pulsor board pulsed); kChanneling
     };
 
     /** A shot as saved by format 6 (before lagCs and flowStopCs): read once after the update, then saved as 7 */
@@ -190,6 +190,14 @@ namespace orione {
             }
 
             static constexpr uint8_t kPauseValveOpen = 1;
+            static constexpr uint8_t kChanneling = 2; // the flow jumped during the shot (OrioneCare.h, ChannelCheck)
+
+            /** The flow of the newest shot jumped (ChannelCheck) */
+            void noteChanneling() {
+                if (count_ > 0) {
+                    shots_[0].piFlags |= kChanneling;
+                }
+            }
 
             /** Pre-infusion of the newest shot: burst and pause in seconds (burst and pause 0: none) */
             void notePreinfusion(const float burstSeconds, const float pauseSeconds, const bool valveOpen) {
@@ -203,7 +211,7 @@ namespace orione {
                 };
                 shots_[0].piTenths = tenths(burstSeconds);
                 shots_[0].piPauseTenths = tenths(pauseSeconds);
-                shots_[0].piFlags = (shots_[0].piTenths || shots_[0].piPauseTenths) && valveOpen ? kPauseValveOpen : 0;
+                shots_[0].piFlags = static_cast<uint8_t>((shots_[0].piFlags & ~kPauseValveOpen) | ((shots_[0].piTenths || shots_[0].piPauseTenths) && valveOpen ? kPauseValveOpen : 0));
             }
 
             /** Temperature at the start and the first drops of the newest shot (< 0: unknown) */

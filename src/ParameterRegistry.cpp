@@ -316,6 +316,15 @@ void ParameterRegistry::initialize(Config& config) {
                                "Remind of a backflush after this many shots (0 = never)");
     addBoolConfigParam("brew.warmup_flush", "Warm-up flush after a cold start", sMaintenanceSection, 405, nullptr,
                        "Three short flushes once the temperature has settled after a cold start (only with a water level sensor)");
+    // src/machineCare.h: schedule, descaling, cleaning with detergent, temperature course
+    addBoolConfigParam("schedule.enabled", "Heating schedule", sPowerSection, 710, nullptr, "Heat at a set time; the main switch stays on");
+    addNumericConfigParam<int>("schedule.days", "Schedule days", kInteger, sPowerSection, 711, nullptr, 0, 127, "Bit 0 = Monday ... bit 6 = Sunday");
+    addNumericConfigParam<int>("schedule.on", "Schedule on", kInteger, sPowerSection, 712, nullptr, 0, 1439, "Minute of the day, local time");
+    addNumericConfigParam<int>("schedule.off", "Schedule off", kInteger, sPowerSection, 713, nullptr, 0, 1440, "Minute of the day, 1440 = none");
+    addNumericConfigParam<double>("descale.litres", "Descale after (l)", kDouble, sMaintenanceSection, 406, nullptr, 0.0, 300.0,
+                                  "Estimated water through the thermoblock until the reminder (0 = none)");
+    addNumericConfigParam<double>("brew.temp_end", "Temperature at the end (K)", kDouble, sTempSection, 206, nullptr, -5.0, 5.0,
+                                  "The setpoint moves to setpoint + this during the shot (0 = off)");
 #endif
 
         addBoolConfigParam(

@@ -11,6 +11,7 @@
 #include <OrioneFixed.h>
 #include <OrioneFlow.h>
 #include <OrioneBeans.h>
+#include <OrioneCare.h>
 #include <OrioneHeat.h>
 #include <OrioneLogRing.h>
 #include <OrioneShots.h>
@@ -1078,6 +1079,139 @@ void test_log_ring_keeps_the_newest_lines() {
     TEST_ASSERT_FALSE(r.valid());
 }
 
+
+void test_schedule_fires_once_at_its_minute_on_its_days() {
+    orione::Schedule s;
+    const uint8_t weekdays = 0b0011111; // Monday to Friday
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, weekdays, 390, 1320, 0, 390)); // just started at 6:30: no catching up
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, weekdays, 390, 1320, 0, 391));
+    orione::Schedule t;
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 1, 389)); // Tuesday 6:29
+    TEST_ASSERT_EQUAL(orione::Schedule::kOn, t.update(true, weekdays, 390, 1320, 1, 390));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 1, 390)); // same minute again: once
+    TEST_ASSERT_EQUAL(orione::Schedule::kOff, t.update(true, weekdays, 390, 1320, 1, 1320)); // 22:00
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 5, 389)); // Saturday: not set
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 5, 390));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, orione::Schedule::kNoTime, 0, 1320)); // no off time
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(false, weekdays, 390, 1320, 1, 389));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(false, weekdays, 390, 1320, 1, 390)); // switched off
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 1, 410)); // jumped over 6:30: no
+}
+
+void test_standby_wakes_only_on_a_switch_turned_on_during_it() {
+    orione::StandbyWake w;
+    // the switch was left on when the standby began: no wake, not even after minutes
+    TEST_ASSERT_FALSE(w.update(1000, true));
+    TEST_ASSERT_FALSE(w.update(200000, true));
+    // off, then on: wake once
+    TEST_ASSERT_FALSE(w.update(200010, false));
+    TEST_ASSERT_TRUE(w.update(200020, true));
+    TEST_ASSERT_FALSE(w.update(200030, true));
+    // a later standby (a gap in the calls) with the switch still on: no wake
+    TEST_ASSERT_FALSE(w.update(900000, true));
+    // a later standby with the switch off: the first turn on wakes
+    orione::StandbyWake v;
+    TEST_ASSERT_FALSE(v.update(5000, false));
+    TEST_ASSERT_TRUE(v.update(5010, true));
+    // the clock running over (millis() after 49 days) is no gap
+    orione::StandbyWake o;
+    TEST_ASSERT_FALSE(o.update(0xFFFFFF00u, false));
+    TEST_ASSERT_TRUE(o.update(0x00000010u, true));
+}
+
+void test_water_estimates() {
+    TEST_ASSERT_EQUAL_UINT32(50, orione::Water::shotMl(33.4f, 16.5f, 28.0f)); // cup + what the puck keeps
+    TEST_ASSERT_EQUAL_UINT32(56, orione::Water::shotMl(-1.0f, 16.5f, 28.0f)); // no scale: the time
+    TEST_ASSERT_EQUAL_UINT32(24, orione::Water::rinseMl(3.0f));
+    TEST_ASSERT_EQUAL_UINT32(50, orione::Water::backflushMl(5, 5.0f));
+    TEST_ASSERT_EQUAL_UINT32(0, orione::Water::rinseMl(NAN));
+}
+
+void test_stats_count_days_weeks_and_descaling() {
+    orione::MachineStats m;
+    // 2026-10-08 (a Thursday) 07:00 local
+    const int64_t thursday = 1791443200LL + 7 * 3600;
+    const int32_t d = orione::MachineStats::dayOf(thursday);
+    TEST_ASSERT_EQUAL_INT32(orione::MachineStats::weekOf(d), orione::MachineStats::weekOf(d - 3)); // Monday: same week
+    TEST_ASSERT_NOT_EQUAL(orione::MachineStats::weekOf(d), orione::MachineStats::weekOf(d - 4)); // Sunday before: not
+    m.shot(16.5f, 50, d);
+    m.shot(16.5f, 50, d);
+    TEST_ASSERT_EQUAL_UINT16(2, m.today(d));
+    TEST_ASSERT_EQUAL_UINT16(2, m.week(d));
+    m.shot(18.0f, 54, d + 1); // Friday
+    TEST_ASSERT_EQUAL_UINT16(0, m.today(d)); // a day later the count is the new day's
+    TEST_ASSERT_EQUAL_UINT16(1, m.today(d + 1));
+    TEST_ASSERT_EQUAL_UINT16(3, m.week(d + 1));
+    m.shot(16.5f, 50, d + 4); // Monday: a new week
+    TEST_ASSERT_EQUAL_UINT16(1, m.week(d + 4));
+    TEST_ASSERT_EQUAL_UINT32(4, m.total());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 67.5f, m.doseGrams());
+    m.shot(0.0f, 30, -1); // clock not set: counts in all, not by day
+    TEST_ASSERT_EQUAL_UINT32(5, m.total());
+    m.water(24);
+    TEST_ASSERT_EQUAL_UINT32(258, m.waterMl());
+    TEST_ASSERT_FALSE(m.descaleDue(0.0f)); // no reminder
+    TEST_ASSERT_TRUE(m.descaleDue(0.2f));
+    m.descaled(1791443200u);
+    TEST_ASSERT_EQUAL_UINT32(0, m.waterMl());
+    TEST_ASSERT_EQUAL_UINT32(5, m.total()); // the counters stay
+    const auto st = m.stored();
+    orione::MachineStats back;
+    TEST_ASSERT_TRUE(back.restore(&st, sizeof(st)));
+    TEST_ASSERT_EQUAL_UINT32(5, back.total());
+    TEST_ASSERT_EQUAL_UINT16(1, back.week(d + 4));
+    TEST_ASSERT_FALSE(back.restore(&st, sizeof(st) - 1));
+}
+
+void test_cleaning_with_detergent_then_rinse() {
+    orione::CleaningProgram c;
+    TEST_ASSERT_TRUE(c.cyclesDone()); // no program: backflush is over after its cycles
+    c.start();
+    TEST_ASSERT_EQUAL(orione::CleaningProgram::kDetergent, c.phase());
+    c.cyclesStart();
+    TEST_ASSERT_EQUAL(orione::CleaningProgram::kDetergent, c.phase());
+    TEST_ASSERT_FALSE(c.cyclesDone()); // detergent done: rinse it out
+    TEST_ASSERT_EQUAL(orione::CleaningProgram::kRinseOut, c.phase());
+    c.cyclesStart(); // brew switch on again: clear water
+    TEST_ASSERT_EQUAL(orione::CleaningProgram::kRinse, c.phase());
+    TEST_ASSERT_TRUE(c.cyclesDone());
+    TEST_ASSERT_EQUAL(orione::CleaningProgram::kOff, c.phase());
+}
+
+void test_temperature_course_during_the_shot() {
+    using T = orione::TempProfile;
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 94.0f, T::setpoint(94.0, -3.0, 0.0, 30.0));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 92.5f, T::setpoint(94.0, -3.0, 15.0, 30.0));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 91.0f, T::setpoint(94.0, -3.0, 45.0, 30.0)); // after the end: the end value
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 94.0f, T::setpoint(94.0, 0.0, 15.0, 30.0));  // off
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 89.0f, T::setpoint(94.0, -9.0, 30.0, 30.0)); // at most 5 K
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 94.0f, T::setpoint(94.0, 2.0, 10.0, 0.0));   // no duration: off
+}
+
+void test_channeling_found_in_a_flow_jump_not_in_a_steady_rise() {
+    using C = orione::ChannelCheck;
+    // the machine's shot of 08.10.2026, 0.5 s apart: first drops after 12 s (pre-infusion), slow rise to 1.9 g/s
+    const float steady[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.1f, 2.1f, 1.8f, 1.4f, 1.2f, 1.1f, 1.1f, 1.1f,
+                            1.4f, 1.3f, 1.5f, 1.6f, 1.5f, 1.6f, 1.8f, 1.8f, 1.8f, 1.9f};
+    TEST_ASSERT_TRUE(C::find(steady, sizeof(steady) / sizeof(steady[0]), 0.5f, 12.0f) < 0.0f);
+    // the same with water breaking through at 17 s: 1.5 -> 3.0 g/s and stays
+    float jump[sizeof(steady) / sizeof(steady[0])];
+    std::memcpy(jump, steady, sizeof(steady));
+    for (int i = 34; i < 42; ++i) {
+        jump[i] = 3.0f;
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 17.0f, C::find(jump, sizeof(jump) / sizeof(jump[0]), 0.5f, 12.0f));
+    // one bumped value is no channel
+    float bump[sizeof(steady) / sizeof(steady[0])];
+    std::memcpy(bump, steady, sizeof(steady));
+    bump[36] = 3.2f;
+    TEST_ASSERT_TRUE(C::find(bump, sizeof(bump) / sizeof(bump[0]), 0.5f, 12.0f) < 0.0f);
+    // the rise right after the first drops is no channel either
+    TEST_ASSERT_TRUE(C::find(steady, 30, 0.5f, 12.0f) < 0.0f);
+    TEST_ASSERT_TRUE(C::find(nullptr, 10, 0.5f, 1.0f) < 0.0f);
+    TEST_ASSERT_TRUE(C::find(steady, 42, 0.5f, -1.0f) < 0.0f); // no first drops known: no scale
+}
+
 void test_shot_keeps_its_preinfusion() {
     orione::ShotLog log;
     log.record(29.0f, 36.0f, 0, 0);
@@ -1099,6 +1233,10 @@ void test_shot_keeps_its_preinfusion() {
     const auto stored = log.stored();
     orione::ShotLog back;
     TEST_ASSERT_TRUE(back.restore(&stored, sizeof(stored)));
+    log.noteChanneling();
+    TEST_ASSERT_EQUAL(orione::ShotLog::kChanneling, log.at(0).piFlags & orione::ShotLog::kChanneling);
+    log.notePreinfusion(2.0f, 4.0f, true); // keeps the channeling mark
+    TEST_ASSERT_EQUAL(orione::ShotLog::kChanneling | orione::ShotLog::kPauseValveOpen, log.at(0).piFlags);
     TEST_ASSERT_EQUAL(15, back.at(2).piTenths); // newest first: the second shot is third now
     TEST_ASSERT_EQUAL(60, back.at(2).piPauseTenths);
     TEST_ASSERT_EQUAL(orione::ShotLog::kPauseValveOpen, back.at(2).piFlags);
@@ -1177,5 +1315,12 @@ int main() {
     RUN_TEST(test_shot_keeps_target_weight_at_stop_and_lead);
     RUN_TEST(test_shot_keeps_its_preinfusion);
     RUN_TEST(test_log_ring_keeps_the_newest_lines);
+    RUN_TEST(test_schedule_fires_once_at_its_minute_on_its_days);
+    RUN_TEST(test_standby_wakes_only_on_a_switch_turned_on_during_it);
+    RUN_TEST(test_water_estimates);
+    RUN_TEST(test_stats_count_days_weeks_and_descaling);
+    RUN_TEST(test_cleaning_with_detergent_then_rinse);
+    RUN_TEST(test_temperature_course_during_the_shot);
+    RUN_TEST(test_channeling_found_in_a_flow_jump_not_in_a_steady_rise);
     return UNITY_END();
 }

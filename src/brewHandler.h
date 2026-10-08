@@ -576,6 +576,9 @@ inline void backflush() {
                 LOGF(INFO, "Start backflush cycle %d", currBackflushCycles);
                 LOG(INFO, "Backflush: filling portafilter");
                 currBackflushState = kBackflushFilling;
+#ifdef CC_ORIONE
+                care::cleaning.cyclesStart(); // after the detergent and the rinsed-out basket: the cycles with clear water
+#endif
             }
 
             break;
@@ -621,8 +624,17 @@ inline void backflush() {
             if (millis() - startingTime > backflushFlushTime * 1000) {
                 currBackflushState = kBackflushFinished;
 #ifdef CC_ORIONE
-                shot_history::backflushDone(); // all cycles run: the reminder starts counting again
-                backflushCompleted = true;
+                care::backflushed(backflushCycles, static_cast<float>(backflushFillTime));
+
+                // with detergent (care::cleaning): the first round leaves backflush mode on, the basket is rinsed out
+                // and the brew switch starts the same cycles with clear water
+                if (care::cleaning.phase() == orione::CleaningProgram::kOff || care::cleaning.cyclesDone()) {
+                    shot_history::backflushDone(); // all cycles run: the reminder starts counting again
+                    backflushCompleted = true;
+                }
+                else {
+                    LOG(INFO, "Cleaning: detergent cycles done, rinse the basket out, then the brew switch off and on again");
+                }
 #endif
             }
 

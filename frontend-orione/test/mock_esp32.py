@@ -11,7 +11,7 @@ for backflush and tare, a config upload that needs a restart, SSE live values.
 Test hooks: GET /__posts (POST requests so far), GET /__state (values, restarts),
 POST /__live (JSON merged into the SSE values; {"noBeans": true}: GET /beans answers 404), POST /__shot (log a shot),
 POST /__bf (backflush counter), POST /__param (JSON {name: value}: a value the machine changed itself, e.g. the learned
-drop time), POST /__reset (fresh state).
+drop time), POST /__care (JSON merged into GET /care), POST /__reset (fresh state).
 """
 
 import argparse
@@ -78,6 +78,12 @@ BASE = {
     "brew.warmup_flush": dict(type=1, value=1, min=0, max=1),
     "hardware.sensors.watertank.mode": dict(type=5, value=1, min=0, max=1, options=["Normally Open", "Normally Closed"], reboot=True),
     "hardware.sensors.scale.enabled": dict(type=1, value=1, min=0, max=1, reboot=True),
+    "schedule.enabled": dict(type=1, value=0, min=0, max=1),
+    "schedule.days": dict(type=0, value=127, min=0, max=127),
+    "schedule.on": dict(type=0, value=390, min=0, max=1439),
+    "schedule.off": dict(type=0, value=1440, min=0, max=1440),
+    "descale.litres": dict(type=2, value=40.0, min=0, max=300),
+    "brew.temp_end": dict(type=2, value=0.0, min=-5, max=5),
 }
 
 
@@ -98,6 +104,10 @@ class State:
         self.beans = []         # recipes per bean as src/beanProfiles.h keeps them: {"n","d","m","tw","t","lg","used"}
         self.bean_live = None   # the current bean's values as last seen
         self.bean_clock = 0
+        # src/machineCare.h: counters and the water through the thermoblock since descaling (ml)
+        self.care = {"today": 3, "week": 12, "total": 245, "coffee": 4410.0, "water": 12300, "descaledAt": 0}
+        self.reference = None  # src/shotHistory.h: {"shot": {...}, "curve": {...}} or None
+        self.clean = 0         # cleaning with detergent: orione::CleaningProgram::Phase
         self.lock = threading.Lock()
 
     # ---- beans: the firmware's loop (src/beanProfiles.h), run here before each request instead of every 0.5 s
@@ -183,7 +193,27 @@ class State:
         self.scale_at_boot = self.p["hardware.sensors.scale.enabled"]["value"]
         self.p["BACKFLUSH_ON"]["value"] = 0
         self.p["TARE_ON"]["value"] = 0
+        self.clean = 0
         self.restarts += 1
+
+    def care_json(self):
+        limit = self.p["descale.litres"]["value"]
+        standby = 23 if self.p["standby.enabled"]["value"] else -1
+        return {**self.care, "descaleL": limit, "due": limit > 0 and self.care["water"] >= limit * 1000, "standby": standby, "rssi": self.care.get("rssi", -71)}
+
+    @staticmethod
+    def curve(shot):
+        """a curve as src/shotHistory.h writes it, made up from the shot"""
+        n = int((shot["s"] + 4) / 0.5) + 1
+        stop = int(shot["s"] / 0.5) + 1
+        def grams(k):
+            t = k * 0.5
+            if t < 6: return 0
+            return round(min(t - 6, shot["s"] - 6) / (shot["s"] - 6) * shot["g"] * 10 + (4 if t > shot["s"] else 0))
+        w = None if shot.get("g") is None else [grams(k) for k in range(n)]
+        f = None if w is None else [max(0, (w[min(k + 1, n - 1)] - w[max(k - 1, 0)]) * 10) for k in range(n)]  # hundredths of g/s
+        temp = [round((93.5 - 1.6 * (1 if 4 < k * 0.5 < shot["s"] else 0) * min(1, (k * 0.5 - 4) / 6)) * 10) for k in range(n)]
+        return {"dt": 500, "stop": stop, "w": w, "t": temp, "f": f}
 
     def json_param(self, name):
         d = self.p[name]
@@ -246,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, ASSETS[name], kind)
         if url.path == "/shots":
             with S.lock:
-                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 0, "lg": None, "fs": None, "pi": None, **x} for x in S.shots[:5]]
+                shots = [{"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 0, "lg": None, "fs": None, "pi": None, "ch": False, **x} for x in S.shots[:5]]
                 return self.send(200, json.dumps({"now": int(time.time()), "bf": S.bf, "shots": shots}), "application/json")
         if url.path == "/shot":  # curve as src/shotHistory.h writes it, made up from the shot
             i = int(q.get("i", ["0"])[0])
@@ -254,16 +284,13 @@ class Handler(BaseHTTPRequestHandler):
                 shot = S.shots[i] if 0 <= i < min(5, len(S.shots)) else None
             if not shot or shot.get("nocurve"):
                 return self.send(404, "no curve")
-            n = int((shot["s"] + 4) / 0.5) + 1
-            stop = int(shot["s"] / 0.5) + 1
-            def grams(k):
-                t = k * 0.5
-                if t < 6: return 0
-                return round(min(t - 6, shot["s"] - 6) / (shot["s"] - 6) * shot["g"] * 10 + (4 if t > shot["s"] else 0))
-            w = None if shot.get("g") is None else [grams(k) for k in range(n)]
-            f = None if w is None else [max(0, (w[min(k + 1, n - 1)] - w[max(k - 1, 0)]) * 10) for k in range(n)]  # hundredths of g/s
-            temp = [round((93.5 - 1.6 * (1 if 4 < k * 0.5 < shot["s"] else 0) * min(1, (k * 0.5 - 4) / 6)) * 10) for k in range(n)]
-            return self.send(200, json.dumps({"dt": 500, "stop": stop, "w": w, "t": temp, "f": f}), "application/json")
+            return self.send(200, json.dumps(S.curve(shot)), "application/json")
+        if url.path == "/reference":
+            with S.lock:
+                return self.send(200, json.dumps(S.reference), "application/json")
+        if url.path == "/care":
+            with S.lock:
+                return self.send(200, json.dumps(S.care_json()), "application/json")
         if url.path == "/beans":
             if S.live.get("noBeans"):  # firmware without bean profiles
                 return self.send(404, "not found")
@@ -311,7 +338,8 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False}
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False,
+                            "clean": S.clean}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
@@ -335,12 +363,19 @@ class Handler(BaseHTTPRequestHandler):
                         continue  # the firmware ignores empty values, except for these
                     if k in S.p and S.shown(k):
                         d = S.p[k]
-                        d["value"] = vals[0] if d["type"] == 4 else (int(float(vals[0])) if d["type"] in (1, 5) else float(vals[0]))
+                        d["value"] = vals[0] if d["type"] == 4 else (int(float(vals[0])) if d["type"] in (0, 1, 5) else float(vals[0]))
             return self.send(200, "OK")
+        if url.path == "/toggleBackflush" and "cleaner" in url.query:  # cleaning with detergent (src/orioneMachine.h)
+            with S.lock:
+                S.p["BACKFLUSH_ON"]["value"] = 1
+                S.clean = 1
+            return self.send(202, "ok")
         if url.path == "/toggleBackflush" or (url.path == "/toggleTareScale" and S.scale_at_boot):
             key = "BACKFLUSH_ON" if "Backflush" in url.path else "TARE_ON"
             with S.lock:
                 S.p[key]["value"] = 0 if S.p[key]["value"] else 1  # blind toggle, as in the firmware
+                if key == "BACKFLUSH_ON" and not S.p[key]["value"]:
+                    S.clean = 0  # backflush mode off ends the cleaning
             return self.send(302, "", extra={"Location": "/"})
         if url.path == "/upload/config":
             m = re.search(rb"\{.*\}", body, re.S)  # the JSON file inside the multipart form
@@ -401,6 +436,28 @@ class Handler(BaseHTTPRequestHandler):
                 if not (0 <= i < len(shots) and int(shots[i].get("at", 0)) == at and abs(shots[i]["s"] - sec) < 0.06):
                     return self.send(409, "not that shot")
                 del S.shots[i]
+            return self.send(200, "OK")
+        if url.path == "/care/descaled":
+            with S.lock:
+                S.care.update(water=0, descaledAt=int(time.time()))
+            return self.send(200, "OK")
+        if url.path == "/shot/reference":  # as src/embeddedWebserver.h: ?clear=1, or by place checked against time and seconds
+            q = urllib.parse.parse_qs(url.query)
+            with S.lock:
+                if "clear" in q:
+                    S.reference = None
+                    return self.send(200, "OK")
+                i = int(q.get("i", ["-1"])[0])
+                at, sec = int(q.get("at", ["-1"])[0]), float(q.get("s", ["-1"])[0])
+                shots = S.shots[:5]
+                if not (0 <= i < len(shots) and int(shots[i].get("at", 0)) == at and abs(shots[i]["s"] - sec) < 0.06):
+                    return self.send(409, "not that shot")
+                x = {"d": None, "m": "", "r": 0, "t0": None, "fd": None, "tw": None, "sw": None, "ld": 0, "lg": None, "fs": None, "pi": None, "ch": False, **shots[i]}
+                S.reference = {"shot": x, "curve": S.curve(x)}
+            return self.send(200, "OK")
+        if url.path == "/__care":
+            with S.lock:
+                S.care.update(json.loads(body))
             return self.send(200, "OK")
         if url.path == "/__bf":  # JSON {"bf": shots since the last backflush}
             with S.lock:

@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "machineCare.h"
+#include <OrioneCare.h>
 #include <OrioneFlow.h>
 #include <OrioneShots.h>
 #include <Preferences.h>
@@ -47,7 +49,7 @@ namespace shot_history {
 
     /** Starts the clock from NTP (in the background); call once WiFi is up */
     inline void startClock() {
-        configTime(0, 0, "pool.ntp.org", "time.google.com");
+        configTzTime(care::kTimeZone, "pool.ntp.org", "time.google.com"); // shots stay UTC (time()), the log and the schedule local
     }
 
     /** UTC seconds, 0 while the clock is not set */
@@ -107,6 +109,53 @@ namespace shot_history {
         deleteWhen = when;
         deleteSeconds = seconds;
         portEXIT_CRITICAL(&rateLock);
+    }
+
+    // The reference shot (Dominik's best one, laid under the curve of every new shot): shot and curve copied to
+    // their own NVS keys, so they stay when the log moves on. Set or cleared from the page, applied in loop()
+    inline constexpr const char* kRefKey = "ref";
+    inline constexpr const char* kRefCurveKey = "refc";
+    inline constexpr int kRefNone = -2;
+    inline constexpr int kRefClear = -1;
+    inline int refIndex = kRefNone;
+    inline uint32_t refWhen = 0;
+    inline float refSeconds = 0;
+
+    /** Shot i becomes the reference (i = kRefClear: no reference) */
+    inline void requestReference(const int i, const uint32_t when, const float seconds) {
+        portENTER_CRITICAL(&rateLock);
+        refIndex = i;
+        refWhen = when;
+        refSeconds = seconds;
+        portEXIT_CRITICAL(&rateLock);
+    }
+
+    /** Copies shot i and its curve to the reference keys (kRefClear: removes them) */
+    inline void setReference(const int i, const uint32_t when, const float seconds) {
+        Preferences prefs;
+
+        if (!prefs.begin(kNamespace, false)) {
+            return;
+        }
+
+        if (i == kRefClear) {
+            prefs.remove(kRefKey);
+            prefs.remove(kRefCurveKey);
+            LOG(INFO, "Reference shot cleared");
+        }
+        else if (isShot(i, when, seconds)) {
+            char key[4];
+            curveKey(key, shotLog.at(i).seq);
+            const auto curve = std::make_unique<orione::ShotCurve::Stored>();
+
+            if (prefs.getBytesLength(key) == sizeof(*curve) && prefs.getBytes(key, curve.get(), sizeof(*curve)) == sizeof(*curve)) {
+                prefs.putBytes(kRefCurveKey, curve.get(), sizeof(*curve));
+                prefs.putBytes(kRefKey, &shotLog.at(i), sizeof(orione::Shot));
+                LOGF(INFO, "Reference shot: %.1f s", static_cast<double>(seconds));
+            }
+        }
+
+        prefs.end();
     }
 
     /** Log only (the newest curve may still be recording) */
@@ -195,6 +244,19 @@ namespace shot_history {
         }
     }
 
+    /** The flow of the shot that just stopped jumped (orione::ChannelCheck): seconds since its start, < 0 if not */
+    inline float findChanneling() {
+        const int n = shotCurve.stop() >= 0 ? shotCurve.stop() : shotCurve.count();
+        float flow[orione::ShotCurve::kMaxPoints];
+
+        for (int k = 0; k < n; ++k) {
+            const int16_t f = shotCurve.at(k).flow;
+            flow[k] = f == orione::ShotCurve::kNone ? NAN : f / 100.0f;
+        }
+
+        return orione::ChannelCheck::find(flow, n, shotCurve.intervalMs() / 1000.0f, flowMeter.firstDropSeconds());
+    }
+
     /**
      * @param grams in the cup when the pump stopped, < 0 without a connected scale
      * @param byWeight the shot stopped at its target weight (minus the lead, noteStop())
@@ -216,8 +278,15 @@ namespace shot_history {
                 shotLog.noteWeights(0.0f, grams, 0.0f);
             }
 
-            LOGF(INFO, "Shot logged: %.1f s, %.1f g", seconds, grams);
+            const float channeling = grams < 0 ? -1.0f : findChanneling();
+
+            if (channeling >= 0) {
+                shotLog.noteChanneling();
+            }
+
+            LOGF(INFO, "Shot logged: %.1f s, %.1f g%s", seconds, grams, channeling >= 0 ? ", flow jumped (channeling?)" : "");
             flushPending = true;
+            care::shot(config.get<float>("brew.dose"), grams, static_cast<float>(seconds));
         }
         else {
             shotCurve.end(); // not a shot: no curve either
@@ -225,6 +294,7 @@ namespace shot_history {
 
             if (seconds >= 1.0) { // the pump ran: a rinse (shorter: a slip of the switch)
                 flushed();
+                care::rinse(static_cast<float>(seconds));
             }
         }
     }
@@ -270,20 +340,22 @@ namespace shot_history {
             }
         }
 
+        if (refIndex != kRefNone && !(refIndex == 0 && shotLog.settling())) { // the newest curve is saved after its drops
+            portENTER_CRITICAL(&rateLock);
+            const int i = refIndex;
+            const uint32_t when = refWhen;
+            const float seconds = refSeconds;
+            refIndex = kRefNone;
+            portEXIT_CRITICAL(&rateLock);
+            setReference(i, when, seconds);
+        }
+
         if (shotLog.settle(millis(), grams)) {
             save();
             learnFromShot();
         }
     }
 
-    /**
-     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","b":"beans","r":2,"t0":93.4,"fd":6.2},...]},
-     * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
-     * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown); brew by weight:
-     * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with,
-     * lg that lead as seconds of flow, fs the flow when the pump stopped (g/s; both null if unknown);
-     * pi pre-infusion [burst s, pause s, 1 if the valve stayed open in the pause] or null
-     */
     /** Text typed by the user inside a JSON string: quotes and backslashes escaped, control characters left out */
     inline void printJsonText(Print& out, const char* text) {
         for (const char* c = text; *c != '\0'; ++c) {
@@ -297,57 +369,94 @@ namespace shot_history {
         }
     }
 
+    /** One shot as in GET /shots (writeJson) */
+    inline void writeShot(const orione::Shot& s, Print& out) {
+        out.printf(R"({"s":%.1f,"g":)", static_cast<double>(s.seconds));
+        s.grams < 0 ? (void)out.print("null") : (void)out.printf("%.1f", static_cast<double>(s.grams));
+        out.printf(R"(,"at":%u,"d":)", static_cast<unsigned>(s.when));
+        s.doseTenths ? (void)out.printf("%u.%u", s.doseTenths / 10u, s.doseTenths % 10u) : (void)out.print("null");
+        out.print(R"(,"m":")");
+        printJsonText(out, s.grind);
+        out.print(R"(","b":")");
+        printJsonText(out, s.beans);
+        out.printf(R"(","r":%u,"t0":)", static_cast<unsigned>(s.taste));
+        s.startTenths ? (void)out.printf("%d.%d", s.startTenths / 10, s.startTenths % 10) : (void)out.print("null");
+        out.print(R"(,"fd":)");
+        s.firstDropTenths ? (void)out.printf("%u.%u", s.firstDropTenths / 10u, s.firstDropTenths % 10u) : (void)out.print("null");
+        out.print(R"(,"tw":)");
+        s.targetTenths ? (void)out.printf("%u.%u", s.targetTenths / 10u, s.targetTenths % 10u) : (void)out.print("null");
+        out.print(R"(,"sw":)");
+        s.stopTenths ? (void)out.printf("%u.%u", s.stopTenths / 10u, s.stopTenths % 10u) : (void)out.print("null");
+        out.printf(R"(,"ld":%u.%u,"lg":)", s.leadTenths / 10u, s.leadTenths % 10u);
+        s.lagCs ? (void)out.printf("%u.%02u", s.lagCs / 100u, s.lagCs % 100u) : (void)out.print("null");
+        out.print(R"(,"fs":)");
+        s.flowStopCs ? (void)out.printf("%u.%02u", s.flowStopCs / 100u, s.flowStopCs % 100u) : (void)out.print("null");
+        out.print(R"(,"pi":)");
+        s.piTenths || s.piPauseTenths ? (void)out.printf("[%u.%u,%u.%u,%u]", s.piTenths / 10u, s.piTenths % 10u, s.piPauseTenths / 10u, s.piPauseTenths % 10u,
+                                                         s.piFlags & orione::ShotLog::kPauseValveOpen ? 1u : 0u)
+                                      : (void)out.print("null");
+        out.printf(R"(,"ch":%s})", s.piFlags & orione::ShotLog::kChanneling ? "true" : "false");
+    }
+
+    /**
+     * {"now":UTC,"bf":shots since the last backflush,"shots":[{"s":25.3,"g":36.1,"at":UTC,"d":18.0,"m":"12","b":"beans","r":2,"t0":93.4,"fd":6.2},...]},
+     * newest first; g null without scale, at 0 if unknown, d null if not given, r 0 not rated 1 sour 2 good 3 bitter,
+     * t0 brew temperature at the start, fd seconds until the first drops (both null if unknown); brew by weight:
+     * tw target, sw in the cup when the pump stopped (g holds what was there after the drops), ld the lead it stopped with,
+     * lg that lead as seconds of flow, fs the flow when the pump stopped (g/s; both null if unknown);
+     * pi pre-infusion [burst s, pause s, 1 if the valve stayed open in the pause] or null, ch true if the flow jumped
+     * during the shot (channeling, orione::ChannelCheck)
+     */
     inline void writeJson(Print& out) {
         out.printf(R"({"now":%u,"bf":%u,"shots":[)", static_cast<unsigned>(nowUtc()), static_cast<unsigned>(shotLog.sinceBackflush()));
 
         for (int i = 0; i < shotLog.count(); ++i) {
-            const auto& s = shotLog.at(i);
-            out.printf(R"(%s{"s":%.1f,"g":)", i ? "," : "", static_cast<double>(s.seconds));
-
-            if (s.grams < 0) {
-                out.print("null");
-            }
-            else {
-                out.printf("%.1f", static_cast<double>(s.grams));
+            if (i) {
+                out.print(",");
             }
 
-            out.printf(R"(,"at":%u,"d":)", static_cast<unsigned>(s.when));
-
-            if (s.doseTenths == 0) {
-                out.print("null");
-            }
-            else {
-                out.printf("%u.%u", s.doseTenths / 10u, s.doseTenths % 10u);
-            }
-
-            out.print(R"(,"m":")");
-            printJsonText(out, s.grind);
-            out.print(R"(","b":")");
-            printJsonText(out, s.beans);
-            out.printf(R"(","r":%u,"t0":)", static_cast<unsigned>(s.taste));
-            s.startTenths ? (void)out.printf("%d.%d", s.startTenths / 10, s.startTenths % 10) : (void)out.print("null");
-            out.print(R"(,"fd":)");
-            s.firstDropTenths ? (void)out.printf("%u.%u", s.firstDropTenths / 10u, s.firstDropTenths % 10u) : (void)out.print("null");
-            out.print(R"(,"tw":)");
-            s.targetTenths ? (void)out.printf("%u.%u", s.targetTenths / 10u, s.targetTenths % 10u) : (void)out.print("null");
-            out.print(R"(,"sw":)");
-            s.stopTenths ? (void)out.printf("%u.%u", s.stopTenths / 10u, s.stopTenths % 10u) : (void)out.print("null");
-            out.printf(R"(,"ld":%u.%u,"lg":)", s.leadTenths / 10u, s.leadTenths % 10u);
-            s.lagCs ? (void)out.printf("%u.%02u", s.lagCs / 100u, s.lagCs % 100u) : (void)out.print("null");
-            out.print(R"(,"fs":)");
-            s.flowStopCs ? (void)out.printf("%u.%02u", s.flowStopCs / 100u, s.flowStopCs % 100u) : (void)out.print("null");
-            out.print(R"(,"pi":)");
-            s.piTenths || s.piPauseTenths ? (void)out.printf("[%u.%u,%u.%u,%u]", s.piTenths / 10u, s.piTenths % 10u, s.piPauseTenths / 10u, s.piPauseTenths % 10u,
-                                                             s.piFlags & orione::ShotLog::kPauseValveOpen ? 1u : 0u)
-                                          : (void)out.print("null");
-            out.print("}");
+            writeShot(shotLog.at(i), out);
         }
 
         out.print("]}");
     }
 
+    /** {"dt":ms,"stop":point,"w":[tenths of a gram] or null,"t":[tenths of a degree],"f":[hundredths of g/s] or null} */
+    inline void writeCurve(const orione::ShotCurve& curve, Print& out) {
+        bool scale = false;
+
+        for (int k = 0; k < curve.count() && !scale; ++k) {
+            scale = curve.at(k).grams != orione::ShotCurve::kNone;
+        }
+
+        out.printf(R"({"dt":%u,"stop":%d,"w":)", static_cast<unsigned>(curve.intervalMs()), curve.stop());
+
+        for (int series = 0; series < 3; ++series) {
+            if (series != 1 && !scale) {
+                out.print("null");
+            }
+            else {
+                for (int k = 0; k < curve.count(); ++k) {
+                    const int16_t v = series == 0 ? curve.at(k).grams : series == 1 ? curve.at(k).celsius : curve.at(k).flow;
+                    out.print(k ? "," : "[");
+
+                    if (v == orione::ShotCurve::kNone) {
+                        out.print("null");
+                    }
+                    else {
+                        out.print(v);
+                    }
+                }
+
+                out.print(curve.count() ? "]" : "[]");
+            }
+
+            out.print(series == 0 ? R"(,"t":)" : series == 1 ? R"(,"f":)" : "}");
+        }
+    }
+
     /**
-     * Curve of shot i (0 = newest) as {"dt":ms,"stop":point,"w":[tenths of a gram] or null,"t":[tenths of a degree],"f":[hundredths of g/s] or null}
+     * Curve of shot i (0 = newest), see writeCurve()
      * @return false if there is no such shot or no curve saved for it
      */
     inline bool writeCurveJson(const int i, Print& out) {
@@ -380,38 +489,35 @@ namespace shot_history {
             }
         }
 
-        bool scale = false;
-
-        for (int k = 0; k < curve.count() && !scale; ++k) {
-            scale = curve.at(k).grams != orione::ShotCurve::kNone;
-        }
-
-        out.printf(R"({"dt":%u,"stop":%d,"w":)", static_cast<unsigned>(curve.intervalMs()), curve.stop());
-
-        for (int series = 0; series < 3; ++series) {
-            if (series != 1 && !scale) {
-                out.print("null");
-            }
-            else {
-                for (int k = 0; k < curve.count(); ++k) {
-                    const int16_t v = series == 0 ? curve.at(k).grams : series == 1 ? curve.at(k).celsius : curve.at(k).flow;
-                    out.print(k ? "," : "[");
-
-                    if (v == orione::ShotCurve::kNone) {
-                        out.print("null");
-                    }
-                    else {
-                        out.print(v);
-                    }
-                }
-
-                out.print(curve.count() ? "]" : "[]");
-            }
-
-            out.print(series == 0 ? R"(,"t":)" : series == 1 ? R"(,"f":)" : "}");
-        }
-
+        writeCurve(curve, out);
         return true;
+    }
+
+    /** {"shot":{as in GET /shots},"curve":{as GET /shot}}, or null without a reference */
+    inline void writeReferenceJson(Print& out) {
+        const auto shot = std::make_unique<orione::Shot>();
+        const auto saved = std::make_unique<orione::ShotCurve::Stored>();
+        const auto curve = std::make_unique<orione::ShotCurve>();
+        Preferences prefs;
+        bool ok = prefs.begin(kNamespace, true);
+
+        if (ok) {
+            ok = prefs.getBytesLength(kRefKey) == sizeof(*shot) && prefs.getBytes(kRefKey, shot.get(), sizeof(*shot)) == sizeof(*shot) &&
+                 prefs.getBytesLength(kRefCurveKey) == sizeof(*saved) && prefs.getBytes(kRefCurveKey, saved.get(), sizeof(*saved)) == sizeof(*saved) &&
+                 curve->restore(saved.get(), sizeof(*saved));
+            prefs.end();
+        }
+
+        if (!ok) {
+            out.print("null");
+            return;
+        }
+
+        out.print(R"({"shot":)");
+        writeShot(*shot, out);
+        out.print(R"(,"curve":)");
+        writeCurve(*curve, out);
+        out.print("}");
     }
 
 } // namespace shot_history

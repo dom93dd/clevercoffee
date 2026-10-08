@@ -24,6 +24,21 @@ namespace orione_machine {
         if (backflushSwitchReminder && currBrewSwitchState == kBrewSwitchIdle) {
             backflushSwitchReminder = false; // switched off after the backflush
         }
+
+        // cleaning with detergent: asked for by the page, over when backflush mode goes off (at its end or by hand)
+        if (care::cleaningRequested) {
+            care::cleaningRequested = false;
+
+            if (currBackflushState == kBackflushIdle) {
+                backflushOn = true;
+                care::cleaning.start();
+                LOG(INFO, "Cleaning with detergent: backflush mode on");
+            }
+        }
+        else if (!backflushOn && care::cleaning.phase() != orione::CleaningProgram::kOff) {
+            care::cleaning.cancel();
+            LOG(INFO, "Cleaning cancelled");
+        }
     }
 
     // Survives a software restart (not a power loss): set just before a deliberate one, read at the start

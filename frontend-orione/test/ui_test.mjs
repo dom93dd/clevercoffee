@@ -104,7 +104,7 @@ test("Start: Live-Werte, Soll, keine Fehler, eine Anfrage zur Zeit", async ({bro
   assert.equal(await row(p.page, "Stoppen").count(), 0, "the next shot is set up on the brew tab only");
   assert.equal(await row(p.page, "Temperaturregelung").count(), 1);
   assert.equal(await view(p.page).locator(".step input").first().inputValue(), "95,0 °C");
-  assert.match(await p.page.locator("#tSet").textContent(), /Soll 95,0 °C/);
+  assert.equal(await p.page.locator("#tSet").isHidden(), true, "the setpoint shows in the stepper right below");
   assert.equal(await p.page.locator("text=Version").count(), 0, "version only in the care tab");
   assert.equal(p.maxInflight(), 1, "the ESP32 answers one request at a time");
   assert.deepEqual(p.errors, []);
@@ -892,7 +892,7 @@ test("Spülen nach dem Bezug: Hinweis, bis gespült ist; nicht während des Bezu
   assert.equal(await note.isVisible(), false, "no shot yet");
   await mock(BASE, "/__live", {state: 10, fp: true});
   await note.waitFor();
-  assert.equal(await note.textContent(), "Bitte spülen: Siebträger raus, ausklopfen, Bezugsschalter 2–3 s an. So bleibt kein Kaffee am Duschsieb.");
+  assert.equal(await note.textContent(), "Bitte spülen: Siebträger raus, Bezugsschalter 2–3 s an.");
   await tab(page, "Bezug");
   await view(page).locator(".note.rinse").waitFor();
   await mock(BASE, "/__live", {state: 20, brewTime: 1.2, fp: true}); // the rinse itself runs: not now
@@ -973,7 +973,7 @@ test("Wartung: Spülen ohne Wasserstandssensor gesperrt, Backflush-Zähler bleib
   await mock(BASE, "/__bf", {bf: 7});
   const {page, ctx} = await open(browser, BASE, {hash: "#care"});
   const cards = page.locator("section.card[data-card]");
-  assert.deepEqual(await cards.evaluateAll(cs => cs.map(c => c.dataset.card)), ["sFlush", "sBf"]);
+  assert.deepEqual(await cards.evaluateAll(cs => cs.map(c => c.dataset.card)), ["sFlush", "sBf", "sDescale", "sCount"]);
   assert.equal(await page.locator("#flushBtn").isDisabled(), true);
   assert.match(await page.locator("#flushSt").textContent(), /^Nur mit Wasserstandssensor/);
   assert.equal(await row(page, "Nach dem Kaltstart automatisch").count(), 0, "no switch without the sensor");
@@ -1005,7 +1005,7 @@ test("Wartung: Spülen von Hand, Fortschritt, abbrechen; Hinweis auf der Startse
   // start page: the note while the automatic one is pending, the pulse in the state while it runs
   await mock(BASE, "/__live", {state: 10, warmup: 1});
   await tab(page, "Maschine");
-  await page.locator("#flushNote:not([hidden])", {hasText: "Gleich wird automatisch gespült"}).waitFor();
+  await page.locator("#flushNote:not([hidden])", {hasText: "Spült gleich automatisch"}).waitFor();
   await mock(BASE, "/__live", {state: 25, warmup: 2, pulse: 2});
   await page.locator("#flushNote[hidden]").waitFor({state: "attached"});
   await page.locator("#state", {hasText: "Spülen 2/3"}).waitFor();
@@ -1260,8 +1260,7 @@ test("Nach Gewicht ohne Waage: Stopp nach Zeit, angezeigt und einstellbar; Oberg
   await setp("brew.mode=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0");
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
   assert.match(await row(page, "Stoppen").locator(".lbl p").last().textContent(), /^Jeder Bezug endet spätestens nach 60 s\.$/);
-  const fb = row(page, "Ohne Waage nach");
-  assert.match(await fb.locator(".lbl p").textContent(), /nicht verbunden/);
+  const fb = row(page, "Ohne Waage nach"); // the label says it all, no hint under it
   await fb.locator("button", {hasText: "+"}).click();
   await settle(page);
   assert.equal((await values(BASE))["brew.by_time.target_time"], 25.5);
@@ -1407,6 +1406,178 @@ test("Startseite zeigt beim Bezug, was das Display zeigt; danach FERTIG", async 
   await page.waitForTimeout(1500);
   await page.screenshot({path: OUT + "status-dial-done.png"});
   assert.equal(await page.locator("#dialCard").isHidden(), false, "the result stays a moment");
+  await ctx.close();
+});
+
+test("Übersicht: letzter Bezug mit Bewertung und Zählern, Statuszeile; Tipp öffnet ihn im Reiter Bezug", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await setp("standby.enabled=1&schedule.enabled=1&schedule.on=390");
+  await mock(BASE, "/__shot", {s: 24.0, g: 35.0, at: now - 3600, d: 18.0, m: "13"});
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.4, at: now - 600, d: 18.0, m: "12", tw: 36.0, sw: 34.6});
+  const {page, ctx, errors} = await open(browser, BASE);
+  const card = view(page).locator("#lastCard");
+  await card.locator(".lastnums").waitFor();
+  assert.deepEqual(await card.locator(".lastnums > *").allTextContents(), ["25,3 s", "36,4 g", "1:2,0", "+0,4 g"]);
+  assert.match(await card.locator(".lasthead small").textContent(), /^heute /);
+  await card.locator(".shotinfo", {hasText: "3 heute · 12 diese Woche · Backflush in 50 · Entkalken in ≈ 28 l"}).waitFor();
+  const pills = await view(page).locator("#pills span").allTextContents();
+  assert.ok(pills.includes("Waage · 76 %"), pills.join(" | "));
+  assert.ok(pills.some(x => /^Ein (heute|morgen) 06:30$/.test(x)), pills.join(" | "));
+  assert.ok(pills.includes("Standby in 23 min"), pills.join(" | "));
+  assert.ok(pills.includes("WLAN −71 dBm"), pills.join(" | "));
+  await card.locator(".taste button", {hasText: "passt"}).click();
+  await card.locator(".taste button.on", {hasText: "passt"}).waitFor();
+  await settle(page);
+  assert.equal((await mock(BASE, "/shots")).shots[0].r, 2, "rated the newest");
+  await page.screenshot({path: OUT + "status-overview.png", fullPage: true});
+  await card.locator(".lasthead").click();
+  await page.locator("nav button.on", {hasText: "Bezug"}).waitFor();
+  await view(page).locator("#shotList .shot.open").first().waitFor();
+  assert.match(await view(page).locator("#shotList .shot.open b").textContent(), /^25,3 s$/);
+  await view(page).locator("#shotList .curve:not([hidden]) canvas").waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Zeitplan: einschalten, Uhrzeiten und Tage speichern, nächstes Einschalten auf der Übersicht", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  assert.equal(await row(page, "Ein um").count(), 0, "times only while the schedule is on");
+  await row(page, "Automatisch einschalten").locator(".sw").click();
+  await row(page, "Ein um").waitFor();
+  await settle(page);
+  assert.equal((await values(BASE))["schedule.enabled"], 1);
+  assert.equal(await row(page, "Ein um").locator("input").inputValue(), "06:30");
+  assert.equal(await row(page, "Aus um").locator("input").inputValue(), "", "no off time");
+  await row(page, "Ein um").locator("input").fill("06:45"); await settle(page);
+  await row(page, "Aus um").locator("input").fill("22:00"); await settle(page);
+  let v = await values(BASE);
+  assert.equal(v["schedule.on"], 405); assert.equal(v["schedule.off"], 1320);
+  await row(page, "Aus um").locator("input").fill(""); await settle(page);
+  assert.equal((await values(BASE))["schedule.off"], 1440, "cleared: no off time");
+  const days = view(page).locator(".days button");
+  assert.deepEqual(await days.allTextContents(), ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]);
+  await days.nth(5).click(); await settle(page);
+  await days.nth(6).click(); await settle(page);
+  assert.equal((await values(BASE))["schedule.days"], 31, "Monday to Friday");
+  assert.equal(await days.nth(6).getAttribute("aria-pressed"), "false");
+  const b = await days.first().boundingBox();
+  assert.ok(b.height >= 44, `day button ${b.height} px high`);
+  await page.screenshot({path: OUT + "settings-schedule.png", fullPage: true});
+  await tab(page, "Maschine");
+  assert.ok((await view(page).locator("#pills span").allTextContents()).some(x => /^Ein .+ 06:45$/.test(x)));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Entkalken: Wasser seit dem Entkalken, Grenze, Entkalkt nach Rückfrage; fällig auf der Übersicht", async ({browser}) => {
+  await mock(BASE, "/__care", {water: 41200});
+  const {page, ctx, errors} = await open(browser, BASE);
+  await page.locator("#descaleNote:not([hidden])", {hasText: "Entkalken fällig (≈ 41 l)"}).waitFor();
+  await tab(page, "Wartung");
+  assert.equal(await page.locator("#descaleSt").textContent(), "≈ 41 l bisher gezählt");
+  assert.equal(await row(page, "Erinnern bei").locator("input").inputValue(), "40 l");
+  assert.deepEqual(await view(page).locator("#stats small").allTextContents(), ["heute", "Woche", "gesamt", "Kaffee"]);
+  assert.deepEqual(await view(page).locator("#stats b").allTextContents(), ["3", "12", "245", "4,4 kg"]);
+  await row(page, "Erinnern bei").locator("button", {hasText: "+"}).click();
+  await settle(page);
+  assert.equal((await values(BASE))["descale.litres"], 45);
+  await page.locator("#descaleNote").waitFor({state: "hidden"}); // 41 of 45 l: not due any more
+  let asked = 0;
+  page.once("dialog", d => { asked++; d.dismiss(); });
+  await view(page).locator("button", {hasText: "Entkalkt"}).click();
+  await settle(page);
+  assert.equal(asked, 1);
+  assert.equal((await posts(BASE)).filter(x => x.path === "/care/descaled").length, 0, "not without the confirmation");
+  page.once("dialog", d => d.accept());
+  await view(page).locator("button", {hasText: "Entkalkt"}).click();
+  await page.locator("#descaleSt", {hasText: /^≈ 0,0 l seit dem Entkalken am \d{1,2}\.\d{1,2}\.\d{4}$/}).waitFor();
+  assert.equal((await posts(BASE)).filter(x => x.path === "/care/descaled").length, 1);
+  await page.screenshot({path: OUT + "care-descale.png", fullPage: true});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Reinigung mit Reiniger: Backflush-Modus an, jeder Schritt als Hinweis, endet mit dem Modus", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  await view(page).locator("#cleanBtn").click();
+  await row(page, "Backflush-Modus").locator(".sw.on").waitFor();
+  const p = await posts(BASE);
+  assert.ok(p.some(x => x.path === "/toggleBackflush" && x.query === "cleaner=1"), JSON.stringify(p));
+  assert.equal((await values(BASE))["BACKFLUSH_ON"], 1);
+  assert.equal(await view(page).locator("#cleanBtn").isVisible(), false, "not twice");
+  await view(page).locator(".note.clean", {hasText: "Reinigung: Reiniger ins Blindsieb, dann Bezugsschalter an."}).waitFor();
+  await tab(page, "Maschine");
+  await view(page).locator(".note.clean", {hasText: "Reiniger ins Blindsieb"}).waitFor();
+  assert.equal(await view(page).locator("#bfActive").isVisible(), false, "the step says more than \"backflush mode on\"");
+  await mock(BASE, "/__live", {state: 50, clean: 2});
+  await view(page).locator(".note.clean", {hasText: "Blindsieb ausspülen, Bezugsschalter aus und wieder an: Klarspülen."}).waitFor();
+  await page.screenshot({path: OUT + "status-cleaning.png", fullPage: true});
+  await mock(BASE, "/__live", {state: 50, clean: 3});
+  await view(page).locator(".note.clean", {hasText: "Klarspülen mit Wasser."}).waitFor();
+  await mock(BASE, "/__live", {state: 10, clean: 0});
+  await view(page).locator(".note.clean").waitFor({state: "hidden"});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Referenz-Bezug: speichern, liegt hinter jedem anderen Bezug, entfernen; Claude kennt ihn", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 27.0, g: 36.0, at: now - 3600, d: 18.0, m: "12", r: 2});
+  await mock(BASE, "/__shot", {s: 22.5, g: 36.2, at: now - 600, d: 18.0, m: "13"});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew", init: withKey, route: pg => fakeClaude(pg, "Etwas feiner.")});
+  await view(page).locator("#shotList .shot").nth(1).click();
+  const cv = () => view(page).locator("#shotList .curve:not([hidden])");
+  await cv().locator("canvas").waitFor();
+  await cv().locator("button", {hasText: "Als Referenz"}).click();
+  await toast(page, "Als Referenz gespeichert");
+  assert.equal((await mock(BASE, "/reference")).shot.s, 27.0);
+  await cv().locator("button", {hasText: "Referenz entfernen"}).waitFor();
+  await view(page).locator("#shotList .shot").first().click(); // the newest: the reference is drawn behind it
+  await cv().locator(".cmp button.on", {hasText: "Referenz · 27,0 s · 36,0 g"}).waitFor();
+  await page.screenshot({path: OUT + "brew-reference.png", fullPage: true});
+  await cv().locator(".cmp button", {hasText: "Referenz"}).click();
+  await cv().locator(".cmp button.on").waitFor({state: "detached"});
+  const user = await page.evaluate(() => coffeeContext()); // the suggestion was asked before the reference existed: what the next one gets
+  assert.ok(user.includes("Referenzbezug, vom Nutzer als Vorbild gewählt"), user);
+  assert.ok(user.includes("27,0 s, 36,0 g, 18,0 g Kaffee, Mahlgrad 12"), user);
+  await view(page).locator("#shotList .shot").nth(1).click();
+  await cv().locator("button", {hasText: "Referenz entfernen"}).click();
+  await toast(page, "Referenz entfernt");
+  assert.equal(await mock(BASE, "/reference"), null);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Kanalbildung: Hinweis im Bezug und auf der Übersicht, Claude bekommt ihn", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 19.0, g: 36.0, at: now - 300, d: 18.0, m: "12", ch: true});
+  let seen;
+  const {page, ctx, errors} = await open(browser, BASE, {init: withKey, route: async pg => { seen = await fakeClaude(pg, "Gleichmäßiger verteilen."); }});
+  await view(page).locator("#lastCard .shotinfo.ch", {hasText: "Durchfluss sprang – Kanalbildung?"}).waitFor();
+  const ai = view(page).locator("#lastCard details.ai");
+  await ai.waitFor();
+  assert.equal(await ai.evaluate(d => d.open), false, "folded on the overview");
+  await tab(page, "Bezug");
+  await view(page).locator("#shotList .shot").first().click();
+  await view(page).locator("#shotList .curve:not([hidden]) .shotinfo.ch").waitFor();
+  assert.ok(seen[0].body.messages[0].content.includes("Durchfluss sprang während des Bezugs plötzlich an (Hinweis auf Kanalbildung)"));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Temperaturverlauf im Bezug: in Temperatur einstellbar, Claude weiß davon", async ({browser}) => {
+  await mock(BASE, "/__shot", {s: 25.0, g: 36.0, at: Math.floor(Date.now() / 1000) - 300});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  const r = row(page, "Verlauf im Bezug");
+  assert.equal(await r.locator("input").inputValue(), "0,0 K");
+  assert.match(await r.locator(".lbl p").textContent(), /0 = aus/);
+  for (let k = 0; k < 4; k++) await r.locator("button", {hasText: "−"}).click();
+  await settle(page);
+  assert.equal((await values(BASE))["brew.temp_end"], -2);
+  assert.equal(await r.locator("input").inputValue(), "−2,0 K".replace("−", "-"));
+  const ctxText = await page.evaluate(() => coffeeContext());
+  assert.ok(ctxText.includes("Temperaturverlauf: Das Soll ändert sich während des Bezugs gleichmäßig um -2,0 K bis zum Ende."), ctxText);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 

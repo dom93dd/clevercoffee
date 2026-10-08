@@ -375,6 +375,18 @@ namespace sim {
                  m.settle();
                  m.setBackflush(rd::BackflushPhase::Idle, 0);
              }},
+            {"cleaning", "Reinigung mit Reiniger (Zyklus 2/5)",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setBackflush(rd::BackflushPhase::Filling, 2);
+                 m.cleaningPhase = 1;
+             }},
+            {"cleaning-rinse-out", "Reinigung: Sieb ausspülen, dann klarspülen",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setBackflush(rd::BackflushPhase::Idle, 0);
+                 m.cleaningPhase = 2;
+             }},
             {"water", "Wassertank leer",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.settle();

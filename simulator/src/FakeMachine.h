@@ -32,6 +32,7 @@ class FakeMachine {
         bool steamCooling = false;       // Orione: after steam, too hot for espresso
         bool flushReminder = false;      // Orione: a shot since the last rinse
         bool backflushDone = false;      // Orione: backflush over, brew switch still on
+        uint8_t cleaningPhase = 0;       // Orione: cleaning with detergent (rd::Model::cleaningPhase)
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -261,6 +262,7 @@ class FakeMachine {
             m.steamCooling = steamCooling;
             m.flushReminder = flushReminder;
             m.backflushDone = backflushDone;
+            m.cleaningPhase = cleaningPhase;
 
             if (steamFromSwitch) {
                 m.mode = rd::Mode::Steam;

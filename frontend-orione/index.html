@@ -53,7 +53,7 @@ nav button.on svg{color:var(--heat)}
 .bar b{display:block;height:100%;background:var(--heat);transform:scaleX(0);transform-origin:left;transition:transform .6s}
 .barlbl{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);margin:0 4px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--line)}
-.card h2+.row,.row:first-child{border-top:0}
+.card h2+.row,.row:first-child,.card h2+.note[hidden]+.row,.card h2+.note[hidden]+.note[hidden]+.row{border-top:0}
 .lbl{min-width:0}
 .lbl div{font-weight:550}
 .lbl p{margin:2px 0 0;font-size:13px;color:var(--mute)}
@@ -168,6 +168,27 @@ body.reboot main{padding-bottom:82px} /* room for the restart bar above the tabs
 .chips button.on{box-shadow:inset 0 0 0 2px var(--heat)}
 .chips button.on small{color:var(--heat)}
 .pair{display:flex;flex-direction:column;gap:6px;flex:none}
+.pills{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:14px}
+.pills span{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:99px;background:var(--bg);font-size:13px;color:var(--mute)}
+.pills i{width:7px;height:7px;border-radius:50%}
+.lasthead{display:flex;align-items:baseline;gap:8px;width:100%;min-height:32px;border:0;background:none;color:inherit;padding:0;cursor:pointer;text-align:left;font:inherit}
+.lasthead h2{flex:1;margin:0}
+.lasthead small{color:var(--mute);font-size:13px}
+.lasthead i{font-style:normal;color:var(--faint)}
+.lastnums{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.lastnums b{font-size:30px;font-weight:400}
+.lastnums span{color:var(--mute);font-size:15px}
+.lastnums .off{color:var(--heat)}
+.shotinfo.ch{color:var(--heat)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;text-align:center}
+.stats div{background:var(--bg);border-radius:12px;padding:10px 4px}
+.stats b{display:block;font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+.stats small{color:var(--mute);font-size:12px}
+.days{display:flex;gap:6px}
+.days button{flex:1;min-height:44px;border:0;border-radius:10px;background:var(--bg);color:var(--mute);font-size:14px;font-weight:600;cursor:pointer}
+.days button.on{color:var(--text);box-shadow:inset 0 0 0 2px var(--heat)}
+input[type=time].txt{min-width:112px;text-align:center}
+.note.clean{background:rgba(125,190,255,.14);color:#bfdcff}
 [hidden]{display:none!important}
 @media (min-width:720px){.rebootbar{bottom:16px}body.reboot .toast{bottom:84px}body{padding-bottom:24px}body.reboot{padding-bottom:90px}body.reboot main{padding-bottom:16px}nav{position:static;order:1;width:100%;max-width:640px;margin:8px auto 0;background:none;border:0;padding:0;backdrop-filter:none}nav button{flex-direction:row;gap:8px;font-size:14px;padding:10px 12px}.toast{bottom:24px}}
 </style>
@@ -201,51 +222,51 @@ const T = {
     standby: "Standby", overtemp: "Übertemperatur", sensor: "Sensorfehler", offline: "Keine Verbindung",
     sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
     sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush", sFlush: "Spülen",
-    flushWhat: "Drei kurze Spülstöße (je 3 s, dazwischen 20 s Pause) bringen Schlauch, Brühgruppe und Siebträger auf Temperatur. Siebträger leer eingespannt lassen, Tasse oder Schale unterstellen.",
+    flushWhat: "Drei Spülstöße à 3 s (20 s Pause) wärmen Schlauch, Gruppe und Siebträger vor. Leeren Siebträger eingespannt lassen, Tasse unterstellen.",
     "brew.warmup_flush": "Nach dem Kaltstart automatisch", "brew.warmup_flushHint": "sobald die Temperatur 2 min stabil am Soll ist",
     flushNow: "Jetzt spülen", flushStop: "Spülen abbrechen", flushPulse: "Spülstoß {n} von 3", flushPause: "Pause, gleich Spülstoß {n} von 3",
-    flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist (kein Bezug, Backflush oder Standby, Wasser im Tank).",
-    flushNeedsSensor: "Nur mit Wasserstandssensor: ohne ihn könnte die Pumpe bei leerem Tank trocken laufen. Einschalten unter Einstellungen → Wassertank.",
-    flushNote: "Gleich wird automatisch gespült (3 × kurz), sobald die Temperatur 2 min stabil am Soll ist. Siebträger leer eingespannt lassen, Tasse unterstellen.",
+    flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist.",
+    flushNeedsSensor: "Nur mit Wasserstandssensor (Schutz vor Trockenlauf). Einschalten unter Einstellungen → Wassertank.",
+    flushNote: "Spült gleich automatisch (3 × kurz). Leeren Siebträger drinlassen, Tasse unterstellen.",
     bfDoneNote: "Backflush fertig: Bezugsschalter auf AUS stellen, Blindsieb raus und kurz spülen.",
-    rinseNote: "Bitte spülen: Siebträger raus, ausklopfen, Bezugsschalter 2–3 s an. So bleibt kein Kaffee am Duschsieb.", piAfter: "Bezug danach {s} s", piOf: "davon {s} s Pre-Infusion",
+    rinseNote: "Bitte spülen: Siebträger raus, Bezugsschalter 2–3 s an.", piAfter: "Bezug danach {s} s", piOf: "davon {s} s Pre-Infusion",
     sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
     scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?", battery: "Akku", batteryLow: "bitte laden",
     scaleNone: "Keine Waage gewählt – unter Einstellungen → Waage suchen", scaleWith: "Verbunden mit {n}", scaleWaiting: "{n} gewählt, nicht verbunden – Waage einschalten",
     scaleNoneChosen: "Keine Waage gewählt", scaleFind: "Waage suchen", scaleSearching: "Suche …", scaleForget: "Vergessen", scaleConnect: "Verbinden", scaleChosen: "gewählt",
-    signal: ["Signal schwach", "Signal mittel", "Signal gut"], scaleHint: "Waage einschalten und die Bookoo-App trennen: Die Waage nimmt nur eine Verbindung an.",
+    signal: ["Signal schwach", "Signal mittel", "Signal gut"], scaleHint: "Waage einschalten, Bookoo-App trennen (die Waage nimmt nur eine Verbindung an).",
     scaleNoneFound: "Keine Waage gefunden. Ist sie eingeschaltet und nicht mit dem Handy verbunden?",
-    scaleSwitchHint: "Andere Waage: erst „Vergessen“, dann suchen (während eine verbunden ist, sucht die Maschine nicht).",
+    scaleSwitchHint: "Andere Waage: erst „Vergessen“, dann suchen.",
     dialBrew: "BEZUG", dialDone: "FERTIG", dialRemind: "Schalter aus", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
     compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
-    sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor, etwa beim Mahlgrad. Dafür brauchst du einen API-Schlüssel von Anthropic. Er bleibt nur in diesem Browser; am sichersten ist ein eigener Schlüssel mit Monatslimit.",
+    sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor. Dafür braucht es einen API-Schlüssel von Anthropic (am besten mit Monatslimit); er bleibt nur in diesem Browser.",
     claudeGet: "Schlüssel erstellen ↗", claudeConnect: "Verbinden", claudeChecking: "Prüfe …", claudeOn: "Verbunden", claudeOnHint: "Vorschläge zu deinen Bezügen von Claude Sonnet 5", claudeOff: "Trennen",
     claudeBad: "Der Schlüssel wurde abgelehnt. Bitte neu verbinden.", claudeNet: "Anthropic ist gerade nicht erreichbar (Internet?).", claudeForm: "Ein Anthropic-Schlüssel beginnt mit sk-ant-.",
-    claudeCredit: "Der Schlüssel ist gültig, aber das API-Guthaben ist leer. In der Anthropic-Konsole unter „Plans & Billing“ Guthaben aufladen; ein Claude-Abo zählt dafür nicht.",
+    claudeCredit: "Das API-Guthaben ist leer: in der Anthropic-Konsole unter „Plans & Billing“ aufladen (ein Claude-Abo zählt hier nicht).",
     claudeModel: "Das Modell ist mit diesem Schlüssel nicht verfügbar.", claudeBusy: "Anthropic ist gerade ausgelastet. Bitte gleich noch einmal.", claudeOther: "Anthropic meldet: ",
     suggestion: "Vorschlag zum letzten Bezug", suggestionOf: "Vorschlag", analysis: "Auswertung", analyze: "Ausführlich auswerten",
-    sPreinf: "Pre-Infusion (Test)", "brew.pre_infusion.enabled": "Pre-Infusion", "brew.pre_infusion.enabledHint": "kurzer Pumpstoß, Pause, dann der Bezug; die Bezugszeit enthält beides",
-    "brew.pre_infusion.time": "Pumpstoß", "brew.pre_infusion.timeHint": "Pumpe und Ventil an", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "Ventil bleibt offen, das Pulsor-Board pulst die Pumpe: es tröpfelt langsam nach",
+    sPreinf: "Pre-Infusion (Test)", "brew.pre_infusion.enabled": "Pre-Infusion", "brew.pre_infusion.enabledHint": "Pumpstoß, Pause, dann der Bezug; zählt zur Bezugszeit",
+    "brew.pre_infusion.time": "Pumpstoß", "brew.pre_infusion.timeHint": "Pumpe und Ventil an", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "Ventil offen, es tröpfelt nach",
     piShot: "Pre-Infusion {b} s + {p} s Pause", piOpen: "Ventil offen", piClosed: "Ventil zu", piOn: "Pre-Infusion an: {b} s Pumpstoß, {p} s Pause", livePi: "Pre-Infusion", livePause: "Pause",
     "brew.grind_scale": "Skala der Mühle", "brew.grind_scaleHint": "für Claudes Vorschläge",
     finer: "feiner", coarser: "gröber", aiApply: "Übernehmen", aiApplied: "Übernommen", aiChanges: "Für den nächsten Bezug", aiAppliedToast: "Vorschlag übernommen", "brew.setpoint": "Brühtemperatur",
-    bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, dann in Wartung den Backflush-Modus einschalten.",
+    bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, in Wartung starten.",
     "backflush.remind_after": "Erinnern nach", "backflush.remind_afterHint": "Bezügen (0 = nie)",
-    alarmOver: "Übertemperatur", alarmOverHint: "Die Heizung bleibt aus, bis die Temperatur gesunken ist.", alarmSensor: "Sensorfehler", alarmSensorHint: "Die Heizung ist aus. Temperaturfühler und Kabel prüfen.", alarmTank: "Wassertank leer", alarmTankHint: "Bitte nachfüllen. Die Maschine heizt weiter, Bezug und Spülen gehen erst wieder mit Wasser.", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
+    alarmOver: "Übertemperatur", alarmOverHint: "Die Heizung bleibt aus, bis die Temperatur gesunken ist.", alarmSensor: "Sensorfehler", alarmSensorHint: "Die Heizung ist aus. Temperaturfühler und Kabel prüfen.", alarmTank: "Wassertank leer", alarmTankHint: "Bitte nachfüllen. Die Maschine heizt weiter.", shotTime: "Zeit", shotWeight: "Gewicht", pumpOff: "Pumpe aus", noCurve: "Für diesen Bezug ist keine Kurve gespeichert", today: "heute", yesterday: "gestern", stop: "Stoppen", stopHand: "von Hand", stopTime: "nach Zeit", stopWeight: "nach Gewicht",
     stopHint: "Gewicht: erst Waage einschalten", stopMax: "Jeder Bezug endet spätestens nach {n} s.",
-    fallbackTime: "Ohne Waage nach", fallbackTimeHint: "Ist die Waage nicht verbunden, stoppt der Bezug nach dieser Zeit",
+    fallbackTime: "Ohne Waage nach",
     noScaleGoal: "Waage nicht verbunden – Ziel {n} s", flushSwitch: "Erst den Bezugsschalter auf AUS stellen.",
     deleteShot: "Bezug löschen", reallyDelete: "Diesen Bezug ({s}) löschen?", deleted: "Gelöscht",
     "brew.mode": "Bezugsart", "brew.modeHint": "Automatisch: Zeit oder Gewicht beendet den Bezug",
     "brew.by_time.enabled": "Nach Zeit stoppen", "brew.by_time.target_time": "Bezugszeit",
     "hardware.sensors.scale.enabled": "Bluetooth-Waage", "hardware.sensors.scale.enabledHint": "Änderung wirkt nach einem Neustart",
     "brew.by_weight.enabled": "Nach Gewicht stoppen", "brew.by_weight.target_weight": "Zielgewicht",
-    "brew.by_weight.lag": "Nachlaufzeit", "brew.by_weight.lagHint": "Die Pumpe stoppt so viele Sekunden Durchfluss vor dem Ziel, der Nachlauf füllt auf; lernt aus jedem Bezug",
+    "brew.by_weight.lag": "Nachlaufzeit", "brew.by_weight.lagHint": "Pumpe stoppt so viele Sekunden Durchfluss vor dem Ziel; lernt aus jedem Bezug",
     lagLast: "Letzter Bezug: {f} g/s, also {g} g vor dem Ziel", lagAt: "Bei {f} g/s: {g} g vor dem Ziel",
-    beansSaved: "Gespeicherte Bohnen", beansHint: "Jede Bohne behält Dosis, Mahlgrad, Zielgewicht, Temperatur und Nachlaufzeit. Für eine neue Bohne oben den Namen eintragen.",
+    beansSaved: "Gespeicherte Bohnen", beansHint: "Jede Bohne merkt sich Dosis, Mahlgrad, Zielgewicht, Temperatur und Nachlaufzeit.",
     beanActive: "aktiv", beanUse: "Wählen", beanDelete: "Löschen", reallyDeleteBean: "Die Bohne „{n}“ mit ihren Werten löschen?", beanBack: "„{n}“ geladen", beanNew: "Neue Bohne „{n}“ angelegt",
     beanNewOpt: "+ Neue Bohne …", beanNewQ: "Name der neuen Bohne (Sorte und Röstung)", beanNone: "keine angegeben", beanLag: "Nachlauf",
-    "brew.by_weight.learn": "Stopp automatisch lernen", "brew.by_weight.learnHint": "nach jedem Bezug nach Gewicht aus dem, was in der Tasse landet",
+    "brew.by_weight.learn": "Stopp automatisch lernen", "brew.by_weight.learnHint": "aus jedem Bezug nach Gewicht",
     target: "Ziel", atStop: "Pumpe aus bei", drip: "Nachlauf", overTarget: "über Ziel", underTarget: "unter Ziel", switchBack: "Bezugsschalter wieder auf AUS stellen",
     "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
     "display.blescale_brew_timer": "Timer der Waage mitlaufen lassen",
@@ -256,7 +277,7 @@ const T = {
     "standby.time": "Nach", "hardware.sensors.watertank.enabled": "Füllstandssensor",
     "hardware.sensors.watertank.mode": "Schaltart", "display.language": "Sprache",
     "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I-Max",
-    "brew.heat_boost": "Heizen beim Bezug", "brew.heat_boostHint": "Mindestleistung, solange die Pumpe läuft – gleicht das kalte Wasser aus (0 = aus)",
+    "brew.heat_boost": "Heizen beim Bezug", "brew.heat_boostHint": "Mindestleistung, solange die Pumpe läuft (0 = aus)",
     steamCool: "Abkühlen nach Dampf", steamHot: "Nach dem Dampf zu heiß für Espresso", steamHotHint: "Ein Spülbezug ohne Siebträger kühlt den Block schneller ab.",
     started: "Läuft seit", lastStart: "letzter Start", showLog: "Protokoll anzeigen", fwPending: "neue Firmware wird geprüft", fwFailed: "Das letzte Update ist nicht gestartet, die vorige Firmware läuft.", bootReason: {power: "Strom an", reset: "Reset/USB", software: "Neustart (Seite/Update)", heap: "Speicher-Notbremse", crash: "Absturz", watchdog: "Watchdog (hing fest)", brownout: "Unterspannung", unknown: "unbekannt"},
     "pid.ema_factor": "EMA-Glättung", "pid.use_ponm": "PonM",
@@ -267,8 +288,18 @@ const T = {
     wifiReset: "WLAN zurücksetzen", factory: "Werkseinstellungen",
     reallyWifi: "WLAN-Zugang löschen? Die Maschine öffnet danach ein Einrichtungs-WLAN mit ihrem Gerätenamen (Passwort CleverCoffee).",
     reallyFactory: "Alle Einstellungen auf Werkszustand zurücksetzen?", reallyRestart: "Maschine jetzt neu starten?",
-    saved: "Gespeichert", failed: "Nicht gespeichert, bitte erneut", loadFailed: "Nicht alles geladen, die Maschine ist beschäftigt – kommt beim nächsten Öffnen", needReboot: "Wirkt nach einem Neustart",
-    restarting: "Startet neu …", uploaded: "Eingespielt, startet neu", version: "Version", restartNow: "Jetzt neu starten"
+    saved: "Gespeichert", failed: "Nicht gespeichert, bitte erneut", loadFailed: "Nicht alles geladen (Maschine beschäftigt)", needReboot: "Wirkt nach einem Neustart",
+    restarting: "Startet neu …", uploaded: "Eingespielt, startet neu", version: "Version", restartNow: "Jetzt neu starten",
+    sSchedule: "Zeitplan", "schedule.enabled": "Automatisch einschalten", "schedule.enabledHint": "Hauptschalter bleibt dafür an",
+    "schedule.on": "Ein um", "schedule.off": "Aus um", "schedule.offHint": "optional", "schedule.days": "Tage", dayNames: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+    "brew.temp_end": "Verlauf im Bezug", "brew.temp_endHint": "Soll ändert sich bis zum Bezugsende um so viel (0 = aus)",
+    sCount: "Zähler", cToday: "heute", cWeek: "Woche", cTotal: "gesamt", cCoffee: "Kaffee", cTodayN: "{n} heute", cWeekN: "{n} diese Woche",
+    sDescale: "Entkalken", descaleSince: "≈ {l} l seit dem Entkalken am {d}", descaleCounted: "≈ {l} l bisher gezählt", "descale.litres": "Erinnern bei", "descale.litresHint": "0 = nie",
+    descaled: "Entkalkt", reallyDescaled: "Entkalken erledigt? Der Zähler beginnt wieder bei 0.", descaleDue: "Entkalken fällig (≈ {l} l). Danach in Wartung bestätigen.",
+    bfIn: "Backflush in {n}", descaleIn: "Entkalken in ≈ {l} l",
+    cleanStart: "Reinigung mit Reiniger", clean1: "Reinigung: Reiniger ins Blindsieb, dann Bezugsschalter an.", clean2: "Blindsieb ausspülen, Bezugsschalter aus und wieder an: Klarspülen.", clean3: "Klarspülen mit Wasser.",
+    chNote: "Durchfluss sprang – Kanalbildung?", refSet: "Als Referenz", refClear: "Referenz entfernen", refChip: "Referenz", refSaved: "Als Referenz gespeichert", refCleared: "Referenz entfernt",
+    lastShot: "Letzter Bezug", tomorrow: "morgen", schedNext: "Ein {d} {t}", standbyIn: "Standby in {n} min", scale: "Waage", scaleGone: "Waage getrennt", wifi: "WLAN"
   },
   en: {
     status: "Machine", brew: "Brew", settings: "Settings", care: "Care",
@@ -280,51 +311,51 @@ const T = {
     standby: "Standby", overtemp: "Overtemperature", sensor: "Sensor error", offline: "No connection",
     sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
     sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush", sFlush: "Flush",
-    flushWhat: "Three short flushes (3 s each, 20 s apart) bring the hose, group and portafilter up to temperature. Leave the empty portafilter in, put a cup or bowl under it.",
+    flushWhat: "Three 3 s flushes (20 s apart) warm up hose, group and portafilter. Leave the empty portafilter in, put a cup under it.",
     "brew.warmup_flush": "Automatically after a cold start", "brew.warmup_flushHint": "once the temperature has been steady at the setpoint for 2 min",
     flushNow: "Flush now", flushStop: "Stop flushing", flushPulse: "Flush {n} of 3", flushPause: "Pause, flush {n} of 3 next",
-    flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready (no shot, backflush or standby, water in the tank).",
-    flushNeedsSensor: "Only with a water level sensor: without one the pump could run dry with an empty tank. Switch it on under Settings → Water tank.",
-    flushNote: "The machine will flush by itself (3 × briefly) once the temperature has been steady at the setpoint for 2 min. Leave the empty portafilter in, put a cup under it.",
+    flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready.",
+    flushNeedsSensor: "Only with a water level sensor (keeps the pump from running dry). Switch it on under Settings → Water tank.",
+    flushNote: "Flushes by itself shortly (3 × briefly). Leave the empty portafilter in, put a cup under it.",
     bfDoneNote: "Backflush done: switch the brew switch off, take the blind basket out and rinse briefly.",
-    rinseNote: "Please rinse: portafilter out, knock it out, brew switch on for 2–3 s. No coffee stays on the shower screen.", piAfter: "brew after it {s} s", piOf: "{s} s of it pre-infusion",
+    rinseNote: "Please rinse: portafilter out, brew switch on for 2–3 s.", piAfter: "brew after it {s} s", piOf: "{s} s of it pre-infusion",
     sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
     scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?", battery: "Battery", batteryLow: "please charge",
     scaleNone: "No scale chosen – search under Settings → Scale", scaleWith: "Connected to {n}", scaleWaiting: "{n} chosen, not connected – switch the scale on",
     scaleNoneChosen: "No scale chosen", scaleFind: "Find scale", scaleSearching: "Searching …", scaleForget: "Forget", scaleConnect: "Connect", scaleChosen: "chosen",
-    signal: ["weak signal", "medium signal", "good signal"], scaleHint: "Switch the scale on and disconnect the Bookoo app: the scale takes one connection only.",
+    signal: ["weak signal", "medium signal", "good signal"], scaleHint: "Switch the scale on, disconnect the Bookoo app (the scale takes one connection only).",
     scaleNoneFound: "No scale found. Is it switched on and not connected to the phone?",
-    scaleSwitchHint: "Another scale: first “Forget”, then search (the machine does not search while one is connected).",
+    scaleSwitchHint: "Another scale: first “Forget”, then search.",
     dialBrew: "BREW", dialDone: "DONE", dialRemind: "Switch off", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
     compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
-    sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step, e.g. the grind. It needs an API key from Anthropic. The key stays in this browser only; safest is a key of its own with a monthly limit.",
+    sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step. It needs an API key from Anthropic (best with a monthly limit); the key stays in this browser only.",
     claudeGet: "Create a key ↗", claudeConnect: "Connect", claudeChecking: "Checking …", claudeOn: "Connected", claudeOnHint: "Suggestions on your shots by Claude Sonnet 5", claudeOff: "Disconnect",
     claudeBad: "The key was refused. Please connect again.", claudeNet: "Anthropic cannot be reached right now (internet?).", claudeForm: "An Anthropic key starts with sk-ant-.",
-    claudeCredit: "The key is valid, but the API credit is used up. Buy credits in the Anthropic console under “Plans & Billing”; a Claude subscription does not count for it.",
+    claudeCredit: "The API credit is used up: buy credits in the Anthropic console under “Plans & Billing” (a Claude subscription does not count here).",
     claudeModel: "The model is not available with this key.", claudeBusy: "Anthropic is busy right now. Please try again in a moment.", claudeOther: "Anthropic says: ",
     suggestion: "Suggestion on the last shot", suggestionOf: "Suggestion", analysis: "Analysis", analyze: "Analyse in depth",
-    sPreinf: "Pre-infusion (test)", "brew.pre_infusion.enabled": "Pre-infusion", "brew.pre_infusion.enabledHint": "a short burst, a pause, then the shot; the brew time includes both",
-    "brew.pre_infusion.time": "Burst", "brew.pre_infusion.timeHint": "pump and valve on", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "the valve stays open, the Pulsor board pulses the pump: a slow trickle",
+    sPreinf: "Pre-infusion (test)", "brew.pre_infusion.enabled": "Pre-infusion", "brew.pre_infusion.enabledHint": "burst, pause, then the shot; counts as brew time",
+    "brew.pre_infusion.time": "Burst", "brew.pre_infusion.timeHint": "pump and valve on", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "valve open, a slow trickle",
     piShot: "Pre-infusion {b} s + {p} s pause", piOpen: "valve open", piClosed: "valve closed", piOn: "Pre-infusion on: {b} s burst, {p} s pause", livePi: "Pre-infusion", livePause: "Pause",
     "brew.grind_scale": "Grinder scale", "brew.grind_scaleHint": "for Claude's suggestions",
     finer: "finer", coarser: "coarser", aiApply: "Apply", aiApplied: "Applied", aiChanges: "For the next shot", aiAppliedToast: "Suggestion applied", "brew.setpoint": "Brew temperature",
-    bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, then switch on backflush mode in Care.",
+    bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, start it in Care.",
     "backflush.remind_after": "Remind after", "backflush.remind_afterHint": "shots (0 = never)",
-    alarmOver: "Overtemperature", alarmOverHint: "The heater stays off until the temperature has dropped.", alarmSensor: "Sensor error", alarmSensorHint: "The heater is off. Check the temperature sensor and its cable.", alarmTank: "Water tank empty", alarmTankHint: "Please refill. The machine keeps heating, shots and flushes only go on with water.", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
+    alarmOver: "Overtemperature", alarmOverHint: "The heater stays off until the temperature has dropped.", alarmSensor: "Sensor error", alarmSensorHint: "The heater is off. Check the temperature sensor and its cable.", alarmTank: "Water tank empty", alarmTankHint: "Please refill. The machine keeps heating.", shotTime: "Time", shotWeight: "Weight", pumpOff: "pump off", noCurve: "No curve saved for this shot", today: "today", yesterday: "yesterday", stop: "Stop", stopHand: "by hand", stopTime: "by time", stopWeight: "by weight",
     stopHint: "Weight: switch the scale on first", stopMax: "Every shot ends after {n} s at the latest.",
-    fallbackTime: "Without the scale after", fallbackTimeHint: "If the scale is not connected, the shot stops after this time",
+    fallbackTime: "Without the scale after",
     noScaleGoal: "Scale not connected – target {n} s", flushSwitch: "Switch the brew switch off first.",
     deleteShot: "Delete shot", reallyDelete: "Delete this shot ({s})?", deleted: "Deleted",
     "brew.mode": "Brew mode", "brew.modeHint": "Automatic: time or weight ends the shot",
     "brew.by_time.enabled": "Stop by time", "brew.by_time.target_time": "Brew time",
     "hardware.sensors.scale.enabled": "Bluetooth scale", "hardware.sensors.scale.enabledHint": "Takes effect after a restart",
     "brew.by_weight.enabled": "Stop by weight", "brew.by_weight.target_weight": "Target weight",
-    "brew.by_weight.lag": "Drop time", "brew.by_weight.lagHint": "The pump stops this many seconds of flow before the target, the drops fill up; learned from each shot",
+    "brew.by_weight.lag": "Drop time", "brew.by_weight.lagHint": "The pump stops this many seconds of flow before the target; learned from each shot",
     lagLast: "Last shot: {f} g/s, so {g} g before the target", lagAt: "At {f} g/s: {g} g before the target",
-    beansSaved: "Saved beans", beansHint: "Each bean keeps dose, grind, target weight, temperature and drop time. For new beans, type their name above.",
+    beansSaved: "Saved beans", beansHint: "Each bean keeps dose, grind, target weight, temperature and drop time.",
     beanActive: "current", beanUse: "Use", beanDelete: "Delete", reallyDeleteBean: "Delete the beans “{n}” and their values?", beanBack: "“{n}” loaded", beanNew: "New beans “{n}” added",
     beanNewOpt: "+ New beans …", beanNewQ: "Name of the new beans (kind and roast)", beanNone: "none given", beanLag: "drops",
-    "brew.by_weight.learn": "Learn the stop", "brew.by_weight.learnHint": "after each shot by weight, from what ends up in the cup",
+    "brew.by_weight.learn": "Learn the stop", "brew.by_weight.learnHint": "from each shot by weight",
     target: "Target", atStop: "pump off at", drip: "drops", overTarget: "over target", underTarget: "under target", switchBack: "Switch the brew switch back off",
     "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
     "display.blescale_brew_timer": "Run the scale's timer",
@@ -335,7 +366,7 @@ const T = {
     "standby.time": "After", "hardware.sensors.watertank.enabled": "Level sensor",
     "hardware.sensors.watertank.mode": "Switch type", "display.language": "Language",
     "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I max",
-    "brew.heat_boost": "Heating during a shot", "brew.heat_boostHint": "Minimum power while the pump runs – makes up for the cold water (0 = off)",
+    "brew.heat_boost": "Heating during a shot", "brew.heat_boostHint": "Minimum power while the pump runs (0 = off)",
     steamCool: "Cooling after steam", steamHot: "Too hot for espresso after steam", steamHotHint: "A flush without the portafilter cools the block faster.",
     started: "Running for", lastStart: "last start", showLog: "Show log", fwPending: "new firmware on trial", fwFailed: "The last update did not start, the previous firmware runs.", bootReason: {power: "power on", reset: "reset/USB", software: "restart (page/update)", heap: "heap safety net", crash: "crash", watchdog: "watchdog (hung)", brownout: "brownout", unknown: "unknown"},
     "pid.ema_factor": "EMA smoothing", "pid.use_ponm": "PonM",
@@ -346,8 +377,18 @@ const T = {
     wifiReset: "Reset WiFi", factory: "Factory settings",
     reallyWifi: "Delete the WiFi credentials? The machine then opens a setup WiFi named after the device (password CleverCoffee).",
     reallyFactory: "Reset all settings to factory defaults?", reallyRestart: "Restart the machine now?",
-    saved: "Saved", failed: "Not saved, please retry", loadFailed: "Not everything loaded, the machine is busy – comes the next time you open it", needReboot: "Takes effect after a restart",
-    restarting: "Restarting …", uploaded: "Restored, restarting", version: "Version", restartNow: "Restart now"
+    saved: "Saved", failed: "Not saved, please retry", loadFailed: "Not everything loaded (machine busy)", needReboot: "Takes effect after a restart",
+    restarting: "Restarting …", uploaded: "Restored, restarting", version: "Version", restartNow: "Restart now",
+    sSchedule: "Schedule", "schedule.enabled": "Switch on automatically", "schedule.enabledHint": "The main switch stays on for it",
+    "schedule.on": "On at", "schedule.off": "Off at", "schedule.offHint": "optional", "schedule.days": "Days", dayNames: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    "brew.temp_end": "Course during the shot", "brew.temp_endHint": "The setpoint changes by this until the end of the shot (0 = off)",
+    sCount: "Counters", cToday: "today", cWeek: "week", cTotal: "total", cCoffee: "coffee", cTodayN: "{n} today", cWeekN: "{n} this week",
+    sDescale: "Descaling", descaleSince: "≈ {l} l since descaling on {d}", descaleCounted: "≈ {l} l counted so far", "descale.litres": "Remind at", "descale.litresHint": "0 = never",
+    descaled: "Descaled", reallyDescaled: "Descaling done? The counter starts again at 0.", descaleDue: "Descaling due (≈ {l} l). Confirm in Care afterwards.",
+    bfIn: "backflush in {n}", descaleIn: "descaling in ≈ {l} l",
+    cleanStart: "Clean with detergent", clean1: "Cleaning: detergent into the blind basket, then the brew switch on.", clean2: "Rinse the blind basket, brew switch off and on again: clear water.", clean3: "Rinsing with clear water.",
+    chNote: "Flow jumped – channeling?", refSet: "Set as reference", refClear: "Remove reference", refChip: "Reference", refSaved: "Saved as reference", refCleared: "Reference removed",
+    lastShot: "Last shot", tomorrow: "tomorrow", schedNext: "On {d} {t}", standbyIn: "Standby in {n} min", scale: "Scale", scaleGone: "Scale disconnected", wifi: "WiFi"
   }
 };
 let lang = "de";
@@ -363,6 +404,7 @@ const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1,
   "brew.by_weight.target_weight": .5, "brew.by_weight.lag": .05, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
+UNIT["brew.temp_end"] = "K"; STEP["brew.temp_end"] = .5; UNIT["descale.litres"] = "l"; STEP["descale.litres"] = 5;
 UNIT["brew.dose"] = "g"; UNIT["brew.pre_infusion.time"] = UNIT["brew.pre_infusion.pause"] = "s"; STEP["brew.pre_infusion.time"] = STEP["brew.pre_infusion.pause"] = .5;
 const TABS = [
   {id: "status", icon: "i-status", names: ["pid.enabled", "brew.setpoint", "BACKFLUSH_ON", "display.language", "display.blinking.delta", "backflush.remind_after"]},
@@ -374,20 +416,24 @@ const TABS = [
     ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
     ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn", "display.blescale_brew_timer"]],
     ["sPreinf", ["brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"]],
-    ["sTemp", ["brew.temp_offset", "display.blinking.delta"]],
+    ["sTemp", ["brew.temp_offset", "brew.temp_end", "display.blinking.delta"]],
     ["sStandby", ["standby.enabled", "standby.time"]],
+    ["sSchedule", ["schedule.enabled", "schedule.on", "schedule.off", "schedule.days"]], // scheduleCard()
     ["sDisplay", ["display.language", "display.post_brew_timer_duration"]],
     ["sTank", ["hardware.sensors.watertank.enabled", "hardware.sensors.watertank.mode"]],
     ["sPid", ["brew.heat_boost", "pid.regular.kp", "pid.regular.tn", "pid.regular.tv", "pid.regular.i_max", "pid.ema_factor", "pid.use_ponm"], true],
     ["sSystem", ["system.hostname", "system.ota_password", "system.log_level"], true]]},
   {id: "care", icon: "i-care", cards: [
     ["sFlush", ["brew.warmup_flush", "hardware.sensors.watertank.enabled"]], // flushCard()
-    ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time", "backflush.remind_after"]]]}
+    ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time", "backflush.remind_after"]],
+    ["sDescale", ["descale.litres"]], // descaleCard()
+    ["sCount", []]]} // countCard()
 ];
 
 // rows shown only while their switch is on
 const SHOWN_IF = {"brew.pre_infusion.time": "brew.pre_infusion.enabled", "brew.pre_infusion.pause": "brew.pre_infusion.enabled", "standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
-  "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled"};
+  "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled",
+  "schedule.on": "schedule.enabled", "schedule.off": "schedule.enabled", "schedule.days": "schedule.enabled"};
 const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint", "brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"];
 // what a bean keeps (src/beanProfiles.h): switching beans sets these
 const RECIPE = ["brew.dose", "brew.grind", "brew.by_weight.target_weight", "brew.setpoint", "brew.by_weight.lag"];
@@ -565,7 +611,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, fp: false, bfd: false, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, fp: false, bfd: false, clean: 0, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -573,13 +619,17 @@ function statusView(m) {
   h.innerHTML = `<div class="temp" id="tNow">–<small>°C</small></div><div class="sub" id="tSet"></div>`;
   if (P["brew.setpoint"]) { const r = el("div", "btns"); r.style.justifyContent = "center"; r.append(stepCtl("brew.setpoint")); h.append(r); }
   h.append(el("div", "bar", "<b id='heatBar'></b>"), el("div", "barlbl", `<span>${t("heater")}</span><span id="heatPct">–</span>`));
+  const pl = el("div", "pills"); pl.id = "pills"; pl.hidden = true; h.append(pl); // paintPills()
   m.append(h);
   const a = el("div", "alarm"); a.id = "alarm"; a.hidden = true; m.insertBefore(a, h); // above everything, set by paintLive()
-  if (P["BACKFLUSH_ON"]?.value) m.append(el("div", "note", t("bfActive")));
+  if (P["BACKFLUSH_ON"]?.value) { const n = el("div", "note", t("bfActive")); n.id = "bfActive"; m.append(n); } // paintFlush(): the cleaning's step instead
+  const cn = el("div", "note clean"); cn.hidden = true; m.append(cn); // paintFlush()
+  const dn = el("div", "note"); dn.id = "descaleNote"; dn.hidden = true; m.append(dn); // paintCare()
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
   const rn = el("div", "note", t("rinseNote")); rn.className = "note rinse"; rn.hidden = true; m.append(rn); // paintFlush()
   const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = true; m.append(bd); // paintFlush()
+  const lc = el("section", "card"); lc.id = "lastCard"; lc.hidden = true; m.append(lc); // paintLastShot()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
     const sw = switchCtl("pid.enabled"); sw.id = "pidSw";
@@ -590,7 +640,7 @@ function statusView(m) {
   const g = el("section", "card");
   g.innerHTML = `<h2>${t("history")}</h2><canvas id="chart"></canvas><div class="legend"><span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("setLine")}</span><span><i style="background:rgba(255,146,38,.35)"></i>${t("heatLine")}</span></div>`;
   m.append(g);
-  paintLive(); paintBf();
+  paintLive(); paintBf(); paintCare();
 }
 // "Stop: by hand | by time | by weight" -- brew.mode plus the by_time/by_weight switches in one choice
 function stopMode() {
@@ -714,7 +764,7 @@ function shotCard() {
     }
     if (cur === "weight" && P["brew.by_time.target_time"]) { // the firmware stops at the target time when the scale is missing
       const f = el("div", "row"), fl = el("div", "lbl");
-      fl.append(el("div", null, t("fallbackTime")), el("p", null, t("fallbackTimeHint")));
+      fl.append(el("div", null, t("fallbackTime")));
       f.append(fl, stepCtl("brew.by_time.target_time", saveTarget)); c.append(f);
     }
   }
@@ -739,9 +789,10 @@ async function loadShots() {
   try { const r = await call("/shots"); if (r.ok) { const j = await r.json(); shots = j.shots; bfCount = j.bf ?? 0; } } catch (e) {}
   if (shots && shots.map(shotKey).join("|") !== before) { // a curve is fetched by its place in the list: places moved
     for (const k in curves) delete curves[k];
-    compareShot = null;
     const i = shots.findIndex(x => shotKey(x) === openShot);
+    compareShot = i < 0 ? null : defaultCompare(shots[i]);
     if (i < 0) openShot = null; else await curveOf(shots[i], i);
+    if (before !== undefined) loadCare(); // a new shot counted
   }
   paintShots(); paintBf(); paintLag();
   // a shot stopped by weight, its drops counted: the machine has learned the drop time from it
@@ -799,6 +850,7 @@ let compareShot = null; // key of the shot drawn behind it
 const shotKey = x => x.at ? x.at + "," + x.s : ["0", x.s, x.g, x.t0, x.fd].join(",");
 const coldStart = x => x.t0 != null && P["brew.setpoint"] && x.t0 < P["brew.setpoint"].value - 2;
 function paintShots(box = $("#shotList")) {
+  paintLastShot();
   if (!box) return;
   box.innerHTML = "";
   if (!shots) { box.append(el("p", "empty", "…")); return; }
@@ -827,7 +879,7 @@ const curveOf = async (x, i) => {
 };
 async function toggleCurve(x, i) {
   openShot = openShot === shotKey(x) ? null : shotKey(x);
-  compareShot = null;
+  compareShot = openShot ? defaultCompare(x) : null;
   if (openShot) await curveOf(x, i);
   paintShots();
 }
@@ -882,17 +934,17 @@ function fillDetail(cv, x, i) {
   else if (d) {
     cv.append(el("canvas"), el("div", "legend", (d.w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "") + (d.f ? `<span><i style="background:var(--cool)"></i>${t("flowLine")}</span>` : "") + `<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span>`));
   }
-  const ts = el("div", "taste"), seg = el("div", "seg");
-  for (const [v, key] of [[1, "sour"], [2, "good"], [3, "bitter"]]) {
-    const b = el("button", x.r === v ? "on" : "", t(key));
-    b.onclick = () => rateShot(x, i, x.r === v ? 0 : v);
-    seg.append(b);
-  }
-  ts.append(el("span", null, t("tasteQ")), seg); cv.append(ts);
-  const others = shots.filter(o => o !== x);
-  if (d && d !== "none" && others.length) {
+  if (x.ch) cv.append(el("p", "shotinfo ch", t("chNote")));
+  cv.append(tasteRow(x, i));
+  const others = shots.filter(o => o !== x), ref = reference && !isRef(x);
+  if (d && d !== "none" && (others.length || ref)) {
     const cmp = el("div", "cmp"); cmp.append(el("span", null, t("compareWith")));
-    for (const o of others) {
+    if (ref) {
+      const b = el("button", compareShot === "ref" ? "on" : "", t("refChip") + " · " + num(reference.shot.s, 1) + " s" + (reference.shot.g != null ? " · " + num(reference.shot.g, 1) + " g" : ""));
+      b.onclick = () => { compareShot = compareShot === "ref" ? null : "ref"; paintShots(); };
+      cmp.append(b);
+    }
+    for (const o of others.filter(o => !isRef(o))) { // the reference has its own button
       const b = el("button", shotKey(o) === compareShot ? "on" : "", num(o.s, 1) + " s" + (o.g != null ? " · " + num(o.g, 1) + " g" : ""));
       b.onclick = () => toggleCompare(o);
       cmp.append(b);
@@ -900,9 +952,38 @@ function fillDetail(cv, x, i) {
     cv.append(cmp);
   }
   if (i > 0) { const a = aiBox(x, false); if (a) cv.append(a); } // the newest one has its box above the list
-  const dw = el("div", "btns"), del = el("button", "btn bad", t("deleteShot"));
+  const dw = el("div", "btns"), del = el("button", "btn bad", t("deleteShot")), rf = el("button", "btn", t(isRef(x) ? "refClear" : "refSet"));
   del.onclick = e => { e.stopPropagation(); deleteShot(x, i); };
-  dw.append(del); cv.append(dw);
+  rf.onclick = e => { e.stopPropagation(); setReference(x, i, !isRef(x)); };
+  dw.append(rf, del); cv.append(dw);
+}
+function tasteRow(x, i) {
+  const ts = el("div", "taste"), seg = el("div", "seg");
+  for (const [v, key] of [[1, "sour"], [2, "good"], [3, "bitter"]]) {
+    const b = el("button", x.r === v ? "on" : "", t(key));
+    b.onclick = () => rateShot(x, i, x.r === v ? 0 : v);
+    seg.append(b);
+  }
+  ts.append(el("span", null, t("tasteQ")), seg);
+  return ts;
+}
+// ---------- reference shot (GET /reference {shot, curve} or null; src/shotHistory.h): drawn behind every other shot ----------
+let reference = null;
+async function loadReference() {
+  try { const r = await call("/reference"); if (r.ok) reference = await r.json(); } catch (e) {}
+}
+const isRef = x => !!reference && reference.shot.at === x.at && Math.abs(reference.shot.s - x.s) < .06;
+const defaultCompare = x => reference && !isRef(x) ? "ref" : null;
+async function setReference(x, i, on) {
+  if (on) try { const j = await (await call("/shots")).json(); i = j.shots.findIndex(o => shotKey(o) === shotKey(x)); } catch (e) {}
+  const r = on && i < 0 ? null : await post(on ? `/shot/reference?i=${i}&at=${x.at}&s=${x.s}` : "/shot/reference?clear=1").catch(() => null);
+  if (!r?.ok) { toast(t("failed")); return; }
+  for (let k = 0; k < 25; k++) { // applied in the machine's loop; the newest shot once its drops are counted
+    await pause(600); await loadReference();
+    if (on ? isRef(x) : !reference) break;
+  }
+  toast(t(on ? "refSaved" : "refCleared"));
+  paintShots();
 }
 async function deleteShot(x, i) {
   if (!confirm(t("reallyDelete").replace("{s}", num(x.s, 1) + " s" + (x.g != null ? " · " + num(x.g, 1) + " g" : "")))) return;
@@ -920,7 +1001,7 @@ function drawShotCharts() {
   if (!box || !shots?.length) return;
   drawShotBars(box.querySelector(".bars"));
   const k = shots.findIndex(x => shotKey(x) === openShot), cv = k < 0 ? null : box.querySelectorAll(".curve")[k];
-  const other = compareShot && curves[compareShot] !== "none" ? curves[compareShot] : null;
+  const other = compareShot === "ref" ? reference?.curve ?? null : compareShot && curves[compareShot] !== "none" ? curves[compareShot] : null;
   if (cv && curves[openShot] && curves[openShot] !== "none") drawCurve(cv.querySelector("canvas"), curves[openShot], other, shots[k].tw, shots[k].pi);
 }
 function canvas2d(c) { // sharp on high-density screens; null while hidden
@@ -1062,6 +1143,7 @@ function coffeeContext() {
   const v = id => P[id]?.value, m = stopMode(), out = [];
   out.push("Maschine: Quick Mill Orione 3000, Einkreiser mit Thermoblock, Vibrationspumpe (Ulka), 3-Wege-Magnetventil, kein Überdruckventil, kein Druckprofil; Steuerung CleverCoffee mit PID.");
   out.push(`Brühtemperatur-Soll ${v("brew.setpoint")} °C${v("brew.temp_offset") ? `, Offset ${v("brew.temp_offset")} K` : ""}.`);
+  if (v("brew.temp_end")) out.push(`Temperaturverlauf: Das Soll ändert sich während des Bezugs gleichmäßig um ${num(v("brew.temp_end"), 1)} K bis zum Ende.`);
   if (v("brew.grinder")) out.push("Mühle: " + v("brew.grinder"));
   if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans"));
   out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
@@ -1091,8 +1173,10 @@ function coffeeContext() {
     if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
     if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel${x.lg != null && x.fs != null ? `: gelernte Nachlaufzeit ${num(x.lg, 2)} s × Durchfluss beim Stopp ${num(x.fs, 1)} g/s` : ""}), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
     if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
+    if (x.ch) p.push("Durchfluss sprang während des Bezugs plötzlich an (Hinweis auf Kanalbildung)");
     out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
   });
+  if (reference) { const x = reference.shot; out.push(`Referenzbezug, vom Nutzer als Vorbild gewählt (${whenText(x.at)}): ${[num(x.s, 1) + " s", x.g != null ? num(x.g, 1) + " g" : "", x.d ? num(x.d, 1) + " g Kaffee" : "", x.m ? "Mahlgrad " + x.m : "", x.b ? "Bohne " + x.b : ""].filter(Boolean).join(", ")}.`); }
   const c = curves[shotKey(shots[0])];
   if (c && c !== "none") {
     const step = Math.max(1, Math.round(1000 / c.dt)), sec = a => a.filter((_, k) => k % step === 0).map(v => v == null ? "-" : num(v / 10, 1)).join(" ");
@@ -1137,7 +1221,7 @@ function claudeError(e) {
 // Folds: the short suggestion starts open, the long analysis closed (it is long), unless it was just
 // asked for; what the user opens or closes stays so while the page is open
 const aiOpen = {};
-function aiBox(x, newest) {
+function aiBox(x, newest, folded = false) {
   if (!aiKey()) return null; // not connected: no suggestions at all
   const k = aiCache(x), long = store.get(k + ".long") || aiLive[k + ".long"], short = store.get(k) || aiLive[k];
   const text = long || short || (aiBusy[k] ? "…" : null);
@@ -1145,8 +1229,9 @@ function aiBox(x, newest) {
   const kk = long ? k + ".long" : k, b = el("details", "ai"), sum = el("summary"), teaser = el("span", "teaser"), body = el("div", null, "");
   body.textContent = text; body.dataset.ai = kk; teaser.textContent = text;
   sum.append(el("b", null, t(long ? "analysis" : newest ? "suggestion" : "suggestionOf")), teaser);
-  b.open = aiOpen[kk] ?? !long;
-  b.ontoggle = () => { aiOpen[kk] = b.open; };
+  const ok = folded ? kk + ".home" : kk; // the overview starts folded, on its own
+  b.open = aiOpen[ok] ?? (!folded && !long);
+  b.ontoggle = () => { aiOpen[ok] = b.open; };
   b.append(sum, body);
   const ap = applyBox(kk, x === shots[0]);
   if (ap) b.append(ap);
@@ -1357,13 +1442,15 @@ function paintLive() {
   $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip").style.color = col === "var(--faint)" ? "" : col;
   const title = txt + " · Orione"; // also in the tab and app switcher
   if (document.title !== title) document.title = title;
-  paintAlarm(); paintShotLive(); paintDial(); paintFlush();
+  paintAlarm(); paintShotLive(); paintDial(); paintFlush(); paintPills();
   if (live.ok && live.scale !== lastScaleState) { const was = lastScaleState; lastScaleState = live.scale; if (was !== null && $("#scaleNow")) loadScale(); } // connected or lost: the settings card too
   const n = $("#tNow");
   if (!n) return;
   n.innerHTML = (live.temp == null ? "–" : num(live.temp, 1)) + "<small>°C</small>";
   n.style.color = col === "var(--faint)" ? "" : col;
-  $("#tSet").textContent = live.target == null ? "" : `${t("setpoint")} ${num(live.target, 1)} °C`;
+  // the setpoint under the temperature only when the stepper below does not show it already
+  const same = live.target == null || (P["brew.setpoint"] && Math.abs(live.target - P["brew.setpoint"].value) < .05);
+  $("#tSet").textContent = same ? "" : `${t("setpoint")} ${num(live.target, 1)} °C`; $("#tSet").hidden = same;
   $("#heatBar").style.transform = `scaleX(${Math.max(0, Math.min(100, live.heat)) / 100})`;
   $("#heatPct").textContent = num(live.heat, 0) + " %";
   drawChart();
@@ -1408,7 +1495,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1454,6 +1541,11 @@ function paintFlush() {
   const rinse = live.ok && live.fp && live.state !== 20 && !(lastShot?.until && Date.now() < lastShot.until);
   document.querySelectorAll(".note.rinse").forEach(e => { e.hidden = !rinse || live.bfd; });
   document.querySelectorAll(".note.bfdone").forEach(e => { e.hidden = !(live.ok && live.bfd); }); // backflush over, switch still on
+  const ck = live.ok ? ["", "clean1", "clean2", "clean3"][live.clean] || "" : ""; // cleaning with detergent (src/orioneMachine.h)
+  document.querySelectorAll(".note.clean").forEach(e => { e.hidden = !ck; if (ck) e.textContent = t(ck); });
+  const ba = $("#bfActive"), cb = $("#cleanBtn");
+  if (ba) ba.hidden = !!ck;
+  if (cb) cb.hidden = !!ck || !!P["BACKFLUSH_ON"]?.value;
   if (!b || !P["hardware.sensors.watertank.enabled"]?.value) return;
   b.textContent = t(run ? "flushStop" : "flushNow");
   b.disabled = !run && !(live.ok && live.state === 10 && !live.sw); // the firmware starts only from "ready" (kPidNormal), switch off
@@ -1603,6 +1695,153 @@ function paintScale() {
   }
   $("#scaleHint").textContent = t(s?.state === 2 && !scaleSearching ? "scaleSwitchHint" : !scaleSearching && scaleSearched && !scaleFound.length ? "scaleNoneFound" : "scaleHint");
 }
+// ---------- counters, descaling, standby and WiFi (GET /care, src/machineCare.h) ----------
+let care; // undefined: not asked yet, null: firmware without
+async function loadCare() {
+  try { const r = await call("/care"); if (r.ok) care = await r.json(); else if (r.status === 404) care = null; } catch (e) {}
+  paintCare();
+}
+const litres = ml => num(ml / 1000, ml < 10000 ? 1 : 0);
+const loc = () => lang === "de" ? "de-DE" : "en-GB";
+function paintCare() {
+  const st = $("#stats");
+  if (st) {
+    st.closest(".card").hidden = care === null;
+    if (care) st.innerHTML = [[care.today, "cToday"], [care.week, "cWeek"], [care.total, "cTotal"], [care.coffee >= 1000 ? num(care.coffee / 1000, 1) + " kg" : fmt(Math.round(care.coffee)) + " g", "cCoffee"]]
+      .map(([v, k]) => `<div><b>${v}</b><small>${t(k)}</small></div>`).join("");
+  }
+  const ds = $("#descaleSt");
+  if (ds) {
+    ds.closest(".card").hidden = care === null;
+    if (care) {
+      ds.textContent = t(care.descaledAt ? "descaleSince" : "descaleCounted").replace("{l}", litres(care.water)).replace("{d}", new Date(care.descaledAt * 1000).toLocaleDateString(loc()));
+      const b = $("#descaleBar");
+      b.style.transform = `scaleX(${care.descaleL > 0 ? Math.min(1, care.water / 1000 / care.descaleL) : 0})`;
+      b.style.background = care.due ? "var(--heat)" : "var(--cool)";
+    }
+  }
+  const dn = $("#descaleNote");
+  if (dn) { dn.hidden = !care?.due; if (care?.due) dn.textContent = t("descaleDue").replace("{l}", litres(care.water)); }
+  paintLastShot(); paintPills();
+}
+function countCard() {
+  const c = el("section", "card"), s = el("div", "stats");
+  s.id = "stats"; c.append(el("h2", null, t("sCount")), s);
+  setTimeout(paintCare);
+  return c;
+}
+function descaleCard() {
+  const c = el("section", "card"), st = el("p", "scalenow", "…");
+  st.id = "descaleSt";
+  c.append(el("h2", null, t("sDescale")), st, el("div", "bar", "<b id='descaleBar'></b>"));
+  if (P["descale.litres"]) { const r = el("div", "row"); r.append(lbl("descale.litres"), stepCtl("descale.litres", async (id, v) => { const ok = await save(id, v); if (ok) loadCare(); return ok; })); c.append(r); }
+  const w = el("div", "btns"), b = el("button", "btn", t("descaled"));
+  b.onclick = async () => {
+    if (!confirm(t("reallyDescaled"))) return;
+    const r = await post("/care/descaled").catch(() => null);
+    toast(r?.ok ? t("saved") : t("failed"));
+    await loadCare();
+  };
+  w.append(b); c.append(w);
+  setTimeout(paintCare);
+  return c;
+}
+// heating schedule (src/main.cpp scheduleLoop): minutes of the day, local time; off 1440 = none; days bit 0 = Monday
+const hm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+function scheduleCard() {
+  if (!P["schedule.enabled"]) return null;
+  const c = el("section", "card"), r = el("div", "row"), sw = switchCtl("schedule.enabled");
+  c.append(el("h2", null, t("sSchedule")));
+  r.append(lbl("schedule.enabled"), sw); rowToggles(r, sw); c.append(r);
+  if (!P["schedule.enabled"].value) return c;
+  for (const id of ["schedule.on", "schedule.off"]) {
+    if (!P[id]) continue;
+    const row = el("div", "row"), inp = el("input", "txt"), shown = () => { inp.value = P[id].value < 1440 ? hm(P[id].value) : ""; };
+    inp.type = "time"; inp.setAttribute("aria-label", t(id)); shown();
+    inp.onchange = async () => {
+      if (!inp.value && id === "schedule.on") return shown(); // the on time is needed, the off time not
+      const [h, mi] = inp.value.split(":").map(Number);
+      if (!await save(id, inp.value ? h * 60 + mi : 1440)) shown();
+      paintPills();
+    };
+    row.append(lbl(id), inp); c.append(row);
+  }
+  if (P["schedule.days"]) {
+    const row = el("div", "row stack"), d = el("div", "days");
+    t("dayNames").forEach((name, k) => {
+      const b = el("button", P["schedule.days"].value & (1 << k) ? "on" : "", name);
+      b.setAttribute("aria-pressed", String(!!(P["schedule.days"].value & (1 << k))));
+      b.onclick = async () => {
+        const v = P["schedule.days"].value ^ (1 << k);
+        if (!await save("schedule.days", v)) return;
+        b.classList.toggle("on", !!(v & (1 << k))); b.setAttribute("aria-pressed", String(!!(v & (1 << k)))); paintPills();
+      };
+      d.append(b);
+    });
+    row.append(lbl("schedule.days"), d); c.append(row);
+  }
+  return c;
+}
+// the next switch-on by the schedule, in the browser's time zone (the machine's: Germany)
+function nextOn() {
+  const v = id => P[id]?.value;
+  if (!v("schedule.enabled") || v("schedule.on") == null) return null;
+  const days = v("schedule.days") ?? 127, on = v("schedule.on"), now = new Date();
+  for (let k = 0; k < 8; k++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, Math.floor(on / 60), on % 60);
+    if (d > now && days & (1 << (d.getDay() + 6) % 7)) return d;
+  }
+  return null;
+}
+// a line of small states under the temperature: scale, schedule, standby, WiFi
+let pillsText = "";
+function paintPills() {
+  const box = $("#pills");
+  if (!box) return;
+  const out = [], pill = (txt, col) => out.push(`<span><i style="background:${col}"></i>${txt}</span>`);
+  if (live.ok && (live.scale === 1 || live.scale === 2)) pill(live.scale === 2 ? t("scale") + (live.battery != null ? ` · ${live.battery} %` : "") : t("scaleGone"), live.scale === 2 ? (live.battery != null && live.battery <= 20 ? "var(--heat)" : "var(--ready)") : "var(--faint)");
+  const on = nextOn();
+  if (on) {
+    const days = Math.round((new Date(on.toDateString()) - new Date(new Date().toDateString())) / 864e5);
+    pill(t("schedNext").replace("{d}", days === 0 ? t("today") : days === 1 ? t("tomorrow") : on.toLocaleDateString(loc(), {weekday: "short"})).replace("{t}", hm(P["schedule.on"].value)), "var(--heat)");
+  }
+  if (care?.standby >= 0 && live.state !== 80) pill(t("standbyIn").replace("{n}", care.standby), "var(--faint)");
+  if (care?.rssi < 0) pill(`${t("wifi")} −${-care.rssi} dBm`, care.rssi >= -67 ? "var(--ready)" : care.rssi >= -75 ? "var(--heat)" : "var(--err)");
+  const html = out.join("");
+  if (html !== pillsText || box.hidden === !html) { pillsText = html; box.innerHTML = html; box.hidden = !html; }
+}
+// the newest shot on the overview: its numbers, the taste, Claude's word (folded) and the counters; a tap opens it
+function paintLastShot() {
+  const c = $("#lastCard"), x = shots?.[0];
+  if (!c) return;
+  c.hidden = !x;
+  c.replaceChildren();
+  if (!x) return;
+  const h = el("button", "lasthead"), n = el("div", "lastnums"), dev = deviation(x);
+  h.append(el("h2", null, t("lastShot")), el("small", null, whenText(x.at)), el("i", null, "›"));
+  h.onclick = () => showShot(x);
+  n.append(el("b", null, num(x.s, 1) + " s"));
+  if (x.g != null) n.append(el("b", null, num(x.g, 1) + " g"));
+  if (x.d && x.g != null) n.append(el("span", null, "1:" + num(x.g / x.d, 1)));
+  if (dev != null) n.append(el("span", Math.abs(dev) > 1 ? "off" : "", signed(dev) + " g"));
+  c.append(h, n);
+  if (x.ch) c.append(el("p", "shotinfo ch", t("chNote")));
+  c.append(tasteRow(x, 0));
+  const a = aiBox(x, true, true);
+  if (a) c.append(a);
+  const every = P["backflush.remind_after"]?.value ?? 0, line = [];
+  if (care) line.push(t("cTodayN").replace("{n}", care.today), t("cWeekN").replace("{n}", care.week));
+  if (every > 0) line.push(t("bfIn").replace("{n}", Math.max(0, every - bfCount)));
+  if (care?.descaleL > 0) line.push(t("descaleIn").replace("{l}", litres(Math.max(0, care.descaleL * 1000 - care.water))));
+  if (line.length) c.append(el("p", "shotinfo", line.join(" · ")));
+}
+let jumpToShot = false;
+async function showShot(x) { // the brew tab with this shot open
+  openShot = shotKey(x); compareShot = defaultCompare(x);
+  await curveOf(x, shots.indexOf(x));
+  paintShots(); jumpToShot = true;
+  location.hash = "brew";
+}
 function careExtras(m) {
   const b = el("section", "card");
   b.innerHTML = `<h2>${t("sBackup")}</h2>`;
@@ -1680,11 +1919,19 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sSchedule" ? scheduleCard() : title === "sDescale" ? descaleCard() : title === "sCount" ? countCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
     const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
     const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = !(live.ok && live.bfd); m.querySelector('[data-card="sBf"] h2')?.after(bd);
-    careExtras(m); paintBf();
+    const cn = el("div", "note clean"); cn.hidden = true; bd.after(cn);
+    const cw = el("div", "btns"), cb = el("button", "btn", t("cleanStart")); cb.id = "cleanBtn"; cb.hidden = !!P["BACKFLUSH_ON"]?.value;
+    cb.onclick = async () => { // backflush mode on, with the program: detergent cycles, rinse out, clear water
+      const r = await post("/toggleBackflush?cleaner=1").catch(() => null);
+      if (!r?.ok) { toast(t("failed")); return; }
+      await pause(500); delete P.BACKFLUSH_ON; await load(["BACKFLUSH_ON"]).catch(() => {}); refresh();
+    };
+    cw.append(cb); m.querySelector('[data-card="sBf"]')?.append(cw);
+    careExtras(m); paintBf(); paintFlush();
   }
 }
 function refresh() { for (const x of TABS) dirty.add(x.id); render(); }
@@ -1709,6 +1956,7 @@ async function render() {
   scrollTo(0, scrollAt[def.id] || 0);
   if (def.id === "status") paintLive();
   if (def.shot) drawShotCharts(); // canvases have no size while their tab is hidden
+  if (def.shot && jumpToShot) { jumpToShot = false; $("#shotList .shot.open")?.scrollIntoView({block: "start"}); }
 }
 addEventListener("hashchange", () => { tab = location.hash.slice(1); render(); });
 addEventListener("resize", () => { drawChart(); drawShotCharts(); paintDial(); });
@@ -1734,8 +1982,11 @@ async function loadFonts() {
   connectLive();
   await loadFonts();
   for (const x of TABS) { try { await load(needOf(x)); } catch (e) {} } // the other tabs' values, one request after another
+  await loadReference();
   await loadShots();
+  await loadCare();
   loadBeans();
+  setInterval(() => { if (!document.hidden && shown === "status") loadCare(); }, 60000); // standby countdown, WiFi signal
 })();
 </script>
 </body>
