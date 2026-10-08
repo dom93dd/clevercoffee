@@ -21,6 +21,9 @@
 #include "LittleFS.h"
 #include "webRequestGate.h"
 #ifdef CC_ORIONE
+#include "flashAssets.h"
+#endif
+#ifdef CC_ORIONE
 #include <nvs.h>
 #endif
 
@@ -971,10 +974,9 @@ inline void serverSetup() {
     // serve static files
     LittleFS.begin();
 #ifdef CC_ORIONE
-    // The Orione page is one gzipped file (frontend-orione/, built by orione_frontend.py). no-cache:
-    // the browser asks every time but gets a 304 by ETag as long as the file did not change.
-    web_gate::serveStatic(server, "/fonts/", LittleFS, "/html/fonts/", "max-age=31536000, immutable"); // a new font gets a new name
-    web_gate::serveStatic(server, "/", LittleFS, "/html/", "no-cache").setDefaultFile("index.html");
+    // The Orione page, fonts, manifest and icons are compiled into the firmware (src/flashAssets.h); LittleFS
+    // only holds config.json. The page is no-cache: the browser asks every time and gets a 304 while unchanged.
+    server.addHandler(new web_gate::GatedHandler(new FlashAssetHandler()));
 #else
     server.serveStatic("/css", LittleFS, "/css/", "max-age=604800"); // cache for one week
     server.serveStatic("/js", LittleFS, "/js/", "max-age=604800");
