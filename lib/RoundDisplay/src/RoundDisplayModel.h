@@ -71,6 +71,7 @@ namespace rd {
             bool warmupFlushPending = false; // after a cold start the machine will flush by itself once settled
             bool flushReminder = false;      // a shot since the last rinse: rinse the shower screen (Orione)
             bool backflushDone = false;      // backflush over, brew switch still on: switch it off (Orione)
+            bool switchWakes = false;        // standby: the brew switch wakes the machine (Orione)
             bool steamByThermostat = false;  // steam screen: the original steam thermostat heats, the firmware only watches
             bool steamCooling = false;       // after steam: too hot for espresso until it has cooled down
             float flushTime = 0;

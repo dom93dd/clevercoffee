@@ -544,7 +544,7 @@ namespace rd {
         h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16 | m.cleaningPhase << 24);
         h = hashAdd(h, m.offlineMode | m.wifiConnected << 1 | m.wifiBars << 2 | m.mqttEnabled << 5 | m.mqttConnected << 6);
         h = hashAdd(h, q(m.emergencyResetTemp, 0.1f));
-        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3 | m.flushReminder << 4 | m.backflushDone << 5);
+        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3 | m.flushReminder << 4 | m.backflushDone << 5 | m.switchWakes << 6);
 
         if (screen_ == Screen::EmergencyStop || screen_ == Screen::SensorError) {
             h = hashAdd(h, static_cast<int32_t>(nowMs / 500 % 2)); // blinking ring
@@ -1694,6 +1694,10 @@ namespace rd {
         formatNumber(num, sizeof(num), m.temperature, 0, m.language);
         snprintf(buf, sizeof(buf), "%s°", num);
         p.text(fonts::mid(), buf, kCx, 150.0f, kTextFaint);
+
+        if (m.switchWakes) {
+            p.text(fonts::hint(), s.switchWakes, kCx, kRowBY, kTextFaint);
+        }
     }
 
     void RoundUi::drawPidDisabled(Painter& p) const {

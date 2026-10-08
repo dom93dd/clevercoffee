@@ -263,6 +263,7 @@ class FakeMachine {
             m.flushReminder = flushReminder;
             m.backflushDone = backflushDone;
             m.cleaningPhase = cleaningPhase;
+            m.switchWakes = true; // as the Orione build
 
             if (steamFromSwitch) {
                 m.mode = rd::Mode::Steam;

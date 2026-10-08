@@ -59,6 +59,7 @@ namespace rd {
             const char* clearWater;      // its second round, with clear water (bottom row)
             const char* rinseBasket;     // between the rounds: rinse the blind basket out
             const char* switchOffOn;     // ... then the brew switch off and on again
+            const char* switchWakes;     // standby: the brew switch wakes the machine
     };
 
     inline constexpr Strings kGerman = {
@@ -105,6 +106,7 @@ namespace rd {
         "Klarspülen",
         "Sieb ausspülen",
         "Schalter aus und an",
+        "Bezugsschalter weckt",
     };
 
     inline constexpr Strings kEnglish = {
@@ -151,6 +153,7 @@ namespace rd {
         "Clear water",
         "Rinse basket",
         "Switch off and on",
+        "Brew switch wakes",
     };
 
     inline const Strings& strings(const Language lang) {
