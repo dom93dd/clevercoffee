@@ -19,7 +19,7 @@ void Logger::init(const uint16_t port) {
 }
 
 bool Logger::begin() {
-    if (WiFi.status() == WL_CONNECTED) {
+    if (network_ && WiFi.status() == WL_CONNECTED) {
         Logger::getInstance().server_.begin();
     }
 
@@ -31,7 +31,7 @@ bool Logger::begin() {
 }
 
 bool Logger::update() {
-    if (Logger::getInstance().server_.hasClient()) {
+    if (network_ && Logger::getInstance().server_.hasClient()) {
         // If we are already connected to another client, then reject the new connection, otherwise accept the connection.
         if (Logger::getInstance().client_.connected()) {
             LOG(WARNING, "Serial Server Connection rejected");
@@ -66,7 +66,7 @@ void Logger::log(const Level level, const String& file, const __FlashStringHelpe
         sink_(time, static_cast<int>(level), logmsg);
     }
 
-    if (WiFi.status() == WL_CONNECTED && client_.connected()) {
+    if (network_ && WiFi.status() == WL_CONNECTED && client_.connected()) {
         client_.print(time);
         client_.print(get_level_identifier(level).c_str());
         client_.print(" ");

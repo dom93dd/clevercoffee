@@ -360,6 +360,13 @@ inline void serverSetup() {
             if (limit > static_cast<int>(parameters.size())) {
                 limit = static_cast<int>(parameters.size());
             }
+#ifdef CC_ORIONE
+            // all at once crashed the Orione build: the ~60 parameters' answer outgrew the heap (08.10.2026, GET /log:
+            // abort in cbuf::resize); its page asks for 8 at a time
+            if (limit > 10) {
+                limit = 10;
+            }
+#endif
 
             if (limit < 0) {
                 limit = 0;

@@ -383,7 +383,11 @@ bool BluetoothScale::isConnected() const {
 
 #ifdef CC_ORIONE
 void BluetoothScale::startConnectionTask() {
+#ifdef CC_ORIONE
+    xTaskCreatePinnedToCore(connectionTask, "scale", 3328, this, 1, nullptr, 0); // used ~1.9 KB at most, connected (GET /boot)
+#else
     xTaskCreatePinnedToCore(connectionTask, "scale", 4096, this, 1, nullptr, 0);
+#endif
 }
 
 int BluetoothScale::getBattery() const {

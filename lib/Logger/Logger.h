@@ -98,6 +98,11 @@ class Logger {
         static void setSink(Sink sink) {
             sink_ = sink;
         }
+
+        /** @brief No TCP log server (port 23): log lines go to serial and the sink only. Call before begin(). */
+        static void disableNetwork() {
+            network_ = false;
+        }
         static Level getCurrentLevel() {
             return getInstance().level_;
         }
@@ -128,6 +133,7 @@ class Logger {
         WiFiServer server_;
 
         inline static Sink sink_ = nullptr;
+        inline static bool network_ = true;
 };
 
 #ifndef __FILE_NAME__

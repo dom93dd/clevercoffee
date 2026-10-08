@@ -1059,6 +1059,11 @@ void setup() {
     // Initialize the logger
     Logger::init(23);
 #ifdef CC_ORIONE
+    // no log server on port 23: polling it from loop() crashed in lwip_accept (assert in a FreeRTOS mutex, 08.10.2026,
+    // GET /log); the lines before a restart or crash are in GET /log (src/orioneLog.h)
+    Logger::disableNetwork();
+#endif
+#ifdef CC_ORIONE
     orione_machine::noteStart();
     orione_log::begin(orione_machine::startReason); // from here on every log line also goes to GET /log
     LOGF(INFO, "Started after: %s", orione_machine::startReason);
