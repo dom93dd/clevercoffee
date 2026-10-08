@@ -936,6 +936,13 @@ void wiFiSetup() {
 #endif
 
     wm.setHostname(hostname.c_str());
+#ifdef CC_ORIONE
+    // Fast scan (the default) takes the first access point with the name on the lowest channel: with a repeater or a mesh
+    // that can be the far one after a restart (the WiFi got seconds slow after crashes and restarts, 08.10.2026). Scan all
+    // channels and take the strongest.
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+#endif
     wm.setEnableConfigPortal(false); // doesnt start config portal within autoconnect
     wm.setDisableConfigPortal(true); // disables config portal on wifi save
     bool wifiConnected = wm.autoConnect(hostname.c_str(), pass);
@@ -974,6 +981,9 @@ void wiFiSetup() {
         IPAddress ip = WiFi.localIP();
         snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
         LOGF(INFO, "WiFi connected - IP = %s", ipStr);
+#ifdef CC_ORIONE
+        LOGF(INFO, "WiFi access point %s, channel %d, %d dBm", WiFi.BSSIDstr().c_str(), static_cast<int>(WiFi.channel()), static_cast<int>(WiFi.RSSI()));
+#endif
 
         byte mac[6];
         WiFi.macAddress(mac);
