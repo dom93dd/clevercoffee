@@ -257,7 +257,7 @@ const T = {
     "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I-Max",
     "brew.heat_boost": "Heizen beim Bezug", "brew.heat_boostHint": "Mindestleistung, solange die Pumpe läuft – gleicht das kalte Wasser aus (0 = aus)",
     steamCool: "Abkühlen nach Dampf", steamHot: "Nach dem Dampf zu heiß für Espresso", steamHotHint: "Ein Spülbezug ohne Siebträger kühlt den Block schneller ab.",
-    started: "Läuft seit", lastStart: "letzter Start", bootReason: {power: "Strom an", reset: "Reset/USB", software: "Neustart (Seite/Update)", heap: "Speicher-Notbremse", crash: "Absturz", watchdog: "Watchdog (hing fest)", brownout: "Unterspannung", unknown: "unbekannt"},
+    started: "Läuft seit", lastStart: "letzter Start", showLog: "Protokoll anzeigen", fwPending: "neue Firmware wird geprüft", fwFailed: "Das letzte Update ist nicht gestartet, die vorige Firmware läuft.", bootReason: {power: "Strom an", reset: "Reset/USB", software: "Neustart (Seite/Update)", heap: "Speicher-Notbremse", crash: "Absturz", watchdog: "Watchdog (hing fest)", brownout: "Unterspannung", unknown: "unbekannt"},
     "pid.ema_factor": "EMA-Glättung", "pid.use_ponm": "PonM",
     "system.hostname": "Gerätename", "system.ota_password": "Update-Passwort", "system.log_level": "Protokoll",
     "BACKFLUSH_ON": "Backflush-Modus", "BACKFLUSH_ONHint": "Blindsieb einsetzen, dann Bezugsschalter",
@@ -335,7 +335,7 @@ const T = {
     "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I max",
     "brew.heat_boost": "Heating during a shot", "brew.heat_boostHint": "Minimum power while the pump runs – makes up for the cold water (0 = off)",
     steamCool: "Cooling after steam", steamHot: "Too hot for espresso after steam", steamHotHint: "A flush without the portafilter cools the block faster.",
-    started: "Running for", lastStart: "last start", bootReason: {power: "power on", reset: "reset/USB", software: "restart (page/update)", heap: "heap safety net", crash: "crash", watchdog: "watchdog (hung)", brownout: "brownout", unknown: "unknown"},
+    started: "Running for", lastStart: "last start", showLog: "Show log", fwPending: "new firmware on trial", fwFailed: "The last update did not start, the previous firmware runs.", bootReason: {power: "power on", reset: "reset/USB", software: "restart (page/update)", heap: "heap safety net", crash: "crash", watchdog: "watchdog (hung)", brownout: "brownout", unknown: "unknown"},
     "pid.ema_factor": "EMA smoothing", "pid.use_ponm": "PonM",
     "system.hostname": "Device name", "system.ota_password": "Update password", "system.log_level": "Log level",
     "BACKFLUSH_ON": "Backflush mode", "BACKFLUSH_ONHint": "Insert the blind basket, then the brew switch",
@@ -1609,7 +1609,8 @@ function careExtras(m) {
   const d = el("section", "card"); d.innerHTML = `<h2>${t("sDevice")}</h2>`;
   const w2 = el("div", "btns");
   const act = (label, url, really, cls) => { const x = el("button", "btn" + (cls ? " " + cls : ""), label); x.onclick = async () => { if (really && !confirm(really)) return; if (url === "/restart") return restartAndReload(); await post(url); toast(t("restarting")); }; return x; };
-  w2.append(act(t("restart"), "/restart", t("reallyRestart")), act(t("wifiReset"), "/wifireset", t("reallyWifi"), "bad"), act(t("factory"), "/factoryreset", t("reallyFactory"), "bad"));
+  const lg = el("a", "btn", t("showLog")); lg.href = "/log"; lg.target = "_blank"; lg.rel = "noopener"; // the last lines, also from before a restart
+  w2.append(lg, act(t("restart"), "/restart", t("reallyRestart")), act(t("wifiReset"), "/wifireset", t("reallyWifi"), "bad"), act(t("factory"), "/factoryreset", t("reallyFactory"), "bad"));
   d.append(w2);
   const v = el("div", "ver", version ? `${t("version")} ${version} · ${location.host}` : ""), si = el("div", "ver", screenInfo);
   si.id = "screenInfo";
@@ -1618,7 +1619,8 @@ function careExtras(m) {
   call("/boot").then(r => r.ok ? r.json() : null).then(j => { // why it last started (src/orioneMachine.h)
     if (!j) return;
     const h = Math.floor(j.uptime / 3600), mi = Math.floor(j.uptime % 3600 / 60);
-    bt.textContent = `${t("started")} ${h ? h + " h " : ""}${mi} min · ${t("lastStart")}: ${(t("bootReason") || {})[j.reason] ?? j.reason}`;
+    bt.textContent = `${t("started")} ${h ? h + " h " : ""}${mi} min · ${t("lastStart")}: ${(t("bootReason") || {})[j.reason] ?? j.reason}` + (j.fw === "pending" ? ` · ${t("fwPending")}` : "");
+    if (j.updateFailed) { const w = el("p", "err"); w.textContent = t("fwFailed"); bt.after(w); }
   }).catch(() => {});
   if (!version) call("/version").then(r => r.text()).then(x => { version = x.trim(); v.textContent = `${t("version")} ${version} · ${location.host}`; }).catch(() => {});
 }

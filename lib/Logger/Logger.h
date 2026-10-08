@@ -87,6 +87,17 @@ class Logger {
         static void setLevel(Level level) {
             getInstance().level_ = level;
         }
+
+        /**
+         * @brief A second place each log line goes to, besides serial or the connected client (e.g. a memory that
+         *        survives a restart). Called with the line's parts (level as Level's number); must be quick and may be
+         *        called from any task.
+         */
+        using Sink = void (*)(const char* time, int level, const char* msg);
+
+        static void setSink(Sink sink) {
+            sink_ = sink;
+        }
         static Level getCurrentLevel() {
             return getInstance().level_;
         }
@@ -115,6 +126,8 @@ class Logger {
         // Server and client
         WiFiClient client_;
         WiFiServer server_;
+
+        inline static Sink sink_ = nullptr;
 };
 
 #ifndef __FILE_NAME__

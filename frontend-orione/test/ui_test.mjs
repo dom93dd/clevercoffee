@@ -857,6 +857,20 @@ test("Claude: Mahlgrad-Vorschlag passt zur Skala der Mühle", async ({browser}) 
   await ctx.close();
 });
 
+test("Wartung: Protokoll über WLAN, Hinweis auf ein nicht gestartetes Update", async ({browser}) => {
+  await mock(BASE, "/__live", {updateFailed: true, fw: "pending", bootReason: "software"});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  const log = view(page).locator("a.btn", {hasText: "Protokoll anzeigen"});
+  assert.equal(await log.getAttribute("href"), "/log");
+  assert.equal(await log.getAttribute("target"), "_blank");
+  await view(page).locator("#bootInfo", {hasText: "neue Firmware wird geprüft"}).waitFor();
+  assert.equal(await view(page).locator("#bootInfo + p.err").textContent(), "Das letzte Update ist nicht gestartet, die vorige Firmware läuft.");
+  const text = await (await fetch(BASE + "/log")).text();
+  assert.match(text, /Round display ready/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Claude: Bohne je Bezug; neue Bohne oder Mühle fragt neu", async ({browser}) => {
   const now = Math.floor(Date.now() / 1000), form = body => fetch(BASE + "/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body});
   await mock(BASE, "/__shot", {s: 27.0, g: 36.0, at: now - 900, d: 18.0, m: "12", b: "Alte Bohne, hell"});

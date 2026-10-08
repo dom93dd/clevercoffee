@@ -515,7 +515,8 @@ inline void serverSetup() {
     });
 
 #ifdef CC_ORIONE
-    // why the ESP32 last started, for how long it has been running (orioneMachine.h), and its memory: the heap now,
+    // why the ESP32 last started, for how long it has been running (orioneMachine.h), whether the firmware is still on
+    // trial after an update over WiFi (firmwareGuard.h), and its memory: the heap now,
     // its lowest point since the start and largest block, for each task the stack it has never used (bytes), and the
     // NVS entries (32 bytes each) used and free: shots, curves, beans and WiFi share 20 KB
     server.on("/boot", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -525,14 +526,26 @@ inline void serverSetup() {
         };
         nvs_stats_t nvs{};
         nvs_get_stats(nullptr, &nvs);
-        char json[360];
+        char json[420];
         snprintf(json, sizeof(json),
-                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u}})",
+                 R"({"reason":"%s","uptime":%lu,"heap":%u,"heapMin":%u,"block":%u,"stackUnused":{"loop":%ld,"tcp":%ld,"ble":%ld,"scale":%ld,"sse":%ld,"guard":%ld},"nvs":{"used":%u,"free":%u},"fw":"%s","updateFailed":%s})",
                  orione_machine::startReason, static_cast<unsigned long>(millis() / 1000), static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
                  static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
                  unused("loopTask"), unused("async_tcp"), unused("nimble_host"), unused("scale"), unused("sse"), unused("loopGuard"),
-                 static_cast<unsigned>(nvs.used_entries), static_cast<unsigned>(nvs.free_entries));
+                 static_cast<unsigned>(nvs.used_entries), static_cast<unsigned>(nvs.free_entries), firmware_guard::pending ? "pending" : "ok",
+                 firmware_guard::lastUpdateFailed ? "true" : "false");
         request->send(200, "application/json", json);
+    });
+
+    // the last ~4 KB of log lines, also from before a restart or crash (src/orioneLog.h); times are UTC
+    server.on("/log", HTTP_GET, [](AsyncWebServerRequest* request) {
+        auto span = std::make_shared<std::pair<uint32_t, uint32_t>>();
+        orione_log::span(span->first, span->second);
+        AsyncWebServerResponse* response = request->beginChunkedResponse("text/plain; charset=utf-8", [span](uint8_t* buffer, const size_t maxLen, const size_t index) -> size_t {
+            return orione_log::read(span->first + static_cast<uint32_t>(index), span->second, reinterpret_cast<char*>(buffer), maxLen);
+        });
+        response->addHeader("Cache-Control", "no-store");
+        request->send(response);
     });
 #endif
 

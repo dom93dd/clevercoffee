@@ -280,7 +280,9 @@ class Handler(BaseHTTPRequestHandler):
                     body["battery"] = 76
             return self.send(200, json.dumps(body), "application/json")
         if url.path == "/boot":  # src/orioneMachine.h: why it last started, uptime in seconds
-            return self.send(200, json.dumps({"reason": S.live.get("bootReason", "power"), "uptime": 7380}), "application/json")
+            return self.send(200, json.dumps({"reason": S.live.get("bootReason", "power"), "uptime": 7380, "fw": S.live.get("fw", "ok"), "updateFailed": bool(S.live.get("updateFailed"))}), "application/json")
+        if url.path == "/log":  # src/orioneLog.h: the last lines, also from before a restart
+            return self.send(200, "--- start: power ---\n[06:16:42] I Started after: power\n[06:16:42] I Round display ready, free heap 135224 bytes\n", "text/plain; charset=utf-8")
         if url.path == "/version":
             return self.send(200, "4.0.4+mock")
         if url.path == "/download/config":

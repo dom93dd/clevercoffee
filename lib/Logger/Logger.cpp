@@ -62,6 +62,10 @@ void Logger::log(const Level level, const String& file, const __FlashStringHelpe
     char time[12];
     current_time(time);
 
+    if (sink_ != nullptr) {
+        sink_(time, static_cast<int>(level), logmsg);
+    }
+
     if (WiFi.status() == WL_CONNECTED && client_.connected()) {
         client_.print(time);
         client_.print(get_level_identifier(level).c_str());

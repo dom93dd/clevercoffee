@@ -250,8 +250,16 @@ boolean waterTankFull = true;
 Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 ms
 
 #ifdef CC_ORIONE
+#include "firmwareGuard.h"
+#include "orioneLog.h"
 #include "orioneMachine.h"
 #include "warmupFlush.h"
+
+// A firmware from WiFi stays "pending verify" until firmware_guard confirms it (src/firmwareGuard.h), instead of
+// Arduino confirming it before setup(): a firmware that fails at the start goes back to the previous one
+extern "C" bool verifyRollbackLater() {
+    return true;
+}
 #endif
 
 // PID controller
@@ -1047,7 +1055,9 @@ void setup() {
     Logger::init(23);
 #ifdef CC_ORIONE
     orione_machine::noteStart();
+    orione_log::begin(orione_machine::startReason); // from here on every log line also goes to GET /log
     LOGF(INFO, "Started after: %s", orione_machine::startReason);
+    firmware_guard::begin();
 #endif
 
     if (!config.begin()) {
@@ -1532,12 +1542,24 @@ void loopPid() {
         }
 
         ROUND_TIME(Ota); // from here to the end of this block
+#ifdef CC_ORIONE
+        // An update blocks loop() for its whole length (~30 s): not while a shot, a flush or a backflush runs, whose
+        // relays would stay as they are meanwhile; the upload tool gets no answer and gives up
+        if (!checkBrewActive() && machineState != kBackflush && currBackflushState == kBackflushIdle && !warmup_flush::flush.running()) {
+            ArduinoOTA.handle();
+        }
+#else
         ArduinoOTA.handle(); // For OTA
+#endif
 
         // Disable interrupt if OTA is starting, otherwise it will not work
         ArduinoOTA.onStart([]() {
             disableTimer1();
             heaterRelay->off();
+#ifdef CC_ORIONE
+            pumpRelay->off();
+            valveRelay->off();
+#endif
         });
 
         ArduinoOTA.onError([](ota_error_t error) { enableTimer1(); });
@@ -1646,6 +1668,7 @@ void loopPid() {
             if (heapWatch.update(millis(), orione::HeapWatch::low(heapFree, heapBlock), busy)) {
                 LOGF(ERROR, "Heap below the web server's brake for a minute (free %u, largest block %u): restarting", static_cast<unsigned>(heapFree), static_cast<unsigned>(heapBlock));
                 orione_machine::markHeapRestart();
+                firmware_guard::skipOnRestart = true; // trouble, not a sign of a good firmware
                 delay(200);
                 ESP.restart();
             }
@@ -1682,6 +1705,12 @@ void loopPid() {
     brewSafetyStop();
     warmup_flush::loop();
     orione_machine::loop();
+    firmware_guard::loop(WiFi.status() == WL_CONNECTED);
+#ifdef ORIONE_CRASH_TEST
+    if (millis() > 8000) {
+        abort(); // env esp32_round_ota_crashtest: the bootloader must go back to the firmware before
+    }
+#endif
     bean_profiles::loop(checkBrewActive() || machineState == kBackflush);
 #endif
     hotWaterHandler();

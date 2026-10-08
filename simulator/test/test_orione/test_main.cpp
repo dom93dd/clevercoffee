@@ -12,6 +12,7 @@
 #include <OrioneFlow.h>
 #include <OrioneBeans.h>
 #include <OrioneHeat.h>
+#include <OrioneLogRing.h>
 #include <OrioneShots.h>
 #include <OrioneWebGate.h>
 #include <OrioneWarmupFlush.h>
@@ -1033,6 +1034,45 @@ void test_shot_keeps_target_weight_at_stop_and_lead() {
     TEST_ASSERT_EQUAL(83, back.at(1).lagCs);
 }
 
+void test_log_ring_keeps_the_newest_lines() {
+    orione::LogRing<16> r;
+    std::memset(&r, 0x5A, sizeof(r)); // what RTC memory holds after power-up
+    TEST_ASSERT_FALSE(r.valid());
+    r.begin(true); // a restart was reported, but the header does not check out: start clean
+    TEST_ASSERT_TRUE(r.valid());
+    TEST_ASSERT_EQUAL_UINT32(0, r.written);
+    r.append("hello ");
+    r.append("world\n");
+    char out[32] = {};
+    TEST_ASSERT_EQUAL(12, r.read(0, r.written, out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("hello world\n", out);
+    r.append("0123456789"); // 22 written: the oldest 6 are gone
+    TEST_ASSERT_EQUAL_UINT32(6, r.first());
+    std::memset(out, 0, sizeof(out));
+    TEST_ASSERT_EQUAL(16, r.read(0, r.written, out, sizeof(out))); // from before the oldest: starts there
+    TEST_ASSERT_EQUAL_STRING("world\n0123456789", out);
+    std::memset(out, 0, sizeof(out));
+    TEST_ASSERT_EQUAL(4, r.read(11, r.written, out, 4)); // in pieces, as a chunked answer asks
+    TEST_ASSERT_EQUAL_STRING("\n012", out);
+    std::memset(out, 0, sizeof(out));
+    TEST_ASSERT_EQUAL(2, r.read(14, 16, out, sizeof(out))); // up to the end the request started with
+    TEST_ASSERT_EQUAL_STRING("23", out);
+    TEST_ASSERT_EQUAL(0, r.read(22, r.written, out, sizeof(out)));
+    // a restart keeps it, a power-up clears it
+    const uint32_t before = r.written;
+    r.begin(true);
+    TEST_ASSERT_EQUAL_UINT32(before, r.written);
+    r.begin(false);
+    TEST_ASSERT_EQUAL_UINT32(0, r.written);
+    // longer than the whole ring: its end
+    r.append("abcdefghijklmnopqrstuvwxyz");
+    std::memset(out, 0, sizeof(out));
+    TEST_ASSERT_EQUAL(16, r.read(0, r.written, out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("klmnopqrstuvwxyz", out);
+    r.written ^= 1; // a torn header: not trusted after a restart
+    TEST_ASSERT_FALSE(r.valid());
+}
+
 void test_shot_keeps_its_preinfusion() {
     orione::ShotLog log;
     log.record(29.0f, 36.0f, 0, 0);
@@ -1131,5 +1171,6 @@ int main() {
     RUN_TEST(test_beans_the_longest_unused_makes_room);
     RUN_TEST(test_shot_keeps_target_weight_at_stop_and_lead);
     RUN_TEST(test_shot_keeps_its_preinfusion);
+    RUN_TEST(test_log_ring_keeps_the_newest_lines);
     return UNITY_END();
 }

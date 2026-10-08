@@ -42,3 +42,10 @@ if "CC_ORIONE" in " ".join(env.GetProjectOption("build_flags", [])):  # noqa: F8
             f.write(content)
 
     print(f"Orione frontend: manifest, icons and fonts ({sum(len(c) for c in assets.files().values())} bytes)")
+
+    # The filesystem image replaces config.json too. An update over WiFi (orione_deploy.py) puts the machine's
+    # current settings in here, so the page can be updated without losing them; only for that build.
+    keep = os.environ.get("ORIONE_FS_CONFIG")
+    if keep:
+        shutil.copyfile(keep, os.path.join(data, "config.json"))
+        print(f"Orione frontend: settings of the machine taken along ({os.path.getsize(keep)} bytes)")
