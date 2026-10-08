@@ -799,14 +799,13 @@ test("Pre-Infusion (Test): einschalten, Zeiten und Ventil in den Einstellungen",
   await row(page, "Pre-Infusion").locator(".sw").click();
   await row(page, "Pumpstoß").waitFor();
   await row(page, "Pumpstoß").locator("button", {hasText: "+"}).click();
-  await row(page, "Ventil in der Pause offen").locator(".sw").click();
   await settle(page);
   const v = await values(BASE);
-  assert.equal(v["brew.pre_infusion.enabled"], 1); assert.equal(v["brew.pre_infusion.time"], 2.5); assert.equal(v["brew.pre_infusion.valve_open"], 1);
+  assert.equal(v["brew.pre_infusion.enabled"], 1); assert.equal(v["brew.pre_infusion.time"], 2.5);
   assert.equal(await row(page, "Pause").locator("input").inputValue(), "4,0 s");
   await card.screenshot({path: OUT + "settings-preinfusion.png"});
   await tab(page, "Bezug");
-  assert.equal(await view(page).locator(".pinote").textContent(), "Pre-Infusion an: 2,5 s Pumpstoß, 4,0 s Pause, Ventil offen");
+  assert.equal(await view(page).locator(".pinote").textContent(), "Pre-Infusion an: 2,5 s Pumpstoß, 4,0 s Pause");
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -819,7 +818,7 @@ test("Pre-Infusion (Test): Phase im Live-Bezug, im Bezugsdetail, in der Kurve un
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew", init: withKey, route: async pg => { seen = await fakeClaude(pg, "Passt."); }});
   await view(page).locator("#shotList > .ai div", {hasText: "Passt."}).waitFor();
   const user = seen[0].body.messages[0].content;
-  assert.ok(user.includes("Pre-Infusion ist eingeschaltet (ein Test): 2,0 s Pumpstoß mit offenem Ventil, dann 4,0 s Pause, in der Pause mit geschlossenem Ventil"), user);
+  assert.ok(user.includes("Pre-Infusion ist eingeschaltet (ein Test): 2,0 s Pumpstoß mit offenem Ventil, dann 4,0 s Pause, in der Pause bleibt das Ventil offen und die Pumpe pulst langsam weiter"), user);
   assert.ok(user.includes("mit Pre-Infusion 2,0 s + 4,0 s Pause (Ventil zu)"));
   await view(page).locator("#shotList .shot").first().click();
   const info = view(page).locator("#shotList .curve:not([hidden]) .shotinfo");

@@ -59,7 +59,6 @@ BASE = {
     "brew.pre_infusion.enabled": dict(type=1, value=0, min=0, max=1),
     "brew.pre_infusion.time": dict(type=2, value=2.0, min=0, max=10),
     "brew.pre_infusion.pause": dict(type=2, value=4.0, min=0, max=15),
-    "brew.pre_infusion.valve_open": dict(type=1, value=0, min=0, max=1),
     "backflush.remind_after": dict(type=0, value=50, min=0, max=500),
     "backflush.cycles": dict(type=0, value=5, min=2, max=20),
     "backflush.fill_time": dict(type=2, value=5.0, min=3, max=10),

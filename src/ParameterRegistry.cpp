@@ -350,10 +350,6 @@ void ParameterRegistry::initialize(Config& config) {
             PRE_INFUSION_PAUSE_MAX,
             "Pause to let the puck bloom after the initial pre-infusion while turning off the pump and leaving the 3-way valve open"
         );
-#ifdef CC_ORIONE
-        addBoolConfigParam("brew.pre_infusion.valve_open", "Valve open in the pause", sBrewSection, 334, nullptr,
-                           "Open: the Pulsor board pulses the pump during the pause (a slow trickle). Closed: the 3-way valve vents the group, nothing flows");
-#endif
 
         // Maintenance Section
         addNumericConfigParam<int>(

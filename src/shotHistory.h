@@ -141,7 +141,7 @@ namespace shot_history {
     // pre-infusion of the running shot, as set when it started
     inline float piBurst = 0.0f;
     inline float piPause = 0.0f;
-    inline bool piValveOpen = false;
+    inline bool piValveOpen = false; // logged per shot (kPauseValveOpen)
 
     inline void learnFromShot(); // below
 
@@ -156,7 +156,7 @@ namespace shot_history {
         const bool pi = config.get<bool>("brew.pre_infusion.enabled");
         piBurst = pi ? static_cast<float>(config.get<double>("brew.pre_infusion.time")) : 0.0f;
         piPause = pi ? static_cast<float>(config.get<double>("brew.pre_infusion.pause")) : 0.0f;
-        piValveOpen = pi && config.get<bool>("brew.pre_infusion.valve_open");
+        piValveOpen = pi; // always since 08.10.2026; shots before may have had it closed
         shotCurve.begin(millis());
         flowMeter.start(millis());
     }

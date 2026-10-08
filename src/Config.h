@@ -466,11 +466,10 @@ class Config {
             // Pre-infusion
             _configDefs.emplace("brew.pre_infusion.enabled", ConfigDef::forBool(false));
 #ifdef CC_ORIONE
-            // a test on the Orione (Dominik, 08.10.2026): a short burst, a pause, then the shot; in the pause the valve
-            // closed (the group vents, nothing flows) or open (the Pulsor board pulses the pump: a slow trickle)
+            // a test on the Orione (Dominik, 08.10.2026): a short burst, a pause with the valve open (the Pulsor board
+            // pulses the pump: a slow trickle), then the shot
             _configDefs.emplace("brew.pre_infusion.time", ConfigDef::forDouble(2.0, 0.0, 10.0));
             _configDefs.emplace("brew.pre_infusion.pause", ConfigDef::forDouble(4.0, 0.0, 15.0));
-            _configDefs.emplace("brew.pre_infusion.valve_open", ConfigDef::forBool(false));
 #else
             _configDefs.emplace("brew.pre_infusion.time", ConfigDef::forDouble(PRE_INFUSION_TIME, PRE_INFUSION_TIME_MIN, PRE_INFUSION_TIME_MAX));
             _configDefs.emplace("brew.pre_infusion.pause", ConfigDef::forDouble(PRE_INFUSION_PAUSE_TIME, PRE_INFUSION_PAUSE_MIN, PRE_INFUSION_PAUSE_MAX));
