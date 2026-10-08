@@ -147,7 +147,7 @@ namespace live_events {
 
     inline void begin() {
         if (task == nullptr) {
-            xTaskCreatePinnedToCore(run, "sse", 2560, nullptr, 1, &task, 0); // used ~1 KB at most (GET /boot)
+            xTaskCreatePinnedToCore(run, "sse", 3584, nullptr, 1, &task, 0); // used up to ~2 KB in the machine with the app open (GET /boot)
         }
     }
 

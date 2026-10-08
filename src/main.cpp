@@ -1761,7 +1761,15 @@ void loopPid() {
 #endif
 
     // Check if PID should run or not. If not, set to manual and force output to zero
-    if (machineState == kPidDisabled || machineState == kWaterTankEmpty || machineState == kSensorError || machineState == kEmergencyStop || machineState == kStandby || machineState == kBackflush || brewPidDisabled) {
+#ifdef CC_ORIONE
+    // The thermoblock keeps its water and the controller its temperature whatever the tank holds: an empty tank only
+    // blocks what runs the pump (brew switch, warm-up flush, backflush, hot water), the heater goes on (Dominik,
+    // 08.10.2026: "was mich stoert ist, dass die maschine nicht heizt wenn der wassertank leer ist")
+    const bool tankStopsHeater = false;
+#else
+    const bool tankStopsHeater = machineState == kWaterTankEmpty;
+#endif
+    if (machineState == kPidDisabled || tankStopsHeater || machineState == kSensorError || machineState == kEmergencyStop || machineState == kStandby || machineState == kBackflush || brewPidDisabled) {
         if (bPID.GetMode() == 1) {
             // Force PID shutdown
             bPID.SetMode(0);
@@ -1776,7 +1784,11 @@ void loopPid() {
     }
 
     // Regular PID operation
+#ifdef CC_ORIONE
+    if (machineState == kPidNormal || machineState == kWaterTankEmpty) { // heats on with an empty tank: with the set values
+#else
     if (machineState == kPidNormal) {
+#endif
         setPIDTunings(usePonM);
     }
 
