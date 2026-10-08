@@ -38,6 +38,7 @@ inline bool brewStoppedByWeight = false; // the last shot stopped at its target 
 inline bool brewEndedSwitchOn = false;   // the switch waits for release because a brew (not a backflush) stopped by itself
 inline bool brewWeightFallback = false;  // this shot: by weight, but without the scale, so the target time ends it
 inline bool backflushCompleted = false;  // all cycles ran: backflush mode goes off (kBackflushFinished)
+inline bool backflushSwitchReminder = false; // Orione: all cycles ran and the brew switch is still on: display and page say so
 constexpr double kBrewMaxSeconds = 60.0;  // no shot runs longer (unless the target time is longer)
 #endif
 
@@ -641,6 +642,9 @@ inline void backflush() {
             if (backflushCompleted) {
                 backflushCompleted = false;
                 backflushOn = false;
+                // nothing else happens until the brew switch goes off: say so (Dominik, 08.10.2026: "nach backflush mit
+                // bezugsschalter noch an gibt es keine meldung")
+                backflushSwitchReminder = currBrewSwitchState != kBrewSwitchIdle;
                 LOG(INFO, "Backflush mode off");
             }
 #endif

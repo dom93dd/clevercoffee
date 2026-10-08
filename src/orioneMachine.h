@@ -20,6 +20,10 @@ namespace orione_machine {
     /** Call from loop(): the brew temperature against the brew setpoint */
     inline void loop() {
         steam.update(temperature, brewSetpoint);
+
+        if (backflushSwitchReminder && currBrewSwitchState == kBrewSwitchIdle) {
+            backflushSwitchReminder = false; // switched off after the backflush
+        }
     }
 
     // Survives a software restart (not a power loss): set just before a deliberate one, read at the start

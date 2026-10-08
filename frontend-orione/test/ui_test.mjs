@@ -872,6 +872,20 @@ test("Wartung: Protokoll über WLAN, Hinweis auf ein nicht gestartetes Update", 
   await ctx.close();
 });
 
+test("Backflush fertig, Bezugsschalter noch an: Hinweis auf Maschine und Wartung, bis der Schalter aus ist", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  await mock(BASE, "/__live", {state: 10, bfd: true, fp: false});
+  const note = view(page).locator(".note.bfdone");
+  await note.waitFor();
+  assert.equal(await note.textContent(), "Backflush fertig: Bezugsschalter auf AUS stellen, Blindsieb raus und kurz spülen.");
+  await tab(page, "Wartung");
+  await view(page).locator('[data-card="sBf"] .note.bfdone').waitFor();
+  await mock(BASE, "/__live", {state: 10, bfd: false});
+  await view(page).locator('[data-card="sBf"] .note.bfdone').waitFor({state: "hidden"});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Spülen nach dem Bezug: Hinweis, bis gespült ist; nicht während des Bezugs", async ({browser}) => {
   const {page, ctx, errors} = await open(browser, BASE);
   const note = view(page).locator(".note.rinse");

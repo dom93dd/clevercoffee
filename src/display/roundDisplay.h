@@ -104,6 +104,7 @@ inline rd::Model roundDisplayModel() {
     m.brewTargetTime = stopByTime ? static_cast<float>(totalTargetBrewTime / 1000) : 0.0f;
     m.warmupFlushPending = warmup_flush::livePhase() == orione::WarmupFlush::kWaiting;
     m.flushReminder = shot_history::flushPending;
+    m.backflushDone = backflushSwitchReminder;
 #else
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);
 #endif

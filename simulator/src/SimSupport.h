@@ -234,6 +234,12 @@ namespace sim {
                  m.setHeater(18);
                  m.warmupFlushPending = true;
              }},
+            {"backflush-done", "Backflush fertig, Bezugsschalter noch an",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setHeater(18);
+                 m.backflushDone = true;
+             }},
             {"ready-rinse", "Bereit nach einem Bezug: bitte spülen",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.settle();

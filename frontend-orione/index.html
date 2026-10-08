@@ -207,6 +207,7 @@ const T = {
     flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist (kein Bezug, Backflush oder Standby, Wasser im Tank).",
     flushNeedsSensor: "Nur mit Wasserstandssensor: ohne ihn könnte die Pumpe bei leerem Tank trocken laufen. Einschalten unter Einstellungen → Wassertank.",
     flushNote: "Gleich wird automatisch gespült (3 × kurz), sobald die Temperatur 2 min stabil am Soll ist. Siebträger leer eingespannt lassen, Tasse unterstellen.",
+    bfDoneNote: "Backflush fertig: Bezugsschalter auf AUS stellen, Blindsieb raus und kurz spülen.",
     rinseNote: "Bitte spülen: Siebträger raus, ausklopfen, Bezugsschalter 2–3 s an. So bleibt kein Kaffee am Duschsieb.", piAfter: "Bezug danach {s} s", piOf: "davon {s} s Pre-Infusion",
     sBackup: "Sicherung", sDevice: "Gerät", sShot: "Nächster Bezug", sPresets: "Schnellwahl", sLast: "Letzte Bezüge", noShots: "Noch keine Bezüge", liveBrew: "Bezug läuft", liveDone: "Fertig", goal: "Ziel", less: "weniger", more: "mehr",
     scaleOn: "Waage verbunden", scaleOff: "Waage nicht verbunden – ist sie eingeschaltet?", battery: "Akku", batteryLow: "bitte laden",
@@ -285,6 +286,7 @@ const T = {
     flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready (no shot, backflush or standby, water in the tank).",
     flushNeedsSensor: "Only with a water level sensor: without one the pump could run dry with an empty tank. Switch it on under Settings → Water tank.",
     flushNote: "The machine will flush by itself (3 × briefly) once the temperature has been steady at the setpoint for 2 min. Leave the empty portafilter in, put a cup under it.",
+    bfDoneNote: "Backflush done: switch the brew switch off, take the blind basket out and rinse briefly.",
     rinseNote: "Please rinse: portafilter out, knock it out, brew switch on for 2–3 s. No coffee stays on the shower screen.", piAfter: "brew after it {s} s", piOf: "{s} s of it pre-infusion",
     sBackup: "Backup", sDevice: "Device", sShot: "Next shot", sPresets: "Quick choice", sLast: "Last shots", noShots: "No shots yet", liveBrew: "Brewing", liveDone: "Done", goal: "Target", less: "less", more: "more",
     scaleOn: "Scale connected", scaleOff: "Scale not connected – is it switched on?", battery: "Battery", batteryLow: "please charge",
@@ -563,7 +565,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, fp: false, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, fp: false, bfd: false, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -577,6 +579,7 @@ function statusView(m) {
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
   const rn = el("div", "note", t("rinseNote")); rn.className = "note rinse"; rn.hidden = true; m.append(rn); // paintFlush()
+  const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = true; m.append(bd); // paintFlush()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
     const sw = switchCtl("pid.enabled"); sw.id = "pidSw";
@@ -1405,7 +1408,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1449,7 +1452,8 @@ function paintFlush() {
   if (note) note.hidden = !(live.ok && live.warmup === 1);
   // a shot since the last rinse (shot_history::flushPending): not while brewing or the result is still shown
   const rinse = live.ok && live.fp && live.state !== 20 && !(lastShot?.until && Date.now() < lastShot.until);
-  document.querySelectorAll(".note.rinse").forEach(e => { e.hidden = !rinse; });
+  document.querySelectorAll(".note.rinse").forEach(e => { e.hidden = !rinse || live.bfd; });
+  document.querySelectorAll(".note.bfdone").forEach(e => { e.hidden = !(live.ok && live.bfd); }); // backflush over, switch still on
   if (!b || !P["hardware.sensors.watertank.enabled"]?.value) return;
   b.textContent = t(run ? "flushStop" : "flushNow");
   b.disabled = !run && !(live.ok && live.state === 10 && !live.sw); // the firmware starts only from "ready" (kPidNormal), switch off
@@ -1679,6 +1683,7 @@ function build(def, m) {
   for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
     const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
+    const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = !(live.ok && live.bfd); m.querySelector('[data-card="sBf"] h2')?.after(bd);
     careExtras(m); paintBf();
   }
 }
