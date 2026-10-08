@@ -200,14 +200,21 @@ def main():
         print(f"Nach dem Update meldet sie {now or 'nichts'}" + (" – die neue Firmware ist nicht gestartet, der ESP32 hat die alte wieder gestartet." if b.get("updateFailed") else "."))
         return 1
     print(f"Neue Firmware läuft: {now}")
-    end = time.time() + 90
+    # confirmed = "fw" ok AND still the new version: a crash before the confirmation starts the old one, which is "ok" too
+    end = time.time() + 120
+    confirmed = False
     while time.time() < end:
         b = try_get(host, "/boot") or {}
-        if b.get("fw") == "ok":
+        v = (try_get(host, "/version") or "").strip()
+        if v and not v.endswith("." + head):
+            print(f"Die neue Firmware ist vor der Bestätigung abgestürzt; der ESP32 hat die vorige gestartet ({v}). GET /log zeigt warum (--decode).")
+            return 1
+        if b.get("fw") == "ok" and v.endswith("." + head):
+            confirmed = True
             print("Firmware hat sich bestätigt (läuft mit WLAN).")
             break
         time.sleep(3)
-    else:
+    if not confirmed:
         print("Warnung: Firmware hat sich noch nicht bestätigt. Ein Neustart vorher würde die alte starten.")
 
     # 4. compare
