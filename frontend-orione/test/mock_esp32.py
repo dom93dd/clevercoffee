@@ -83,7 +83,7 @@ BASE = {
     "schedule.on": dict(type=0, value=390, min=0, max=1439),
     "schedule.off": dict(type=0, value=1440, min=0, max=1440),
     "descale.litres": dict(type=2, value=40.0, min=0, max=300),
-    "drip.capacity": dict(type=2, value=500.0, min=0, max=2000),
+    "drip.capacity": dict(type=2, value=600.0, min=0, max=2000),
     "brew.temp_end": dict(type=2, value=0.0, min=-5, max=5),
 }
 

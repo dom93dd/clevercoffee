@@ -1750,15 +1750,15 @@ test("Backflush: Zyklus, Phase und Restzeit in der App", async ({browser}) => {
 });
 
 test("Tropfschale: Schätzung in Wartung, Hinweis bei 80 %, Geleert setzt zurück", async ({browser}) => {
-  await mock(BASE, "/__care", {drip: 430});
+  await mock(BASE, "/__care", {drip: 500});
   const {page, ctx, errors} = await open(browser, BASE);
   const note = view(page).locator(".note.drip");
-  await note.locator("span", {hasText: "Tropfschale leeren (≈ 430 ml)"}).waitFor();
+  await note.locator("span", {hasText: "Tropfschale leeren (≈ 500 ml)"}).waitFor();
   await tab(page, "Wartung");
-  assert.equal(await page.locator("#dripSt").textContent(), "≈ 430 ml von 500 ml (geschätzt)");
-  assert.equal(await row(page, "Fasst").locator("input").inputValue(), "500 ml");
+  assert.equal(await page.locator("#dripSt").textContent(), "≈ 500 ml von 600 ml (geschätzt)");
+  assert.equal(await row(page, "Fasst").locator("input").inputValue(), "600 ml");
   await view(page).locator('section[data-card="sDrip"] button', {hasText: "Geleert"}).click();
-  await page.locator("#dripSt", {hasText: "≈ 0 ml von 500 ml"}).waitFor();
+  await page.locator("#dripSt", {hasText: "≈ 0 ml von 600 ml"}).waitFor();
   assert.equal((await posts(BASE)).filter(x => x.path === "/care/drip-emptied").length, 1);
   await tab(page, "Maschine");
   await view(page).locator(".note.drip").waitFor({state: "hidden"});

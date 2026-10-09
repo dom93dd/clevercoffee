@@ -467,7 +467,7 @@ class Config {
             _configDefs.emplace("schedule.on", ConfigDef::forInt(390, 0, 1439));  // minute of the day, local time
             _configDefs.emplace("schedule.off", ConfigDef::forInt(1440, 0, 1440)); // 1440: no off time
             _configDefs.emplace("descale.litres", ConfigDef::forDouble(40.0, 0.0, 300.0)); // 0: no reminder
-            _configDefs.emplace("drip.capacity", ConfigDef::forDouble(500.0, 0.0, 2000.0)); // ml, 0: no reminder
+            _configDefs.emplace("drip.capacity", ConfigDef::forDouble(600.0, 0.0, 2000.0)); // ml, 0: no reminder; the Orione 3000 tray holds 600 (Dominik, 09.10.2026)
             _configDefs.emplace("brew.temp_end", ConfigDef::forDouble(0.0, -5.0, 5.0));
 #endif
 
