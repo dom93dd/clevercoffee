@@ -70,7 +70,7 @@ nav button.on svg{color:var(--heat)}
 .row.stack{flex-direction:column;align-items:stretch;gap:10px}
 .row.stack .seg{width:100%}
 .row.stack .seg button{flex:1;padding:8px 4px}
-select,.txt{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:16px;font-weight:600} /* 16 px: iOS does not zoom in */
+select,.txt,.datein{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:16px;font-weight:600} /* 16 px: iOS does not zoom in */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;background:var(--line);color:var(--text);text-decoration:none}
 .btn.pri{background:var(--heat);color:#1a1006}
 .btn.bad{background:none;color:var(--err);box-shadow:inset 0 0 0 1.5px var(--err)}
@@ -112,6 +112,9 @@ details[open] summary:after{content:"−"}
 .recipe .step input{width:100%;min-width:0}
 .recipe .txt{max-width:none;width:100%;text-align:center}
 .recipe .bean{grid-column:1/-1}
+.recipe .roast{grid-column:1/-1}
+.recipe .datein{max-width:none;width:100%}
+.recipe .roast span{color:var(--faint)}
 .recipe select{max-width:none;width:100%}
 .beanrow{border-top:1px solid var(--line)}
 .beanrow .lbl div{overflow-wrap:anywhere}
@@ -193,7 +196,10 @@ input[type=time].txt{min-width:112px;text-align:center}
 .alarm .ico{width:18px;height:18px;vertical-align:-3px;margin-right:6px}
 .note.rinse{display:flex;align-items:center;gap:12px}
 .note.rinse span{flex:1}
-.note.rinse .btn{flex:none;padding:9px 12px;font-size:14px}
+.note.rinse .btn,.note.drip .btn{flex:none;padding:9px 12px;font-size:14px}
+.note.drip{display:flex;align-items:center;gap:12px;background:rgba(125,190,255,.14);color:#bfdcff}
+.note.drip span{flex:1}
+.note.bfprog{background:rgba(125,190,255,.14);color:#bfdcff}
 details.fine{border-top:1px solid var(--line);padding:12px 0 0;margin-top:4px}
 details.fine summary{padding:4px 0}
 details.fine[open] summary{margin-bottom:4px}
@@ -247,7 +253,7 @@ const T = {
     signal: ["Signal schwach", "Signal mittel", "Signal gut"], scaleHint: "Waage einschalten, Bookoo-App trennen (die Waage nimmt nur eine Verbindung an).",
     scaleNoneFound: "Keine Waage gefunden. Ist sie eingeschaltet und nicht mit dem Handy verbunden?",
     scaleSwitchHint: "Andere Waage: erst „Vergessen“, dann suchen.",
-    dialBrew: "BEZUG", dialDone: "FERTIG", dialRemind: "Schalter aus", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
+    dialBrew: "BEZUG", dialDone: "FERTIG", dialRemind: "Schalter aus", flowLine: "Durchfluss", firstDrop: "erster Tropfen nach", t10: "10 g nach", refShort: "Ref.", fasterRef: "{s} s schneller als die Referenz: eher feiner mahlen", slowerRef: "{s} s langsamer als die Referenz: eher gröber mahlen", startTemp: "Start bei", coldStart: "kalt gestartet", "brew.dose": "Dosis", "brew.grind": "Mahlgrad", ratio: "Verhältnis", coffeeG: "g Kaffee", tasteQ: "Geschmack", sour: "sauer", good: "passt", bitter: "bitter",
     compareWith: "Vergleichen mit", sCoffee: "Kaffee", "brew.grinder": "Mühle", "brew.grinderHint": "z. B. Eureka Mignon Specialita", "brew.beans": "Bohne", "brew.beansHint": "Sorte und Röstung",
     sClaude: "Claude", claudeIntro: "Claude wertet deine Bezüge aus und schlägt den nächsten Schritt vor. Dafür braucht es einen API-Schlüssel von Anthropic (am besten mit Monatslimit); er bleibt nur in diesem Browser.",
     claudeGet: "Schlüssel erstellen ↗", claudeConnect: "Verbinden", claudeChecking: "Prüfe …", claudeOn: "Verbunden", claudeOnHint: "Vorschläge zu deinen Bezügen von Claude Sonnet 5", claudeOff: "Trennen",
@@ -275,7 +281,7 @@ const T = {
     lagLast: "Letzter Bezug: {f} g/s, also {g} g vor dem Ziel", lagAt: "Bei {f} g/s: {g} g vor dem Ziel",
     beansSaved: "Gespeicherte Bohnen", beansHint: "Jede Bohne merkt sich Dosis, Mahlgrad, Zielgewicht, Temperatur und Nachlaufzeit.",
     beanActive: "aktiv", beanUse: "Wählen", beanDelete: "Löschen", reallyDeleteBean: "Die Bohne „{n}“ mit ihren Werten löschen?", beanBack: "„{n}“ geladen", beanNew: "Neue Bohne „{n}“ angelegt",
-    beanNewOpt: "+ Neue Bohne …", beanNewQ: "Name der neuen Bohne (Sorte und Röstung)", beanNone: "keine angegeben", beanLag: "Nachlauf",
+    roast: "Röstdatum", roastAge: "Tag {n} nach Röstung", beanNewOpt: "+ Neue Bohne …", beanNewQ: "Name der neuen Bohne (Sorte und Röstung)", beanNone: "keine angegeben", beanLag: "Nachlauf",
     "brew.by_weight.learn": "Stopp automatisch lernen", "brew.by_weight.learnHint": "aus jedem Bezug nach Gewicht",
     target: "Ziel", atStop: "Pumpe aus bei", drip: "Nachlauf", overTarget: "über Ziel", underTarget: "unter Ziel", switchBack: "Bezugsschalter wieder auf AUS stellen",
     "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
@@ -306,12 +312,14 @@ const T = {
     sCount: "Zähler", cToday: "heute", cWeek: "Woche", cTotal: "gesamt", cCoffee: "Kaffee", cTodayN: "{n} heute", cWeekN: "{n} diese Woche",
     sDescale: "Entkalken", descaleSince: "≈ {l} l seit dem Entkalken am {d}", descaleCounted: "≈ {l} l bisher gezählt", "descale.litres": "Erinnern bei", "descale.litresHint": "0 = nie",
     descaled: "Entkalkt", reallyDescaled: "Entkalken erledigt? Der Zähler beginnt wieder bei 0.", descaleDue: "Entkalken fällig (≈ {l} l). Danach in Wartung bestätigen.",
-    bfIn: "Backflush in {n}", descaleIn: "Entkalken in ≈ {l} l",
+    bfIn: "Backflush in {n} Bezügen", descaleIn: "Entkalken in ≈ {l} l", dripIn: "Tropfschale ≈ {ml} ml", careCard: "Pflege",
     cleanStart: "Reinigung mit Reiniger", clean1: "Reinigung: Reiniger ins Blindsieb, dann Bezugsschalter an.", clean2: "Blindsieb ausspülen, Bezugsschalter aus und wieder an: Klarspülen.", clean3: "Klarspülen mit Wasser.",
     chNote: "Durchfluss sprang – Kanalbildung?", refSet: "Als Referenz", refClear: "Referenz entfernen", refChip: "Referenz", refSaved: "Als Referenz gespeichert", refCleared: "Referenz entfernt",
     lastShot: "Letzter Bezug", todayCard: "Heute", tomorrow: "morgen", sPower: "Ein & Aus", fine: "Feineinstellung",
     heatOn: "an", heatOnStandby: "an · Standby in {n} min", heatStandby: "Standby · Bezugsschalter weckt", heatOff: "aus: die Maschine heizt nicht",
     exportShots: "Bezüge exportieren", descaleHow: "So geht's",
+    sDrip: "Tropfschale", "drip.capacity": "Fasst", "drip.capacityHint": "einmal ausmessen; 0 = keine Erinnerung", dripNow: "≈ {ml} ml von {cap} ml (geschätzt)", dripDue: "Tropfschale leeren (≈ {ml} ml)", dripEmptied: "Geleert",
+    bfProgress: "Backflush: Zyklus {c} von {n} · {p} · noch ≈ {s} s",
     descale1: "Entkalker nach Packungsangabe in den Tank.", descale2: "Ohne Siebträger, Gefäß unter die Gruppe: Bezugsschalter immer wieder kurz an, dazwischen einwirken lassen, bis der halbe Tank durch ist.",
     descale3: "Rest durchlaufen lassen, Tank gründlich ausspülen.", descale4: "Zwei Tankfüllungen klares Wasser durch die Gruppe, dann „Entkalkt“ tippen.",
     descaleSrc: "Quick Mill beschreibt das Entkalken im Handbuch nicht; so machen es Quick-Mill-Nutzer im Kaffee-Netz.", schedNext: "Ein {d} {t}", standbyIn: "Standby in {n} min", scale: "Waage", scaleGone: "Waage getrennt", wifi: "WLAN"
@@ -341,7 +349,7 @@ const T = {
     signal: ["weak signal", "medium signal", "good signal"], scaleHint: "Switch the scale on, disconnect the Bookoo app (the scale takes one connection only).",
     scaleNoneFound: "No scale found. Is it switched on and not connected to the phone?",
     scaleSwitchHint: "Another scale: first “Forget”, then search.",
-    dialBrew: "BREW", dialDone: "DONE", dialRemind: "Switch off", flowLine: "Flow", firstDrop: "first drops after", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
+    dialBrew: "BREW", dialDone: "DONE", dialRemind: "Switch off", flowLine: "Flow", firstDrop: "first drops after", t10: "10 g after", refShort: "ref.", fasterRef: "{s} s faster than the reference: grind a little finer", slowerRef: "{s} s slower than the reference: grind a little coarser", startTemp: "started at", coldStart: "started cold", "brew.dose": "Dose", "brew.grind": "Grind", ratio: "Ratio", coffeeG: "g coffee", tasteQ: "Taste", sour: "sour", good: "good", bitter: "bitter",
     compareWith: "Compare with", sCoffee: "Coffee", "brew.grinder": "Grinder", "brew.grinderHint": "e.g. Eureka Mignon Specialita", "brew.beans": "Beans", "brew.beansHint": "Kind and roast",
     sClaude: "Claude", claudeIntro: "Claude looks at your shots and suggests the next step. It needs an API key from Anthropic (best with a monthly limit); the key stays in this browser only.",
     claudeGet: "Create a key ↗", claudeConnect: "Connect", claudeChecking: "Checking …", claudeOn: "Connected", claudeOnHint: "Suggestions on your shots by Claude Sonnet 5", claudeOff: "Disconnect",
@@ -369,7 +377,7 @@ const T = {
     lagLast: "Last shot: {f} g/s, so {g} g before the target", lagAt: "At {f} g/s: {g} g before the target",
     beansSaved: "Saved beans", beansHint: "Each bean keeps dose, grind, target weight, temperature and drop time.",
     beanActive: "current", beanUse: "Use", beanDelete: "Delete", reallyDeleteBean: "Delete the beans “{n}” and their values?", beanBack: "“{n}” loaded", beanNew: "New beans “{n}” added",
-    beanNewOpt: "+ New beans …", beanNewQ: "Name of the new beans (kind and roast)", beanNone: "none given", beanLag: "drops",
+    roast: "Roast date", roastAge: "day {n} after roasting", beanNewOpt: "+ New beans …", beanNewQ: "Name of the new beans (kind and roast)", beanNone: "none given", beanLag: "drops",
     "brew.by_weight.learn": "Learn the stop", "brew.by_weight.learnHint": "from each shot by weight",
     target: "Target", atStop: "pump off at", drip: "drops", overTarget: "over target", underTarget: "under target", switchBack: "Switch the brew switch back off",
     "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
@@ -400,12 +408,14 @@ const T = {
     sCount: "Counters", cToday: "today", cWeek: "week", cTotal: "total", cCoffee: "coffee", cTodayN: "{n} today", cWeekN: "{n} this week",
     sDescale: "Descaling", descaleSince: "≈ {l} l since descaling on {d}", descaleCounted: "≈ {l} l counted so far", "descale.litres": "Remind at", "descale.litresHint": "0 = never",
     descaled: "Descaled", reallyDescaled: "Descaling done? The counter starts again at 0.", descaleDue: "Descaling due (≈ {l} l). Confirm in Care afterwards.",
-    bfIn: "backflush in {n}", descaleIn: "descaling in ≈ {l} l",
+    bfIn: "backflush in {n} shots", descaleIn: "descaling in ≈ {l} l", dripIn: "drip tray ≈ {ml} ml", careCard: "Care",
     cleanStart: "Clean with detergent", clean1: "Cleaning: detergent into the blind basket, then the brew switch on.", clean2: "Rinse the blind basket, brew switch off and on again: clear water.", clean3: "Rinsing with clear water.",
     chNote: "Flow jumped – channeling?", refSet: "Set as reference", refClear: "Remove reference", refChip: "Reference", refSaved: "Saved as reference", refCleared: "Reference removed",
     lastShot: "Last shot", todayCard: "Today", tomorrow: "tomorrow", sPower: "On & off", fine: "Fine tuning",
     heatOn: "on", heatOnStandby: "on · standby in {n} min", heatStandby: "Standby · the brew switch wakes it", heatOff: "off: the machine does not heat",
     exportShots: "Export shots", descaleHow: "How to",
+    sDrip: "Drip tray", "drip.capacity": "Holds", "drip.capacityHint": "measure it once; 0 = no reminder", dripNow: "≈ {ml} ml of {cap} ml (estimated)", dripDue: "Empty the drip tray (≈ {ml} ml)", dripEmptied: "Emptied",
+    bfProgress: "Backflush: cycle {c} of {n} · {p} · ≈ {s} s left",
     descale1: "Descaler into the tank as its pack says.", descale2: "No portafilter, a bowl under the group: brew switch on briefly again and again, let it work in between, until half the tank is through.",
     descale3: "Let the rest run through, rinse the tank well.", descale4: "Two tanks of clear water through the group, then tap “Descaled”.",
     descaleSrc: "Quick Mill's manual does not describe descaling; this is how Quick Mill owners do it (Kaffee-Netz).", schedNext: "On {d} {t}", standbyIn: "Standby in {n} min", scale: "Scale", scaleGone: "Scale disconnected", wifi: "WiFi"
@@ -425,6 +435,7 @@ const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
 const PREFIX = {}; // before the number, e.g. "1:" for a ratio
+UNIT["drip.capacity"] = "ml"; STEP["drip.capacity"] = 50;
 UNIT["brew.temp_end"] = "K"; STEP["brew.temp_end"] = .5; UNIT["descale.litres"] = "l"; STEP["descale.litres"] = 5;
 UNIT["brew.dose"] = "g"; UNIT["brew.pre_infusion.time"] = UNIT["brew.pre_infusion.pause"] = "s"; STEP["brew.pre_infusion.time"] = STEP["brew.pre_infusion.pause"] = .5;
 const TABS = [
@@ -448,6 +459,7 @@ const TABS = [
     ["sFlush", ["brew.warmup_flush", "hardware.sensors.watertank.enabled"]], // flushCard()
     ["sBf", ["BACKFLUSH_ON", "backflush.cycles", "backflush.fill_time", "backflush.flush_time", "backflush.remind_after"]],
     ["sDescale", ["descale.litres"]], // descaleCard()
+    ["sDrip", ["drip.capacity"]], // dripCard()
     ["sCount", []]]} // countCard()
 ];
 
@@ -641,7 +653,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, bfc: 0, bfn: 0, bfp: 0, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -654,12 +666,15 @@ function statusView(m) {
   const a = el("div", "alarm"); a.id = "alarm"; a.hidden = true; m.insertBefore(a, h); // above everything, set by paintLive()
   if (P["BACKFLUSH_ON"]?.value) { const n = el("div", "note", t("bfActive")); n.id = "bfActive"; m.append(n); } // paintFlush(): the cleaning's step instead
   const cn = el("div", "note clean"); cn.hidden = true; m.append(cn); // paintFlush()
+  const bp = el("div", "note bfprog"); bp.hidden = true; m.append(bp); // paintFlush(): the backflush running
+  m.append(dripNote()); // paintCare()
   const dn = el("div", "note"); dn.id = "descaleNote"; dn.hidden = true; m.append(dn); // paintCare()
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
   m.append(rinseNote()); // paintFlush()
   const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = true; m.append(bd); // paintFlush()
   const lc = el("section", "card"); lc.id = "lastCard"; lc.hidden = true; m.append(lc); // paintLastShot()
+  const cc = el("section", "card"); cc.id = "careCard"; cc.hidden = true; m.append(cc); // paintCareCard()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
     const sw = switchCtl("pid.enabled"); sw.id = "pidSw";
@@ -775,6 +790,16 @@ function shotCard() {
   if (P["brew.dose"] || P["brew.grind"]) { // the recipe goes into the log with the shot
     const rc = el("div", "recipe");
     if (P["brew.beans"]) { const b = el("div", "bean"), s = el("select"); s.id = "beanPick"; s.setAttribute("aria-label", t("brew.beans")); b.append(el("label", null, t("brew.beans")), s); rc.append(b); }
+    if (P["brew.beans"]) { // the roast date of the beans in the grinder (kept with the bean, src/beanProfiles.h)
+      const b = el("div", "roast"), l = el("label", null, t("roast")), i = el("input", "datein"), age = el("span");
+      i.type = "date"; i.id = "roastPick"; i.setAttribute("aria-label", t("roast")); age.id = "roastAge"; l.append(age);
+      i.onchange = async () => {
+        const r = await post(`/beans/roast?n=${encodeURIComponent(beans?.now ?? "")}&d=${i.value}`).catch(() => null);
+        if (!r?.ok) toast(t("failed"));
+        await pause(300); await loadBeans();
+      };
+      b.append(l, i); rc.append(b);
+    }
     for (const id of ["brew.dose", "brew.grind"]) if (P[id]) { const b = el("div"), ctl = control(id); b.append(el("label", null, t(id)), ctl); rc.append(b); }
     c.append(rc);
     setTimeout(paintBeans);
@@ -959,6 +984,22 @@ const doneHoldMs = () => Math.max(3, P["display.post_brew_timer_duration"]?.valu
 const deviation = x => x.tw != null && x.g != null ? Math.round((x.g - x.tw) * 10) / 10 : null;
 const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "±") + num(Math.abs(v), 1);
 // recipe, curve, taste, comparison and Claude's word on one shot
+// Time until 10 g are in the cup ("T10", Robert McKeon Aloe's dial-in measure), from the curve, between two points
+function t10Of(c) {
+  if (!c || c === "none" || !c.w) return null;
+  const k = c.w.findIndex(v => v != null && v >= 100);
+  if (k < 0) return null;
+  const a = k > 0 ? c.w[k - 1] ?? 0 : 0, b = c.w[k];
+  return k > 0 && b > a ? (k - 1 + (100 - a) / (b - a)) * c.dt / 1000 : k * c.dt / 1000;
+}
+// against the reference shot (same beans, or no beans given): earlier first drops / 10 g sooner -> flows faster -> finer
+function refCompare(x) {
+  if (!reference || isRef(x) || (x.b && reference.shot.b && !sameBean(x.b, reference.shot.b))) return null;
+  const mine = t10Of(curves[shotKey(x)]), theirs = t10Of(reference.curve);
+  const r1 = v => Math.round(v * 10) / 10; // as shown: the hint's difference matches the numbers next to it
+  const d = mine != null && theirs != null ? r1(r1(mine) - r1(theirs)) : x.fd != null && reference.shot.fd != null ? r1(x.fd - reference.shot.fd) : null;
+  return d == null ? null : {d, t10: theirs, fd: reference.shot.fd};
+}
 function fillDetail(cv, x, i) {
   const info = [], d = curves[shotKey(x)];
   if (x.d) info.push(num(x.d, 1) + " " + t("coffeeG"));
@@ -967,7 +1008,9 @@ function fillDetail(cv, x, i) {
   if (x.d && x.g != null) info.push("1:" + num(x.g / x.d, 1));
   if (x.pi) info.push(t("piShot").replace("{b}", num(x.pi[0], 1)).replace("{p}", num(x.pi[1], 1)) + (x.pi[2] ? "" : ` (${t("piClosed")})`), // closed: the test of 08.10.2026
     t("piAfter").replace("{s}", num(Math.max(0, x.s - x.pi[0] - x.pi[1]), 1)));
-  if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s`);
+  const rc = refCompare(x), t10 = t10Of(d), refNote = v => v != null && rc ? ` (${t("refShort")} ${num(v, 1)})` : "";
+  if (x.fd != null) info.push(`${t("firstDrop")} ${num(x.fd, 1)} s` + refNote(rc?.fd));
+  if (t10 != null) info.push(`${t("t10")} ${num(t10, 1)} s` + refNote(rc?.t10));
   if (x.t0 != null) info.push(`${t("startTemp")} ${num(x.t0, 1)} °C`);
   if (x.tw != null) info.push(`${t("target")} ${num(x.tw, 1)} g`);
   if (x.sw != null) info.push(`${t("atStop")} ${num(x.sw, 1)} g` + (x.lg != null && x.fs != null ? ` (${num(x.ld ?? 0, 1)} g = ${num(x.lg, 2)} s × ${num(x.fs, 1)} g/s)` : ""));
@@ -982,6 +1025,7 @@ function fillDetail(cv, x, i) {
     cv.append(el("canvas"), el("div", "legend", (d.w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "") + (d.f ? `<span><i style="background:var(--cool)"></i>${t("flowLine")}</span>` : "") + `<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span>`));
   }
   if (x.ch) cv.append(el("p", "shotinfo ch", t("chNote")));
+  if (rc && Math.abs(rc.d) >= 1.5) cv.append(el("p", "shotinfo ch", t(rc.d < 0 ? "fasterRef" : "slowerRef").replace("{s}", num(Math.abs(rc.d), 1))));
   cv.append(tasteRow(x, i));
   const others = shots.filter(o => o !== x), ref = reference && !isRef(x);
   if (d && d !== "none" && (others.length || ref)) {
@@ -1192,7 +1236,8 @@ function coffeeContext() {
   out.push(`Brühtemperatur-Soll ${v("brew.setpoint")} °C${v("brew.temp_offset") ? `, Offset ${v("brew.temp_offset")} K` : ""}.`);
   if (v("brew.temp_end")) out.push(`Temperaturverlauf: Das Soll ändert sich während des Bezugs gleichmäßig um ${num(v("brew.temp_end"), 1)} K bis zum Ende.`);
   if (v("brew.grinder")) out.push("Mühle: " + v("brew.grinder"));
-  if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans"));
+  const bean = beanOf(v("brew.beans"));
+  if (v("brew.beans")) out.push("Bohne jetzt in der Mühle: " + v("brew.beans") + (bean?.rd ? `, geröstet am ${roastDate(bean.rd)} (heute Tag ${roastAge(bean.rd)} nach Röstung)` : ""));
   out.push("Der Bezug stoppt " + (m === "time" ? `nach Zeit (${v("brew.by_time.target_time")} s)` : m === "weight" ? `nach Gewicht (${v("brew.by_weight.target_weight")} g)` : "von Hand") + ".");
   if (m === "weight") out.push(`Der Stopp nach Gewicht regelt sich selbst: Die Pumpe stoppt um Nachlaufzeit × aktuellem Durchfluss vor dem Ziel, damit der Nachlauf das Ziel auffüllt; die Nachlaufzeit (jetzt ${num(v("brew.by_weight.lag") ?? 0, 2)} s) ${v("brew.by_weight.learn") ? "lernt die Maschine nach jedem Bezug selbst nach. Abweichungen vom Zielgewicht bis etwa ±1 g gleicht sie von allein aus: Schlag nicht vor, früher oder später zu stoppen, und nicht, die Nachlaufzeit zu ändern" : "ist fest eingestellt, das Lernen ist aus"}.`);
   if (v("brew.pre_infusion.enabled") || shots.some(x => x.pi)) out.push("Die Bezugszeiten enthalten eine Pre-Infusion, wo sie angegeben ist: die Laufzeit-Faustregel gilt für die Zeit danach; auch der erste Tropfen kommt dadurch später.");
@@ -1200,6 +1245,8 @@ function coffeeContext() {
   out.push("Druck und Durchfluss lassen sich an dieser Maschine nicht einstellen; einstellbar sind nur Mahlgrad, Dosis, Zielgewicht bzw. Bezugszeit und Brühtemperatur.");
   const scale = v("brew.grind_scale");
   if (scale === 1 || scale === 2) out.push(`Skala der Mühle: eine höhere Zahl mahlt ${scale === 1 ? "feiner" : "gröber"}, eine kleinere ${scale === 1 ? "gröber" : "feiner"}.`);
+  // home-barista.com, Niche Zero: 17 -> 17.3 took a shot for 36 g from 35 to 30 s
+  if (/niche/i.test(v("brew.grinder") ?? "")) out.push("Die Niche Zero reagiert fein: Ein Nutzer berichtet, dass 17 → 17,3 die Laufzeit für 36 g von 35 auf 30 s verkürzte. Mahlgrad deshalb in Schritten von 0,25 bis 0,5 vorschlagen.");
   const next = [];
   if (v("brew.dose")) next.push(`Dosis ${num(v("brew.dose"), 1)} g`);
   if (v("brew.grind")) next.push(`Mahlgrad ${v("brew.grind")}`);
@@ -1208,23 +1255,24 @@ function coffeeContext() {
   next.push(`Brühtemperatur ${num(v("brew.setpoint"), 1)} °C`);
   out.push("Eingestellt für den nächsten Bezug: " + next.join(", ") + ".");
   out.push("Letzte Bezüge, neuester zuerst:");
-  shots.forEach((x, i) => {
+  (shots ?? []).forEach((x, i) => {
     const p = [num(x.s, 1) + " s" + (x.pi ? ` (davon ${num(x.pi[0] + x.pi[1], 1)} s Pre-Infusion, Bezug danach ${num(Math.max(0, x.s - x.pi[0] - x.pi[1]), 1)} s)` : "")];
     if (x.g != null) p.push(num(x.g, 1) + " g in der Tasse");
     if (x.d) p.push(num(x.d, 1) + " g Kaffee");
     if (x.d && x.g != null) p.push("Verhältnis 1:" + num(x.g / x.d, 2));
     if (x.m) p.push("Mahlgrad " + x.m);
-    if (x.b) p.push("Bohne " + x.b);
+    if (x.b) p.push("Bohne " + x.b + (beanOf(x.b)?.rd && x.at && roastAge(beanOf(x.b).rd, x.at) >= 0 ? ` (Tag ${roastAge(beanOf(x.b).rd, x.at)} nach Röstung)` : ""));
     if (x.r) p.push("Geschmack " + ["", "sauer", "passt", "bitter"][x.r]);
     if (x.pi) p.push(`mit Pre-Infusion ${num(x.pi[0], 1)} s + ${num(x.pi[1], 1)} s Pause (Ventil ${x.pi[2] ? "offen" : "zu"})`);
     if (x.fd != null) p.push(`erster Tropfen nach ${num(x.fd, 1)} s`);
+    if (t10Of(curves[shotKey(x)]) != null) p.push(`10 g in der Tasse nach ${num(t10Of(curves[shotKey(x)]), 1)} s`);
     if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel${x.lg != null && x.fs != null ? `: gelernte Nachlaufzeit ${num(x.lg, 2)} s × Durchfluss beim Stopp ${num(x.fs, 1)} g/s` : ""}), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
     if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
     if (x.ch) p.push("Durchfluss sprang während des Bezugs plötzlich an (Hinweis auf Kanalbildung)");
     out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
   });
-  if (reference) { const x = reference.shot; out.push(`Referenzbezug, vom Nutzer als Vorbild gewählt (${whenText(x.at)}): ${[num(x.s, 1) + " s", x.g != null ? num(x.g, 1) + " g" : "", x.d ? num(x.d, 1) + " g Kaffee" : "", x.m ? "Mahlgrad " + x.m : "", x.b ? "Bohne " + x.b : ""].filter(Boolean).join(", ")}.`); }
-  const c = curves[shotKey(shots[0])];
+  if (reference) { const x = reference.shot, r10 = t10Of(reference.curve); out.push(`Referenzbezug, vom Nutzer als Vorbild gewählt (${whenText(x.at)}): ${[num(x.s, 1) + " s", x.g != null ? num(x.g, 1) + " g" : "", x.d ? num(x.d, 1) + " g Kaffee" : "", x.m ? "Mahlgrad " + x.m : "", x.b ? "Bohne " + x.b : "", x.fd != null ? `erster Tropfen nach ${num(x.fd, 1)} s` : "", r10 != null ? `10 g nach ${num(r10, 1)} s` : ""].filter(Boolean).join(", ")}.`); }
+  const c = shots?.length ? curves[shotKey(shots[0])] : null;
   if (c && c !== "none") {
     const step = Math.max(1, Math.round(1000 / c.dt)), sec = a => a.filter((_, k) => k % step === 0).map(v => v == null ? "-" : num(v / 10, 1)).join(" ");
     out.push(`Verlauf des neuesten Bezugs je Sekunde (Pumpe aus nach ${num(c.stop * c.dt / 1000, 1)} s):`);
@@ -1380,6 +1428,7 @@ function stateText() {
   const map = {0: ["start", "var(--faint)"], 20: [null, "var(--brew)"], 25: ["flush", "var(--brew)"], 30: ["steam", "var(--heat)"], 40: ["water", "var(--cool)"],
     50: ["backflush", "var(--cool)"], 60: ["pidOff", "var(--faint)"], 70: ["tank", "var(--cool)"], 80: ["standby", "var(--faint)"], 100: ["overtemp", "var(--err)"], 110: ["sensor", "var(--err)"]};
   if (s === 20) return [t("brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"];
+  if (s === 50 && live.bfc > 0) return [`${t("backflush")} ${live.bfc}/${live.bfn}`, "var(--cool)"];
   if (s === 25 && flushRunning()) return [t("flush") + (live.pulses > 1 ? " " + live.pulse + "/" + live.pulses : ""), "var(--brew)"];
   if (s in map) return [t(map[s][0]), map[s][1]];
   // steam from the original switch, seen from the temperature (src/orioneMachine.h): 1 steam, 2 cooling down after it
@@ -1543,7 +1592,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, bfc: d.bfc ?? 0, bfn: d.bfn ?? 0, bfp: d.bfp ?? 0, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1584,6 +1633,30 @@ function flushCard() {
 }
 // "Bitte spülen" after a shot, with a button for one rinse pulse without pre-infusion (Dominik, 09.10.2026: "Beides";
 // the Breville Dual Boiler and Lelit's LCC flush the group without pre-infusion too). Only with the water level sensor.
+const bfSeen = {key: "", at: 0};
+// the drip tray: estimated water in it (src/machineCare.h), a note to empty it at 80 %, "Geleert" sets it to 0
+function dripNote() {
+  const n = el("div", "note drip"), b = el("button", "btn", t("dripEmptied"));
+  n.append(el("span"), b); n.hidden = true;
+  b.onclick = () => dripEmptied();
+  return n;
+}
+async function dripEmptied() {
+  const r = await post("/care/drip-emptied").catch(() => null);
+  toast(r?.ok ? t("saved") : t("failed"));
+  await loadCare();
+}
+function dripCard() {
+  const c = el("section", "card"), st = el("p", "scalenow", "…");
+  st.id = "dripSt";
+  c.append(el("h2", null, t("sDrip")), st, el("div", "bar", "<b id='dripBar'></b>"));
+  if (P["drip.capacity"]) { const r = el("div", "row"); r.append(lbl("drip.capacity"), stepCtl("drip.capacity", async (id, v) => { const ok = await save(id, v); if (ok) loadCare(); return ok; })); c.append(r); }
+  const w = el("div", "btns"), b = el("button", "btn", t("dripEmptied"));
+  b.onclick = () => dripEmptied();
+  w.append(b); c.append(w);
+  setTimeout(paintCare);
+  return c;
+}
 function rinseNote() {
   const n = el("div", "note rinse"), b = el("button", "btn", t("flushNow"));
   n.append(el("span", null, t("rinseNote")), b); n.hidden = true;
@@ -1609,6 +1682,15 @@ function paintFlush() {
   document.querySelectorAll(".note.bfdone").forEach(e => { e.hidden = !(live.ok && live.bfd); }); // backflush over, switch still on
   const ck = live.ok ? ["", "clean1", "clean2", "clean3"][live.clean] || "" : ""; // cleaning with detergent (src/orioneMachine.h)
   document.querySelectorAll(".note.clean").forEach(e => { e.hidden = !ck; if (ck) e.textContent = t(ck); });
+  // backflush running: cycle, phase and about how long it still takes (fill and pause times of the settings)
+  const bfKey = live.bfc + "/" + live.bfp;
+  if (bfKey !== bfSeen.key) { bfSeen.key = bfKey; bfSeen.at = Date.now(); }
+  const fill = P["backflush.fill_time"]?.value ?? 5, pauseS = P["backflush.flush_time"]?.value ?? 10;
+  const left = live.bfc > 0 ? Math.max(0, (live.bfn - live.bfc) * (fill + pauseS) + (live.bfp === 1 ? fill + pauseS : pauseS) - (Date.now() - bfSeen.at) / 1000) : 0;
+  document.querySelectorAll(".note.bfprog").forEach(e => {
+    e.hidden = !(live.ok && live.state === 50 && live.bfc > 0);
+    if (!e.hidden) e.textContent = t("bfProgress").replace("{c}", live.bfc).replace("{n}", live.bfn).replace("{p}", t(live.bfp === 1 ? "backflush.fill_time" : "backflush.flush_time")).replace("{s}", Math.round(left));
+  });
   const ba = $("#bfActive"), cb = $("#cleanBtn");
   if (ba) ba.hidden = !!ck;
   if (cb) cb.hidden = !!ck || !!P["BACKFLUSH_ON"]?.value;
@@ -1631,7 +1713,13 @@ async function loadBeans() {
   try { const r = await call("/beans"); if (r.ok) beans = await r.json(); else if (r.status === 404) beans = null; } catch (e) {}
   paintBeans();
 }
-const beanSummary = b => [b.d != null ? fmt(b.d) + " g" + (b.tw != null ? " → " + fmt(b.tw) + " g" : "") : b.tw != null ? fmt(b.tw) + " g" : "",
+// days since 1970-01-01 of a local date (the machine keeps the roast date so); today, and the day of a shot (UTC seconds)
+const dayOf = d => Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5);
+const dayNow = () => dayOf(new Date());
+const roastDate = rd => new Date(rd * 864e5).toLocaleDateString(loc(), {timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric"});
+const roastAge = (rd, at) => rd ? (at ? dayOf(new Date(at * 1000)) : dayNow()) - rd : null;
+const beanOf = name => beans?.beans?.find(b => sameBean(b.n, name));
+const beanSummary = b => [b.rd ? t("roastAge").replace("{n}", roastAge(b.rd)) : "", b.d != null ? fmt(b.d) + " g" + (b.tw != null ? " → " + fmt(b.tw) + " g" : "") : b.tw != null ? fmt(b.tw) + " g" : "",
   b.m ? t("brew.grind") + " " + b.m : "", b.t != null ? fmt(b.t) + " °C" : "", t("beanLag") + " " + num(b.lg, 2) + " s"].filter(Boolean).join(" · ");
 // brew.beans saved: the machine keeps the old bean's values and sets the new one's (or keeps the current ones for a new
 // bean) within half a second; then the page reads what it set
@@ -1656,6 +1744,12 @@ async function deleteBean(b) {
 }
 function paintBeans() {
   const pick = $("#beanPick"), list = $("#beanList"), all = beans?.beans ?? [], now = beans ? beans.now : P["brew.beans"]?.value ?? "";
+  const rp = $("#roastPick"), cur = beanOf(now);
+  if (rp) {
+    rp.closest(".roast").hidden = !beans || !beanName(now);
+    if (document.activeElement !== rp) rp.value = cur?.rd ? new Date(cur.rd * 864e5).toISOString().slice(0, 10) : "";
+    $("#roastAge").textContent = cur?.rd ? " · " + t("roastAge").replace("{n}", roastAge(cur.rd)) : "";
+  }
   if (pick) { // names typed by the user: text, not HTML
     pick.parentElement.hidden = beans === null;
     const opts = [];
@@ -1786,6 +1880,17 @@ function paintCare() {
       b.style.background = care.due ? "var(--heat)" : "var(--cool)";
     }
   }
+  const dst = $("#dripSt");
+  if (dst) {
+    dst.closest(".card").hidden = care === null;
+    if (care) {
+      dst.textContent = t("dripNow").replace("{ml}", fmt(care.drip ?? 0)).replace("{cap}", fmt(care.dripCap ?? 0));
+      const b = $("#dripBar");
+      b.style.transform = `scaleX(${care.dripCap > 0 ? Math.min(1, (care.drip ?? 0) / care.dripCap) : 0})`;
+      b.style.background = care.dripDue ? "var(--heat)" : "var(--cool)";
+    }
+  }
+  document.querySelectorAll(".note.drip").forEach(e => { e.hidden = !care?.dripDue; if (care?.dripDue) e.firstChild.textContent = t("dripDue").replace("{ml}", fmt(care.drip)); });
   const dn = $("#descaleNote");
   if (dn) { dn.hidden = !care?.due; if (care?.due) dn.textContent = t("descaleDue").replace("{l}", litres(care.water)); }
   paintLastShot(); paintPills(); paintBf();
@@ -1889,19 +1994,30 @@ function paintPills() {
   if (html !== pillsText || box.hidden === !html) { pillsText = html; box.innerHTML = html; box.hidden = !html; }
 }
 // the newest shot on the overview: its numbers, the taste, Claude's word (folded) and the counters; a tap opens it
+// the shot counters, with the last shot (or alone without one)
+const countLine = () => care ? t("cTodayN").replace("{n}", care.today) + " · " + t("cWeekN").replace("{n}", care.week) : "";
+// what the care tab looks after, in its own tile on the overview (Dominik, 09.10.2026: not in the shot's tile)
 function careLine() {
   const every = P["backflush.remind_after"]?.value ?? 0, line = [];
-  if (care) line.push(t("cTodayN").replace("{n}", care.today), t("cWeekN").replace("{n}", care.week));
   if (every > 0 && shots) line.push(t("bfIn").replace("{n}", Math.max(0, every - bfCount)));
   if (care?.descaleL > 0) line.push(t("descaleIn").replace("{l}", litres(Math.max(0, care.descaleL * 1000 - care.water))));
+  if (care?.dripCap > 0) line.push(t("dripIn").replace("{ml}", fmt(care.drip ?? 0)));
   return line.join(" · ");
+}
+function paintCareCard() {
+  const c = $("#careCard");
+  if (!c) return;
+  const line = careLine();
+  c.hidden = !line;
+  c.replaceChildren(...(line ? [el("h2", null, t("careCard")), el("p", "shotinfo", line)] : []));
 }
 function paintLastShot() {
   const c = $("#lastCard"), x = shots?.[0];
   if (!c) return;
   c.replaceChildren();
-  if (!x) { // no shot yet: the counters and what is due (Dominik, 09.10.2026: "dasss nix neues dazugekommen ist")
-    const line = careLine();
+  paintCareCard();
+  if (!x) { // no shot yet: the counters (Dominik, 09.10.2026: "dasss nix neues dazugekommen ist")
+    const line = countLine();
     c.hidden = !line;
     if (line) c.append(el("h2", null, t("todayCard")), el("p", "shotinfo", line));
     return;
@@ -1919,7 +2035,7 @@ function paintLastShot() {
   c.append(tasteRow(x, 0));
   const a = aiBox(x, true, true);
   if (a) c.append(a);
-  const line = careLine();
+  const line = countLine();
   if (line) c.append(el("p", "shotinfo", line));
 }
 let jumpToShot = false;
@@ -2026,11 +2142,12 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sPower" ? powerCard() : title === "sDescale" ? descaleCard() : title === "sCount" ? countCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sPower" ? powerCard() : title === "sDescale" ? descaleCard() : title === "sDrip" ? dripCard() : title === "sCount" ? countCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
     const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
     const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = !(live.ok && live.bfd); m.querySelector('[data-card="sBf"] h2')?.after(bd);
     const cn = el("div", "note clean"); cn.hidden = true; bd.after(cn);
+    const bp = el("div", "note bfprog"); bp.hidden = true; cn.after(bp);
     const cw = el("div", "btns"), cb = el("button", "btn", t("cleanStart")); cb.id = "cleanBtn"; cb.hidden = !!P["BACKFLUSH_ON"]?.value;
     cb.onclick = async () => { // backflush mode on, with the program: detergent cycles, rinse out, clear water
       const r = await post("/toggleBackflush?cleaner=1").catch(() => null);

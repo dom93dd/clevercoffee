@@ -96,6 +96,7 @@ namespace care {
         const int32_t day = localDay();
         portENTER_CRITICAL(&lock);
         stats.shot(dose, orione::Water::shotMl(grams, dose, seconds), day);
+        stats.drip(orione::Water::kShotDripMl);
         portEXIT_CRITICAL(&lock);
         save(); // with the shot's own save, once per shot
     }
@@ -104,6 +105,7 @@ namespace care {
     inline void rinse(const float pumpSeconds) {
         portENTER_CRITICAL(&lock);
         stats.water(orione::Water::rinseMl(pumpSeconds));
+        stats.drip(orione::Water::rinseMl(pumpSeconds)); // without the portafilter: into the tray
         portEXIT_CRITICAL(&lock);
         changed();
     }
@@ -113,6 +115,7 @@ namespace care {
         const time_t now = time(nullptr);
         portENTER_CRITICAL(&lock);
         stats.water(orione::Water::backflushMl(cycles, fillSeconds));
+        stats.drip(orione::Water::backflushMl(cycles, fillSeconds));
         stats.backflushed(now > 1700000000 ? static_cast<uint32_t>(now) : 0);
         portEXIT_CRITICAL(&lock);
         changed();
@@ -121,6 +124,13 @@ namespace care {
     inline void descaled(const uint32_t whenUtc) {
         portENTER_CRITICAL(&lock);
         stats.descaled(whenUtc);
+        portEXIT_CRITICAL(&lock);
+        changed();
+    }
+
+    inline void dripEmptied() {
+        portENTER_CRITICAL(&lock);
+        stats.dripEmptied();
         portEXIT_CRITICAL(&lock);
         changed();
     }
@@ -134,16 +144,18 @@ namespace care {
 
     /**
      * {"today":n,"week":n,"total":n,"coffee":g,"water":ml,"descaledAt":UTC or 0,"descaleL":limit,"due":bool,"standby":minutes until
-     * standby or -1,"rssi":dBm,"backflushAt":UTC of the last complete backflush or 0}
+     * standby or -1,"rssi":dBm,"backflushAt":UTC of the last complete backflush or 0,"drip":ml in the drip tray,"dripCap":its capacity,
+     * "dripDue":bool}
      */
-    inline void writeJson(Print& out, const float descaleLitres, const int standbyMinutes, const int rssi) {
+    inline void writeJson(Print& out, const float descaleLitres, const int standbyMinutes, const int rssi, const float dripCapacityMl) {
         const int32_t day = localDay();
         portENTER_CRITICAL(&lock);
         const orione::MachineStats s = stats;
         portEXIT_CRITICAL(&lock);
-        out.printf(R"({"today":%u,"week":%u,"total":%u,"coffee":%.1f,"water":%u,"descaledAt":%u,"descaleL":%.0f,"due":%s,"standby":%d,"rssi":%d,"backflushAt":%u})", s.today(day), s.week(day),
+        out.printf(R"({"today":%u,"week":%u,"total":%u,"coffee":%.1f,"water":%u,"descaledAt":%u,"descaleL":%.0f,"due":%s,"standby":%d,"rssi":%d,"backflushAt":%u,"drip":%u,"dripCap":%.0f,"dripDue":%s})", s.today(day), s.week(day),
                    static_cast<unsigned>(s.total()), static_cast<double>(s.doseGrams()), static_cast<unsigned>(s.waterMl()), static_cast<unsigned>(s.descaledAt()),
-                   static_cast<double>(descaleLitres), s.descaleDue(descaleLitres) ? "true" : "false", standbyMinutes, rssi, static_cast<unsigned>(s.backflushAt()));
+                   static_cast<double>(descaleLitres), s.descaleDue(descaleLitres) ? "true" : "false", standbyMinutes, rssi, static_cast<unsigned>(s.backflushAt()),
+                   static_cast<unsigned>(s.dripMl()), static_cast<double>(dripCapacityMl), s.dripDue(dripCapacityMl) ? "true" : "false");
     }
 
 } // namespace care

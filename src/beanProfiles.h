@@ -98,10 +98,11 @@ namespace bean_profiles {
         Preferences prefs;
 
         if (prefs.begin(kNamespace, true)) {
-            auto stored = std::make_unique<orione::BeanProfiles::Stored>();
+            auto saved = std::make_unique<uint8_t[]>(orione::BeanProfiles::kMaxStoredSize); // this format or the one before
+            const size_t length = prefs.getBytesLength(kKey);
 
-            if (prefs.getBytesLength(kKey) == sizeof(*stored) && prefs.getBytes(kKey, stored.get(), sizeof(*stored)) == sizeof(*stored)) {
-                profiles.restore(stored.get(), sizeof(*stored));
+            if (orione::BeanProfiles::readable(length) && prefs.getBytes(kKey, saved.get(), length) == length) {
+                profiles.restore(saved.get(), length);
             }
 
             prefs.end();
@@ -199,6 +200,19 @@ namespace bean_profiles {
         }
     }
 
+    /** From the web server: the roast date of a bean (days since 1970-01-01, 0 none) */
+    inline bool setRoast(const char* name, const uint16_t day) {
+        portENTER_CRITICAL(&lock);
+        const bool ok = profiles.setRoast(name, day);
+        portEXIT_CRITICAL(&lock);
+
+        if (ok) {
+            saveRequested = true;
+        }
+
+        return ok;
+    }
+
     /** From the web server: drop a bean that is not the current one */
     inline bool remove(const char* name) {
         portENTER_CRITICAL(&lock);
@@ -217,8 +231,8 @@ namespace bean_profiles {
     }
 
     /**
-     * {"now":"current beans","beans":[{"n":"name","d":16.5,"m":"21","tw":33.0,"t":93.0,"lg":1.00},...]}, last used first;
-     * d, tw, t null if not known; the current bean with the values of the settings
+     * {"now":"current beans","beans":[{"n":"name","d":16.5,"m":"21","tw":33.0,"t":93.0,"lg":1.00,"rd":20365},...]}, last used first;
+     * d, tw, t null if not known, rd the roast date in days since 1970-01-01 or null; the current bean with the values of the settings
      */
     inline void writeJson(Print& out) {
         auto copy = std::make_unique<orione::BeanProfiles>();
@@ -247,7 +261,9 @@ namespace bean_profiles {
             printTenths(out, b.targetTenths);
             out.print(R"(,"t":)");
             printTenths(out, b.setpointTenths > 0 ? static_cast<unsigned>(b.setpointTenths) : 0u);
-            out.printf(R"(,"lg":%u.%02u})", b.lagCs / 100u, b.lagCs % 100u);
+            const uint16_t roast = copy->at(order[k]).roastDay; // kept with the bean, not in the settings
+            out.printf(R"(,"lg":%u.%02u,"rd":)", b.lagCs / 100u, b.lagCs % 100u);
+            roast ? (void)out.printf("%u}", static_cast<unsigned>(roast)) : (void)out.print("null}");
         }
 
         out.print("]}");

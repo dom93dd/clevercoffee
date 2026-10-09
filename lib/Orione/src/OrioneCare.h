@@ -115,6 +115,48 @@ namespace orione {
     };
 
     /**
+     * A switch input that must stay the other way for holdMs before it counts: the water level sensor through the
+     * plastic of tank and tray flickered full/empty every 1-10 s (08.10.2026), which cut the warm-up flush short.
+     * The first reading counts at once (no delay at the start).
+     */
+    class Debounce {
+        public:
+            explicit Debounce(const uint32_t holdMs) : holdMs_(holdMs) {}
+
+            bool update(const bool in, const uint32_t nowMs) {
+                if (!started_) {
+                    started_ = true;
+                    state_ = in;
+                    return state_;
+                }
+
+                if (in == state_) {
+                    pending_ = false;
+                    return state_;
+                }
+
+                if (!pending_) {
+                    pending_ = true;
+                    since_ = nowMs;
+                }
+
+                if (nowMs - since_ >= holdMs_) {
+                    state_ = in;
+                    pending_ = false;
+                }
+
+                return state_;
+            }
+
+        private:
+            uint32_t holdMs_;
+            uint32_t since_ = 0;
+            bool started_ = false;
+            bool pending_ = false;
+            bool state_ = false;
+    };
+
+    /**
      * How much water went through the thermoblock, for the descaling reminder. An estimate: a shot is what reached the
      * cup plus what the puck kept (about its dose again), a rinse runs at about 8 ml/s through the open group (cottec,
      * Kaffee-Netz t165325: ~10 ml/s or more for an empty shot, less through the Orione's group), a backflush cycle
@@ -124,6 +166,7 @@ namespace orione {
             static constexpr float kRinseMlPerSecond = 8.0f;
             static constexpr float kShotMlPerSecond = 2.0f; // a shot without a scale
             static constexpr float kBackflushMlPerSecond = 2.0f;
+            static constexpr uint32_t kShotDripMl = 15; // the 3-way valve lets the group's water off into the tray (own estimate)
 
             static uint32_t shotMl(const float grams, const float dose, const float seconds) {
                 if (grams >= 0.0f && std::isfinite(grams)) {
@@ -170,6 +213,24 @@ namespace orione {
 
             void water(const uint32_t ml) {
                 waterMl_ += ml;
+            }
+
+            /** Water into the drip tray (rinses, backflush, the valve after a shot) */
+            void drip(const uint32_t ml) {
+                dripMl_ += ml;
+            }
+
+            void dripEmptied() {
+                dripMl_ = 0;
+            }
+
+            uint32_t dripMl() const {
+                return dripMl_;
+            }
+
+            /** Drip tray to empty: capacity in ml (0: no reminder), due at 80 % */
+            bool dripDue(const float capacityMl) const {
+                return capacityMl > 0.0f && dripMl_ >= capacityMl * 0.8f;
             }
 
             void descaled(const uint32_t whenUtc) {
@@ -228,6 +289,21 @@ namespace orione {
                     uint16_t today;
                     uint16_t week;
                     uint32_t backflushAt; // 2
+                    uint32_t dripMl;      // 3
+            };
+
+            /** Format 2 (09.10.2026, before the drip tray) */
+            struct StoredV2 {
+                    uint8_t version;
+                    uint32_t total;
+                    uint32_t doseDeci;
+                    uint32_t waterMl;
+                    uint32_t descaledAt;
+                    int32_t day;
+                    int32_t weekNo;
+                    uint16_t today;
+                    uint16_t week;
+                    uint32_t backflushAt;
             };
 
             /** Format 1 (08.10.2026, before the backflush date): read once, saved as 2 */
@@ -246,11 +322,11 @@ namespace orione {
             static constexpr size_t kMaxStoredSize = sizeof(Stored);
 
             static bool readable(const size_t length) {
-                return length == sizeof(Stored) || length == sizeof(StoredV1);
+                return length == sizeof(Stored) || length == sizeof(StoredV2) || length == sizeof(StoredV1);
             }
 
             Stored stored() const {
-                return Stored{kVersion, total_, doseDeci_, waterMl_, descaledAt_, day_, weekNo_, today_, week_, backflushAt_};
+                return Stored{kVersion, total_, doseDeci_, waterMl_, descaledAt_, day_, weekNo_, today_, week_, backflushAt_, dripMl_};
             }
 
             bool restore(const void* data, const size_t length) {
@@ -259,7 +335,12 @@ namespace orione {
                 if (data != nullptr && length == sizeof(StoredV1) && static_cast<const uint8_t*>(data)[0] == 1) {
                     StoredV1 o{};
                     std::memcpy(&o, data, sizeof(o));
-                    s = Stored{kVersion, o.total, o.doseDeci, o.waterMl, o.descaledAt, o.day, o.weekNo, o.today, o.week, 0};
+                    s = Stored{kVersion, o.total, o.doseDeci, o.waterMl, o.descaledAt, o.day, o.weekNo, o.today, o.week, 0, 0};
+                }
+                else if (data != nullptr && length == sizeof(StoredV2) && static_cast<const uint8_t*>(data)[0] == 2) {
+                    StoredV2 o{};
+                    std::memcpy(&o, data, sizeof(o));
+                    s = Stored{kVersion, o.total, o.doseDeci, o.waterMl, o.descaledAt, o.day, o.weekNo, o.today, o.week, o.backflushAt, 0};
                 }
                 else if (data == nullptr || length != sizeof(s)) {
                     return false;
@@ -281,6 +362,7 @@ namespace orione {
                 today_ = s.today;
                 week_ = s.week;
                 backflushAt_ = s.backflushAt;
+                dripMl_ = s.dripMl;
                 return true;
             }
 
@@ -297,7 +379,7 @@ namespace orione {
                 }
             }
 
-            static constexpr uint8_t kVersion = 2; // 2: date of the last backflush
+            static constexpr uint8_t kVersion = 3; // 2: date of the last backflush, 3: water in the drip tray
 
             uint32_t total_ = 0;
             uint32_t doseDeci_ = 0;
@@ -308,6 +390,7 @@ namespace orione {
             uint16_t today_ = 0;
             uint16_t week_ = 0;
             uint32_t backflushAt_ = 0;
+            uint32_t dripMl_ = 0;
     };
 
     /**

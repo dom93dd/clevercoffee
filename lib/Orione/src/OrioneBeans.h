@@ -27,6 +27,18 @@ namespace orione {
             int16_t setpointTenths = 0;  // brew temperature, 0.1 °C
             uint16_t lagCs = 0;          // learned lag (BrewLag), 0.01 s
             uint32_t used = 0;           // running number of the last use: the oldest makes room
+            uint16_t roastDay = 0;       // roast date, days since 1970-01-01, 0 = not given (09.10.2026)
+    };
+
+    /** A recipe as saved by format 1 (before the roast date): read once, then saved as 2 */
+    struct BeanRecipeV1 {
+            char name[41] = {};
+            uint16_t doseTenths = 0;
+            char grind[10] = {};
+            uint16_t targetTenths = 0;
+            int16_t setpointTenths = 0;
+            uint16_t lagCs = 0;
+            uint32_t used = 0;
     };
 
     class BeanProfiles {
@@ -72,7 +84,10 @@ namespace orione {
                 return -1;
             }
 
-            /** Keep r under its name (a new bean or new values for a known one); marks it the newest used */
+            /**
+             * Keep r under its name (a new bean or new values for a known one); marks it the newest used. The recipe
+             * from the settings has no roast date: a known bean keeps its own (setRoast() changes it)
+             */
             void put(const BeanRecipe& r) {
                 if (blank(r.name)) {
                     return;
@@ -95,10 +110,24 @@ namespace orione {
                     }
                 }
 
+                const uint16_t roast = r.roastDay != 0 || find(r.name) != i ? r.roastDay : beans_[i].roastDay;
                 beans_[i] = r;
+                beans_[i].roastDay = roast;
                 beans_[i].name[sizeof(beans_[i].name) - 1] = '\0';
                 beans_[i].grind[sizeof(beans_[i].grind) - 1] = '\0';
                 beans_[i].used = ++clock_;
+            }
+
+            /** The roast date of a bean (0: none); false if there is no such bean */
+            bool setRoast(const char* name, const uint16_t day) {
+                const int i = find(name);
+
+                if (i < 0) {
+                    return false;
+                }
+
+                beans_[i].roastDay = day;
+                return true;
             }
 
             bool remove(const char* name) {
@@ -161,14 +190,45 @@ namespace orione {
                 return s;
             }
 
+            struct StoredV1 {
+                    uint8_t version;
+                    uint8_t count;
+                    uint32_t clock;
+                    BeanRecipeV1 beans[kSize];
+            };
+
+            static constexpr size_t kMaxStoredSize = sizeof(Stored) > sizeof(StoredV1) ? sizeof(Stored) : sizeof(StoredV1);
+
+            static bool readable(const size_t length) {
+                return length == sizeof(Stored) || length == sizeof(StoredV1);
+            }
+
             bool restore(const void* data, const size_t length) {
                 Stored s{};
 
-                if (data == nullptr || length != sizeof(s)) {
+                if (data != nullptr && length == sizeof(StoredV1) && static_cast<const uint8_t*>(data)[0] == 1) {
+                    StoredV1 o{};
+                    std::memcpy(&o, data, sizeof(o));
+                    s.version = kVersion;
+                    s.count = o.count;
+                    s.clock = o.clock;
+
+                    for (int i = 0; i < kSize; ++i) {
+                        std::memcpy(s.beans[i].name, o.beans[i].name, sizeof(s.beans[i].name));
+                        std::memcpy(s.beans[i].grind, o.beans[i].grind, sizeof(s.beans[i].grind));
+                        s.beans[i].doseTenths = o.beans[i].doseTenths;
+                        s.beans[i].targetTenths = o.beans[i].targetTenths;
+                        s.beans[i].setpointTenths = o.beans[i].setpointTenths;
+                        s.beans[i].lagCs = o.beans[i].lagCs;
+                        s.beans[i].used = o.beans[i].used;
+                    }
+                }
+                else if (data == nullptr || length != sizeof(s)) {
                     return false;
                 }
-
-                std::memcpy(&s, data, sizeof(s));
+                else {
+                    std::memcpy(&s, data, sizeof(s));
+                }
 
                 if (s.version != kVersion || s.count > kSize) {
                     return false;
@@ -203,7 +263,7 @@ namespace orione {
                 return end;
             }
 
-            static constexpr uint8_t kVersion = 1;
+            static constexpr uint8_t kVersion = 2; // 2: roast date
 
             BeanRecipe beans_[kSize];
             int count_ = 0;

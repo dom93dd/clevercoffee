@@ -1197,6 +1197,88 @@ void test_flush_by_hand_with_one_pulse_for_the_rinse() {
     TEST_ASSERT_EQUAL(1, g.pulses());
 }
 
+void test_beans_keep_their_roast_date_and_take_format_1_over() {
+    orione::BeanProfiles p;
+    orione::BeanRecipe r;
+    std::snprintf(r.name, sizeof(r.name), "%s", "Ettli Don Pedro");
+    r.doseTenths = 165;
+    p.put(r);
+    TEST_ASSERT_TRUE(p.setRoast("ettli don pedro", 20360));
+    TEST_ASSERT_FALSE(p.setRoast("Unbekannt", 20360));
+    r.doseTenths = 170; // the settings changed: their recipe has no roast date, the bean keeps its own
+    p.put(r);
+    TEST_ASSERT_EQUAL_UINT16(20360, p.at(p.find("Ettli Don Pedro")).roastDay);
+    TEST_ASSERT_EQUAL_UINT16(170, p.at(p.find("Ettli Don Pedro")).doseTenths);
+    TEST_ASSERT_TRUE(p.setRoast("Ettli Don Pedro", 0)); // cleared
+    p.put(r);
+    TEST_ASSERT_EQUAL_UINT16(0, p.at(0).roastDay);
+    p.setRoast("Ettli Don Pedro", 20361);
+    const auto s = p.stored();
+    orione::BeanProfiles q;
+    TEST_ASSERT_TRUE(q.restore(&s, sizeof(s)));
+    TEST_ASSERT_EQUAL_UINT16(20361, q.at(0).roastDay);
+    // format 1: the recipes come along, without a date
+    orione::BeanProfiles::StoredV1 v1{};
+    v1.version = 1;
+    v1.count = 1;
+    v1.clock = 7;
+    std::snprintf(v1.beans[0].name, sizeof(v1.beans[0].name), "%s", "Röstwerk Hell");
+    std::snprintf(v1.beans[0].grind, sizeof(v1.beans[0].grind), "%s", "19");
+    v1.beans[0].doseTenths = 180;
+    v1.beans[0].targetTenths = 360;
+    v1.beans[0].setpointTenths = 930;
+    v1.beans[0].lagCs = 91;
+    v1.beans[0].used = 7;
+    TEST_ASSERT_TRUE(orione::BeanProfiles::readable(sizeof(v1)));
+    orione::BeanProfiles o;
+    TEST_ASSERT_TRUE(o.restore(&v1, sizeof(v1)));
+    TEST_ASSERT_EQUAL(1, o.count());
+    TEST_ASSERT_EQUAL_STRING("Röstwerk Hell", o.at(0).name);
+    TEST_ASSERT_EQUAL_STRING("19", o.at(0).grind);
+    TEST_ASSERT_EQUAL_UINT16(180, o.at(0).doseTenths);
+    TEST_ASSERT_EQUAL_UINT16(360, o.at(0).targetTenths);
+    TEST_ASSERT_EQUAL_INT16(930, o.at(0).setpointTenths);
+    TEST_ASSERT_EQUAL_UINT16(91, o.at(0).lagCs);
+    TEST_ASSERT_EQUAL_UINT16(0, o.at(0).roastDay);
+    TEST_ASSERT_FALSE(orione::BeanProfiles::readable(sizeof(v1) + 1));
+}
+
+void test_tank_sensor_counts_after_three_seconds_the_same_way() {
+    orione::Debounce d(3000);
+    TEST_ASSERT_TRUE(d.update(true, 0));        // the first reading at once
+    TEST_ASSERT_TRUE(d.update(false, 1000));    // flickers: not yet
+    TEST_ASSERT_TRUE(d.update(true, 2000));     // back: nothing happened
+    TEST_ASSERT_TRUE(d.update(false, 2500));
+    TEST_ASSERT_TRUE(d.update(false, 5400));    // 2.9 s
+    TEST_ASSERT_FALSE(d.update(false, 5500));   // 3 s empty: empty
+    TEST_ASSERT_FALSE(d.update(true, 6000));    // refilled: 3 s too
+    TEST_ASSERT_TRUE(d.update(true, 9000));
+    orione::Debounce e(3000);
+    TEST_ASSERT_FALSE(e.update(false, 100));    // started empty: empty at once
+}
+
+void test_stats_count_the_drip_tray_and_take_format_2_over() {
+    orione::MachineStats a;
+    a.drip(300);
+    TEST_ASSERT_FALSE(a.dripDue(500.0f)); // 60 %
+    a.drip(100);
+    TEST_ASSERT_TRUE(a.dripDue(500.0f));  // 80 %
+    TEST_ASSERT_FALSE(a.dripDue(0.0f));   // no reminder
+    const auto s = a.stored();
+    orione::MachineStats b;
+    TEST_ASSERT_TRUE(b.restore(&s, sizeof(s)));
+    TEST_ASSERT_EQUAL_UINT32(400, b.dripMl());
+    b.dripEmptied();
+    TEST_ASSERT_EQUAL_UINT32(0, b.dripMl());
+    orione::MachineStats::StoredV2 v2{2, 245, 44100, 12300, 1791000000, 20000, 2857, 3, 12, 1791500000};
+    orione::MachineStats c;
+    TEST_ASSERT_TRUE(orione::MachineStats::readable(sizeof(v2)));
+    TEST_ASSERT_TRUE(c.restore(&v2, sizeof(v2)));
+    TEST_ASSERT_EQUAL_UINT32(1791500000, c.backflushAt());
+    TEST_ASSERT_EQUAL_UINT32(245, c.total());
+    TEST_ASSERT_EQUAL_UINT32(0, c.dripMl());
+}
+
 void test_water_estimates() {
     TEST_ASSERT_EQUAL_UINT32(50, orione::Water::shotMl(33.4f, 16.5f, 28.0f)); // cup + what the puck keeps
     TEST_ASSERT_EQUAL_UINT32(56, orione::Water::shotMl(-1.0f, 16.5f, 28.0f)); // no scale: the time
@@ -1399,6 +1481,9 @@ int main() {
     RUN_TEST(test_stats_keep_the_backflush_date_and_take_format_1_over);
     RUN_TEST(test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes);
     RUN_TEST(test_flush_by_hand_with_one_pulse_for_the_rinse);
+    RUN_TEST(test_beans_keep_their_roast_date_and_take_format_1_over);
+    RUN_TEST(test_tank_sensor_counts_after_three_seconds_the_same_way);
+    RUN_TEST(test_stats_count_the_drip_tray_and_take_format_2_over);
     RUN_TEST(test_water_estimates);
     RUN_TEST(test_stats_count_days_weeks_and_descaling);
     RUN_TEST(test_cleaning_with_detergent_then_rinse);

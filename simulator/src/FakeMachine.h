@@ -33,6 +33,7 @@ class FakeMachine {
         bool flushReminder = false;      // Orione: a shot since the last rinse
         bool backflushDone = false;      // Orione: backflush over, brew switch still on
         uint8_t cleaningPhase = 0;       // Orione: cleaning with detergent (rd::Model::cleaningPhase)
+        int16_t clockMinutes = 7 * 60 + 42; // local time for the standby screen (-1: no clock)
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -264,6 +265,7 @@ class FakeMachine {
             m.backflushDone = backflushDone;
             m.cleaningPhase = cleaningPhase;
             m.switchWakes = true; // as the Orione build
+            m.clockMinutes = clockMinutes;
 
             if (steamFromSwitch) {
                 m.mode = rd::Mode::Steam;

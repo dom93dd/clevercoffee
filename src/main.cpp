@@ -1973,10 +1973,19 @@ void checkWaterTank() {
     }
 
 #ifdef CC_FAKE_TEMP_SENSOR
-    if (const bool isWaterDetected = !bench::tankEmpty; isWaterDetected && !waterTankFull) { // bench: no sensor on GPIO23
+    const bool reading = !bench::tankEmpty; // bench: no sensor on GPIO23
 #else
-    if (const bool isWaterDetected = waterTankSensor->isPressed(); isWaterDetected && !waterTankFull) {
+    const bool reading = waterTankSensor->isPressed();
 #endif
+#ifdef CC_ORIONE
+    // the sensor flickered through tank and tray (08.10.2026): a change counts after 3 s the same way (OrioneCare.h)
+    static orione::Debounce tank(3000);
+    const bool isWaterDetected = tank.update(reading, millis());
+#else
+    const bool isWaterDetected = reading;
+#endif
+
+    if (isWaterDetected && !waterTankFull) {
         waterTankFull = true;
         LOG(INFO, "Water tank full");
     }

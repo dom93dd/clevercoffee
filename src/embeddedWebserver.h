@@ -128,6 +128,9 @@ namespace live_events {
             bool fp;       // a shot since the last rinse (shot_history::flushPending)
             bool bfd;      // backflush done, brew switch still on (backflushSwitchReminder)
             int clean;     // cleaning with detergent: orione::CleaningProgram::Phase
+            int bfc;       // backflush: the cycle running, 0 when none
+            int bfn;       // backflush: cycles in all
+            int bfp;       // backflush: 0 idle, 1 pumping (filling), 2 pause (flushing), 3 last pause
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -135,7 +138,7 @@ namespace live_events {
     inline TaskHandle_t task = nullptr;
 
     inline void run(void*) {
-        char json[288];
+        char json[320]; // ~290 at most
 
         for (;;) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -158,8 +161,9 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d,"pulses":%d)", v.warmup, v.pulse, v.pulses);
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
-                snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s,"clean":%d})", v.held ? "true" : "false", v.sw ? "true" : "false",
-                         v.steam, v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false", v.clean);
+                n += snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s,"clean":%d)", v.held ? "true" : "false", v.sw ? "true" : "false",
+                              v.steam, v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false", v.clean);
+                snprintf(json + n, sizeof(json) - n, R"(,"bfc":%d,"bfn":%d,"bfp":%d})", v.bfc, v.bfn, v.bfp);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -767,6 +771,31 @@ inline void serverSetup() {
         request->send(200, "text/plain", "OK");
     });
 
+    // the roast date of a bean: ?n=name&d=YYYY-MM-DD, d empty: none
+    server.on("/beans/roast", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const String name = request->hasParam("n") ? request->getParam("n")->value() : String();
+        const String date = request->hasParam("d") ? request->getParam("d")->value() : String();
+        int y = 0, m = 0, d = 0;
+        long day = 0;
+
+        if (date.length() > 0) {
+            if (sscanf(date.c_str(), "%d-%d-%d", &y, &m, &d) != 3 || y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+                return request->send(400, "text/plain", "bad date");
+            }
+
+            // days from the civil date (Howard Hinnant's algorithm, as machineCare.h)
+            const int yy = y - (m <= 2);
+            const unsigned yoe = static_cast<unsigned>(yy % 400), doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+            day = (yy / 400) * 146097L + static_cast<long>(yoe * 365 + yoe / 4 - yoe / 100 + doy) - 719468;
+        }
+
+        if (!bean_profiles::setRoast(name.c_str(), static_cast<uint16_t>(day))) {
+            return request->send(409, "text/plain", "not that bean");
+        }
+
+        request->send(200, "text/plain", "OK");
+    });
+
     server.on("/beans", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         bean_profiles::writeJson(*response);
@@ -802,9 +831,14 @@ inline void serverSetup() {
     server.on("/care", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         const int standby = standbyModeOn && machineState != kStandby ? static_cast<int>((standbyModeRemainingTimeMillis + 59999) / 60000) : -1;
-        care::writeJson(*response, config.get<float>("descale.litres"), standby, static_cast<int>(WiFi.RSSI()));
+        care::writeJson(*response, config.get<float>("descale.litres"), standby, static_cast<int>(WiFi.RSSI()), config.get<float>("drip.capacity"));
         request->send(response);
     }));
+
+    server.on("/care/drip-emptied", HTTP_POST, [](AsyncWebServerRequest* request) {
+        care::dripEmptied();
+        request->send(200, "text/plain", "OK");
+    });
 
     server.on("/care/descaled", HTTP_POST, [](AsyncWebServerRequest* request) {
         care::descaled(shot_history::nowUtc());
@@ -1129,7 +1163,9 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
                           brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle, static_cast<int>(orione_machine::steam.phase()),
                           currBrewState == kPreinfusion ? 1 : currBrewState == kPreinfusionPause ? 2 : 0, shot_history::flushPending,
-                          backflushSwitchReminder, static_cast<int>(care::cleaning.phase())});
+                          backflushSwitchReminder, static_cast<int>(care::cleaning.phase()),
+                          currBackflushState == kBackflushIdle || currBackflushState == kBackflushFinished ? 0 : currBackflushCycles, backflushCycles,
+                          currBackflushState == kBackflushFilling ? 1 : currBackflushState == kBackflushFlushing ? 2 : currBackflushState == kBackflushEnding ? 3 : 0});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

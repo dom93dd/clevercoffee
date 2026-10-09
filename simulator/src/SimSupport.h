@@ -399,6 +399,12 @@ namespace sim {
                  m.reset(71.0f);
                  m.toggleStandby();
              }},
+            {"standby-no-clock", "Standby ohne Uhrzeit (noch kein NTP)",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(71.0f);
+                 m.toggleStandby();
+                 m.clockMinutes = -1;
+             }},
             {"pid-off", "PID aus",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(48.3f);

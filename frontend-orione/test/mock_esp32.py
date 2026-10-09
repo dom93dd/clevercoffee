@@ -83,6 +83,7 @@ BASE = {
     "schedule.on": dict(type=0, value=390, min=0, max=1439),
     "schedule.off": dict(type=0, value=1440, min=0, max=1440),
     "descale.litres": dict(type=2, value=40.0, min=0, max=300),
+    "drip.capacity": dict(type=2, value=500.0, min=0, max=2000),
     "brew.temp_end": dict(type=2, value=0.0, min=-5, max=5),
 }
 
@@ -134,6 +135,8 @@ class State:
         i = self.bean_find(r["n"])
         if i is None and len(self.beans) >= 8:  # full: the one not used for the longest time makes room
             i = min(range(len(self.beans)), key=lambda k: self.beans[k]["used"])
+        if i is not None and "rd" not in r and self.beans[i].get("rd") and self.bean_key(self.beans[i]["n"]) == self.bean_key(r["n"]):
+            r["rd"] = self.beans[i]["rd"]  # the settings have no roast date: the bean keeps its own (OrioneBeans.h)
         if i is None:
             self.beans.append(r)
         else:
@@ -162,7 +165,8 @@ class State:
         out = []
         for b in sorted(self.beans, key=lambda b: -b["used"]):
             b = self.bean_live if cur and self.bean_key(b["n"]) == cur else b
-            out.append({"n": b["n"], "d": b["d"] or None, "m": b["m"], "tw": b["tw"] or None, "t": b["t"] or None, "lg": round(b["lg"], 2)})
+            rd = next((x.get("rd") for x in self.beans if self.bean_key(x["n"]) == self.bean_key(b["n"])), None)
+            out.append({"n": b["n"], "d": b["d"] or None, "m": b["m"], "tw": b["tw"] or None, "t": b["t"] or None, "lg": round(b["lg"], 2), "rd": rd or None})
         return {"now": self.bean_live["n"] if self.bean_live else "", "beans": out}
 
     def scale_state(self):
@@ -199,7 +203,9 @@ class State:
     def care_json(self):
         limit = self.p["descale.litres"]["value"]
         standby = 23 if self.p["standby.enabled"]["value"] else -1
-        return {**self.care, "descaleL": limit, "due": limit > 0 and self.care["water"] >= limit * 1000, "standby": standby, "rssi": self.care.get("rssi", -71), "backflushAt": self.care.get("backflushAt", 0)}
+        cap, drip = self.p["drip.capacity"]["value"], self.care.get("drip", 230)
+        return {**self.care, "descaleL": limit, "due": limit > 0 and self.care["water"] >= limit * 1000, "standby": standby, "rssi": self.care.get("rssi", -71),
+                "backflushAt": self.care.get("backflushAt", 0), "drip": drip, "dripCap": cap, "dripDue": cap > 0 and drip >= cap * 0.8}
 
     @staticmethod
     def curve(shot):
@@ -338,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "pulses": 3, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False,
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "pulses": 3, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False, "bfc": 0, "bfn": 5, "bfp": 0,
                             "clean": S.clean}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
@@ -418,6 +424,23 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(400, "bad rating")
                 S.shots[i]["r"] = t
             return self.send(200, "OK")
+        if url.path == "/beans/roast":  # ?n=name&d=YYYY-MM-DD (empty: none), as src/embeddedWebserver.h
+            q = urllib.parse.parse_qs(url.query, keep_blank_values=True)
+            name, date = q.get("n", [""])[0], q.get("d", [""])[0]
+            with S.lock:
+                S.check_beans()
+                i = S.bean_find(name)
+                if i is None:
+                    return self.send(409, "not that bean")
+                if date:
+                    import datetime
+                    try:
+                        S.beans[i]["rd"] = (datetime.date.fromisoformat(date) - datetime.date(1970, 1, 1)).days
+                    except ValueError:
+                        return self.send(400, "bad date")
+                else:
+                    S.beans[i]["rd"] = None
+            return self.send(200, "OK")
         if url.path == "/beans/delete":  # as src/beanProfiles.h: not the current one
             name = urllib.parse.parse_qs(url.query).get("n", [""])[0]
             with S.lock:
@@ -436,6 +459,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not (0 <= i < len(shots) and int(shots[i].get("at", 0)) == at and abs(shots[i]["s"] - sec) < 0.06):
                     return self.send(409, "not that shot")
                 del S.shots[i]
+            return self.send(200, "OK")
+        if url.path == "/care/drip-emptied":
+            with S.lock:
+                S.care["drip"] = 0
             return self.send(200, "OK")
         if url.path == "/care/descaled":
             with S.lock:

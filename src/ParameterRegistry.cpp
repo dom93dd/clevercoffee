@@ -323,6 +323,8 @@ void ParameterRegistry::initialize(Config& config) {
     addNumericConfigParam<int>("schedule.off", "Schedule off", kInteger, sPowerSection, 713, nullptr, 0, 1440, "Minute of the day, 1440 = none");
     addNumericConfigParam<double>("descale.litres", "Descale after (l)", kDouble, sMaintenanceSection, 406, nullptr, 0.0, 300.0,
                                   "Estimated water through the thermoblock until the reminder (0 = none)");
+    addNumericConfigParam<double>("drip.capacity", "Drip tray holds (ml)", kDouble, sMaintenanceSection, 408, nullptr, 0.0, 2000.0,
+                                  "Reminder to empty it at 80 % of the estimated water in it (0 = none)");
     addNumericConfigParam<double>("brew.temp_end", "Temperature at the end (K)", kDouble, sTempSection, 206, nullptr, -5.0, 5.0,
                                   "The setpoint moves to setpoint + this during the shot (0 = off)");
 #endif

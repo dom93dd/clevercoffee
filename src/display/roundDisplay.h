@@ -107,6 +107,11 @@ inline rd::Model roundDisplayModel() {
     m.backflushDone = backflushSwitchReminder;
     m.cleaningPhase = static_cast<uint8_t>(care::cleaning.phase());
     m.switchWakes = true; // src/main.cpp kStandby, orione::StandbyWake
+
+    if (machineState == kStandby) {
+        struct tm now;
+        m.clockMinutes = care::localNow(now) ? static_cast<int16_t>(now.tm_hour * 60 + now.tm_min) : -1;
+    }
 #else
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);
 #endif

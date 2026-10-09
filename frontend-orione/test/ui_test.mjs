@@ -561,7 +561,8 @@ test("Bedienbarkeit: Schalter mit Zustand, ganze Zeile tippbar, 44-px-Tasten, 16
 test("Rezept: Dosis, Mahlgrad und Verhältnis im nächsten Bezug", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   const rc = view(page).locator(".recipe");
-  assert.deepEqual(await rc.locator("label").allTextContents(), ["Bohne", "Dosis", "Mahlgrad"]);
+  assert.deepEqual(await rc.locator("label").allTextContents(), ["Bohne", "Röstdatum", "Dosis", "Mahlgrad"]);
+  assert.equal(await rc.locator(".roast").isVisible(), false, "a roast date only for a bean that has a name");
   assert.equal(await rc.locator(".step input").inputValue(), "18,0 g");
   assert.equal(await rc.locator(".txt").inputValue(), "12");
   await rc.locator(".txt").fill("14"); await rc.locator(".txt").press("Enter");
@@ -665,7 +666,7 @@ test("Bezug aufklappen: Rezept, erster Tropfen, Bewertung, Vergleich, kalt gesta
   await view(page).locator("#shotList .shot").first().click();
   const cv = view(page).locator("#shotList .curve:not([hidden])");
   await cv.locator("canvas").waitFor();
-  assert.equal(await cv.locator(".shotinfo").textContent(), "18,0 g Kaffee · Mahlgrad 12 · 1:2,0 · erster Tropfen nach 6,2 s · Start bei 94,6 °C");
+  assert.equal(await cv.locator(".shotinfo").first().textContent(), "18,0 g Kaffee · Mahlgrad 12 · 1:2,0 · erster Tropfen nach 6,2 s · 10 g nach 11,3 s · Start bei 94,6 °C");
   assert.deepEqual(await cv.locator(".legend span").allTextContents(), ["Gewicht", "Durchfluss", "Temperatur", "Pumpe aus"]);
   assert.equal(await view(page).locator("#shotList .shot").nth(1).locator(".cold").textContent(), "kalt gestartet", "89,5 °C at 95 °C set");
   assert.equal(await view(page).locator("#shotList .shot").first().locator(".cold").count(), 0);
@@ -984,7 +985,7 @@ test("Wartung: Spülen ohne Wasserstandssensor gesperrt, Backflush-Zähler bleib
   await mock(BASE, "/__bf", {bf: 7});
   const {page, ctx} = await open(browser, BASE, {hash: "#care"});
   const cards = page.locator("section.card[data-card]");
-  assert.deepEqual(await cards.evaluateAll(cs => cs.map(c => c.dataset.card)), ["sFlush", "sBf", "sDescale", "sCount"]);
+  assert.deepEqual(await cards.evaluateAll(cs => cs.map(c => c.dataset.card)), ["sFlush", "sBf", "sDescale", "sDrip", "sCount"]);
   assert.equal(await page.locator("#flushBtn").isDisabled(), true);
   assert.match(await page.locator("#flushSt").textContent(), /^Nur mit Wasserstandssensor/);
   assert.equal(await row(page, "Nach dem Kaltstart automatisch").count(), 0, "no switch without the sensor");
@@ -1433,7 +1434,8 @@ test("Übersicht: letzter Bezug mit Bewertung und Zählern, Statuszeile; Tipp ö
   await card.locator(".lastnums").waitFor();
   assert.deepEqual(await card.locator(".lastnums > *").allTextContents(), ["25,3 s", "36,4 g", "1:2,0", "+0,4 g"]);
   assert.match(await card.locator(".lasthead small").textContent(), /^heute /);
-  await card.locator(".shotinfo", {hasText: "3 heute · 12 diese Woche · Backflush in 50 · Entkalken in ≈ 28 l"}).waitFor();
+  await card.locator(".shotinfo", {hasText: /^3 heute · 12 diese Woche$/}).waitFor();
+  assert.equal(await view(page).locator("#careCard .shotinfo").textContent(), "Backflush in 50 Bezügen · Entkalken in ≈\u00a028\u00a0l · Tropfschale ≈\u00a0230\u00a0ml");
   const pills = await view(page).locator("#pills span").allTextContents();
   assert.ok(pills.includes("Waage · 76 %"), pills.join(" | "));
   assert.ok(pills.some(x => /^Ein (heute|morgen) 06:30$/.test(x)), pills.join(" | "));
@@ -1684,8 +1686,82 @@ test("Wartung: Bezüge exportieren (JSON und CSV), letzter Backflush mit Datum",
 test("Übersicht ohne Bezug: Zähler und was fällig ist", async ({browser}) => {
   const {page, ctx, errors} = await open(browser, BASE);
   const card = view(page).locator("#lastCard");
-  await card.locator(".shotinfo", {hasText: "3 heute · 12 diese Woche · Backflush in 50 · Entkalken in ≈ 28 l"}).waitFor();
+  await card.locator(".shotinfo", {hasText: /^3 heute · 12 diese Woche$/}).waitFor();
   assert.equal(await card.locator("h2").textContent(), "Heute");
+  assert.equal(await view(page).locator("#careCard h2").textContent(), "Pflege");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Erster Tropfen und 10 g gegen die Referenz: schneller heißt feiner", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 30.0, g: 36.0, at: now - 3600, d: 18.0, m: "12", fd: 8.0});
+  await mock(BASE, "/__shot", {s: 22.0, g: 36.0, at: now - 600, d: 18.0, m: "13", fd: 5.0});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  await view(page).locator("#shotList .shot").nth(1).click();
+  const cv = () => view(page).locator("#shotList .curve:not([hidden])");
+  await cv().locator("canvas").waitFor();
+  await cv().locator("button", {hasText: "Als Referenz"}).click();
+  await toast(page, "Als Referenz gespeichert");
+  await view(page).locator("#shotList .shot").first().click();
+  await cv().locator(".shotinfo", {hasText: "erster Tropfen nach 5,0 s"}).waitFor(); // drawn anew for the newest
+  assert.match(await cv().locator(".shotinfo").first().textContent(), /erster Tropfen nach 5,0 s \(Ref\. 8,0\) · 10 g nach 10,5 s \(Ref\. 12,6\)/);
+  await cv().locator(".shotinfo.ch", {hasText: "2,1 s schneller als die Referenz: eher feiner mahlen"}).waitFor();
+  const ctxText = await page.evaluate(() => coffeeContext());
+  assert.ok(ctxText.includes("10 g in der Tasse nach 10,5 s"), ctxText);
+  assert.ok(ctxText.includes("erster Tropfen nach 8,0 s, 10 g nach 12,6 s"), ctxText);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Röstdatum je Bohne: im Reiter Bezug eintragen, Tag nach Röstung in Liste und für Claude; Niche-Schritte", async ({browser}) => {
+  await setp("brew.beans=Ettli Don Pedro&brew.grinder=Niche Zero");
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const rp = view(page).locator("#roastPick");
+  await rp.waitFor();
+  const d = new Date(Date.now() - 12 * 864e5), iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  await rp.fill(iso);
+  await view(page).locator("#roastAge", {hasText: "Tag 12 nach Röstung"}).waitFor();
+  assert.ok((await posts(BASE)).some(x => x.path === "/beans/roast" && x.query === `n=Ettli%20Don%20Pedro&d=${iso}`), JSON.stringify(await posts(BASE)));
+  const ctxText = await page.evaluate(() => coffeeContext());
+  assert.ok(ctxText.includes("(heute Tag 12 nach Röstung)"), ctxText);
+  assert.ok(ctxText.includes("Mahlgrad deshalb in Schritten von 0,25 bis 0,5 vorschlagen"), ctxText);
+  await tab(page, "Einstellungen");
+  await view(page).locator(".beanrow p", {hasText: /^Tag 12 nach Röstung · /}).waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Backflush: Zyklus, Phase und Restzeit in der App", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  await mock(BASE, "/__live", {state: 50, bfc: 3, bfn: 5, bfp: 1});
+  await page.locator("#state", {hasText: "Backflush 3/5"}).waitFor();
+  const note = view(page).locator(".note.bfprog");
+  await note.waitFor();
+  assert.match(await note.textContent(), /^Backflush: Zyklus 3 von 5 · Pumpen · noch ≈ (4[5-9]|50) s$/);
+  await mock(BASE, "/__live", {state: 50, bfc: 5, bfn: 5, bfp: 3});
+  await note.filter({hasText: /Zyklus 5 von 5 · Pause · noch ≈ (9|10) s$/}).waitFor();
+  await tab(page, "Wartung");
+  await view(page).locator('[data-card="sBf"] .note.bfprog').waitFor();
+  await mock(BASE, "/__live", {state: 10, bfc: 0});
+  await view(page).locator(".note.bfprog").waitFor({state: "hidden"});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Tropfschale: Schätzung in Wartung, Hinweis bei 80 %, Geleert setzt zurück", async ({browser}) => {
+  await mock(BASE, "/__care", {drip: 430});
+  const {page, ctx, errors} = await open(browser, BASE);
+  const note = view(page).locator(".note.drip");
+  await note.locator("span", {hasText: "Tropfschale leeren (≈ 430 ml)"}).waitFor();
+  await tab(page, "Wartung");
+  assert.equal(await page.locator("#dripSt").textContent(), "≈ 430 ml von 500 ml (geschätzt)");
+  assert.equal(await row(page, "Fasst").locator("input").inputValue(), "500 ml");
+  await view(page).locator('section[data-card="sDrip"] button', {hasText: "Geleert"}).click();
+  await page.locator("#dripSt", {hasText: "≈ 0 ml von 500 ml"}).waitFor();
+  assert.equal((await posts(BASE)).filter(x => x.path === "/care/drip-emptied").length, 1);
+  await tab(page, "Maschine");
+  await view(page).locator(".note.drip").waitFor({state: "hidden"});
   assert.deepEqual(errors, []);
   await ctx.close();
 });
