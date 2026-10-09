@@ -26,6 +26,7 @@ namespace care {
     inline bool unsaved = false;
     inline unsigned long changedAt = 0;
     inline volatile bool cleaningRequested = false; // POST /toggleBackflush?cleaner=1, started in loop()
+    inline volatile int8_t standbyRequest = 0;      // POST /standby: 1 standby, -1 wake; applied in loop() (main.cpp)
 
     /** Local time now; false while the clock is not set (no NTP yet) */
     inline bool localNow(struct tm& t) {

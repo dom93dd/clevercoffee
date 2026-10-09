@@ -127,6 +127,18 @@ void test_brew_timer_zero_hold() {
     TEST_ASSERT_FALSE(t.update(false, 5, 5001, 0));
 }
 
+void test_brew_timer_rinse_ends_the_held_shot() {
+    // the rinse after a shot (firmware: rinseRunning()) cancels the shot's result instead of feeding the timer
+    BrewTimer t;
+    t.update(true, 1, 0, 10, false);
+    TEST_ASSERT_TRUE(t.update(false, 26.4f, 26400, 10, true)); // stopped by weight, switch still on
+    t.cancel();                                                // switched off and on again: the rinse runs
+    TEST_ASSERT_FALSE(t.held());
+    TEST_ASSERT_FALSE(t.remind(90000));
+    TEST_ASSERT_FALSE(t.update(false, 3.0f, 31000, 10, true)); // after the rinse: the shot does not come back
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 26.4f, t.lastShotSeconds()); // the ready screen keeps the shot's time
+}
+
 // --- messages ------------------------------------------------------------------------------
 
 void test_message_split_into_title_and_lines() {
@@ -438,6 +450,7 @@ int main() {
     RUN_TEST(test_brew_timer_stays_while_the_switch_is_left_on);
     RUN_TEST(test_brew_timer_stopped_by_hand_holds_as_before);
     RUN_TEST(test_brew_timer_zero_hold);
+    RUN_TEST(test_brew_timer_rinse_ends_the_held_shot);
     RUN_TEST(test_message_split_into_title_and_lines);
     RUN_TEST(test_message_title_capitals_with_umlauts_and_accents);
     RUN_TEST(test_message_lines_are_trimmed);

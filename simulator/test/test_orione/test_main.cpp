@@ -1175,6 +1175,14 @@ void test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes() {
     TEST_ASSERT_TRUE(R::expected(true, 5000, 0xFFFFF000u));             // millis() ran over
 }
 
+void test_rinse_stops_after_ten_seconds() {
+    using R = orione::RinseAfterShot;
+    TEST_ASSERT_FALSE(R::over(0));
+    TEST_ASSERT_FALSE(R::over(9999));
+    TEST_ASSERT_TRUE(R::over(10000)); // Dominik 09.10.2026: "10s max"
+    TEST_ASSERT_TRUE(R::over(25000));
+}
+
 void test_flush_by_hand_with_one_pulse_for_the_rinse() {
     orione::WarmupFlush f;
     const orione::WarmupFlush::Inputs ok{true, false, true, true, false};
@@ -1494,6 +1502,7 @@ int main() {
     RUN_TEST(test_pointer_set_keeps_a_few_without_heap);
     RUN_TEST(test_stats_keep_the_backflush_date_and_take_format_1_over);
     RUN_TEST(test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes);
+    RUN_TEST(test_rinse_stops_after_ten_seconds);
     RUN_TEST(test_flush_by_hand_with_one_pulse_for_the_rinse);
     RUN_TEST(test_beans_keep_their_roast_date_and_take_format_1_over);
     RUN_TEST(test_tank_sensor_counts_after_three_seconds_the_same_way);

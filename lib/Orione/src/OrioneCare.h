@@ -103,14 +103,22 @@ namespace orione {
     /**
      * Rinse after a shot without pre-infusion (Dominik, 09.10.2026; the Breville Dual Boiler and Lelit's LCC have a
      * flush without pre-infusion for this): while the page and the display ask to rinse, at most kWindowMs after the
-     * shot, the brew switch runs the pump straight away. A second shot within that time without rinsing runs without
-     * pre-infusion too.
+     * shot, the brew switch runs the pump straight away. The run is the rinse throughout (Dominik, 09.10.2026: "nach
+     * einem bezug wenn man nochmal s3 schaltet auch wirklich spülen dranstehen"): display and page say "Spülen", it is
+     * never logged as a shot, no target ends it (its water on the scale would stop it by weight at once), only the
+     * switch or kMaxMs ("10s max"). A second shot within the window without rinsing would be a rinse too.
      */
     struct RinseAfterShot {
             static constexpr uint32_t kWindowMs = 120000;
+            static constexpr uint32_t kMaxMs = 10000;
 
             static bool expected(const bool rinsePending, const uint32_t nowMs, const uint32_t shotEndMs) {
                 return rinsePending && nowMs - shotEndMs <= kWindowMs;
+            }
+
+            /** The rinse has run long enough: stop the pump */
+            static bool over(const uint32_t runMs) {
+                return runMs >= kMaxMs;
             }
     };
 

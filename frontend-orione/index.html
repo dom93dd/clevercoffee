@@ -39,6 +39,13 @@ header{max-width:640px;margin:0 auto;display:flex;align-items:center;justify-con
 .brand small{display:block;font-weight:500;letter-spacing:.08em;color:var(--mute);font-size:11px}
 .chip{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:99px;background:var(--card);font-size:14px;font-weight:600;color:var(--mute);white-space:nowrap}
 .chip i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.hdr{display:flex;align-items:center;gap:8px}
+/* standby by hand (Dominik 09.10.2026), as high as the chip; the tap area is 44 px */
+.pwr{position:relative;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--card);color:var(--mute);display:grid;place-items:center;cursor:pointer}
+.pwr::before{content:"";position:absolute;inset:-6px}
+.pwr svg{width:17px;height:17px}
+.pwr.on{color:var(--heat)}
+.pwr:disabled{opacity:.4;cursor:default}
 nav{position:sticky;bottom:0;order:3;margin:0 calc(-16px - var(--sl)) 0 calc(-16px - var(--sr));display:flex;justify-content:center;gap:4px;padding:6px 8px calc(4px + var(--sb));background:rgba(11,11,12,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);z-index:5}
 nav button{flex:1;max-width:150px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;border:0;background:none;color:var(--mute);font-size:12px;font-weight:600;line-height:1;border-radius:12px;cursor:pointer}
 nav button svg{width:24px;height:24px}
@@ -216,7 +223,7 @@ details.fine[open] summary{margin-bottom:4px}
 <body>
 <header>
   <div class="brand">ORIONE<small>CLEVERCOFFEE</small></div>
-  <div class="chip" id="chip"><i></i><span id="state">…</span></div>
+  <div class="hdr"><div class="chip" id="chip"><i></i><span id="state">…</span></div><button class="pwr" id="pwrBtn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8M6.6 6.6a7.5 7.5 0 1 0 10.8 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
 </header>
 <nav id="nav"></nav>
 <main id="main"></main>
@@ -321,6 +328,7 @@ const T = {
     chNote: "Durchfluss sprang – Kanalbildung?", refSet: "Als Referenz", refClear: "Referenz entfernen", refChip: "Referenz", refSaved: "Als Referenz gespeichert", refCleared: "Referenz entfernt",
     lastShot: "Letzter Bezug", todayCard: "Heute", tomorrow: "morgen", sPower: "Ein & Aus", fine: "Feineinstellung",
     heatOn: "an", heatOnStandby: "an · Standby in {n} min", heatStandby: "Standby · Bezugsschalter weckt", heatOff: "aus: die Maschine heizt nicht",
+    toStandby: "In Standby schalten", wakeUp: "Aufwecken", standbyNow: "Standby · der Bezugsschalter oder dieser Knopf weckt die Maschine", notNow: "Gerade nicht möglich",
     exportShots: "Bezüge exportieren", descaleHow: "So geht's",
     sDrip: "Tropfschale", "drip.capacity": "Fasst", "drip.capacityHint": "einmal ausmessen; 0 = keine Erinnerung", dripNow: "≈ {ml} ml von {cap} ml (geschätzt)", dripDue: "Tropfschale leeren (≈ {ml} ml)", dripEmptied: "Geleert",
     bfProgress: "Backflush: Zyklus {c} von {n} · {p} · noch ≈ {s} s",
@@ -417,6 +425,7 @@ const T = {
     chNote: "Flow jumped – channeling?", refSet: "Set as reference", refClear: "Remove reference", refChip: "Reference", refSaved: "Saved as reference", refCleared: "Reference removed",
     lastShot: "Last shot", todayCard: "Today", tomorrow: "tomorrow", sPower: "On & off", fine: "Fine tuning",
     heatOn: "on", heatOnStandby: "on · standby in {n} min", heatStandby: "Standby · the brew switch wakes it", heatOff: "off: the machine does not heat",
+    toStandby: "Standby now", wakeUp: "Wake up", standbyNow: "Standby · the brew switch or this button wakes the machine", notNow: "Not possible right now",
     exportShots: "Export shots", descaleHow: "How to",
     sDrip: "Drip tray", "drip.capacity": "Holds", "drip.capacityHint": "measure it once; 0 = no reminder", dripNow: "≈ {ml} ml of {cap} ml (estimated)", dripDue: "Empty the drip tray (≈ {ml} ml)", dripEmptied: "Emptied",
     bfProgress: "Backflush: cycle {c} of {n} · {p} · ≈ {s} s left",
@@ -658,7 +667,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, bfc: 0, bfn: 0, bfp: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, bfc: 0, bfn: 0, bfp: 0, rinse: false, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -1455,7 +1464,7 @@ function stateText() {
   const s = live.state, d = Math.abs((live.temp ?? 0) - (live.target ?? 0)), band = P["display.blinking.delta"]?.value ?? .5;
   const map = {0: ["start", "var(--faint)"], 20: [null, "var(--brew)"], 25: ["flush", "var(--brew)"], 30: ["steam", "var(--heat)"], 40: ["water", "var(--cool)"],
     50: ["backflush", "var(--cool)"], 60: ["pidOff", "var(--faint)"], 70: ["tank", "var(--cool)"], 80: ["standby", "var(--faint)"], 100: ["overtemp", "var(--err)"], 110: ["sensor", "var(--err)"]};
-  if (s === 20) return [t("brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"];
+  if (s === 20) return [t(live.rinse ? "flush" : "brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"]; // the rinse after a shot: not a shot
   if (s === 50 && live.bfc > 0) return [`${t("backflush")} ${live.bfc}/${live.bfn}`, "var(--cool)"];
   if (s === 25 && flushRunning()) return [t("flush") + (live.pulses > 1 ? " " + live.pulse + "/" + live.pulses : ""), "var(--brew)"];
   if (s in map) return [t(map[s][0]), map[s][1]];
@@ -1511,7 +1520,8 @@ function paintShotLive() {
     txt.textContent = live.scale === 2 ? t("scaleOn") + (live.weight == null ? "" : " · " + num(live.weight, 1) + " g") : live.scale === 3 ? t("scaleNone") : t("scaleOff");
     bat.replaceChildren(...(b == null ? [] : [" · ", el("span", b <= 20 ? "low" : "", `${t("battery")} ${b} %` + (b <= 20 ? " – " + t("batteryLow") : ""))]));
   }
-  const brewing = live.ok && live.state === 20;
+  const brewing = live.ok && live.state === 20 && !live.rinse;
+  if (live.ok && live.rinse) lastShot = null; // the rinse after a shot: the shot's result goes, as on the display
   if (brewing) { // without the scale at any point of the shot, the firmware stops it by time (brewWeightFallback)
     const same = lastShot && !lastShot.until;
     lastShot = {t: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, until: 0, noScale: (same && lastShot.noScale) || live.scale !== 2};
@@ -1546,7 +1556,7 @@ function paintShotLive() {
 function paintDial() {
   const card = $("#dialCard"), hero = $("#tNow")?.closest(".card");
   if (!card) return;
-  const brewing = live.ok && live.state === 20, x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
+  const brewing = live.ok && live.state === 20 && !live.rinse, x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
   card.hidden = !x;
   if (hero) hero.hidden = !!x;
   if (!x) return;
@@ -1595,12 +1605,32 @@ function drawDial(c, d) {
     g.fillText(d.done ? signed(off) + " g" : `${t("goal")} ${fmt(d.goalW)} g`, 120, 203);
   }
 }
+// standby by hand next to the state (Dominik 09.10.2026: "ein button in der ui um selber die maschine in standby zu
+// schalten"); in standby it wakes the machine. Only from ready, heating off or the empty tank (POST /standby).
+let pwrBusy = false;
+function paintPower() {
+  const b = $("#pwrBtn");
+  if (!b) return;
+  const asleep = live.state === 80, label = t(asleep ? "wakeUp" : "toStandby");
+  b.hidden = !live.ok;
+  b.disabled = pwrBusy || !(asleep || [10, 60, 70].includes(live.state));
+  b.classList.toggle("on", asleep);
+  if (b.getAttribute("aria-label") !== label) { b.setAttribute("aria-label", label); b.title = label; }
+}
+async function togglePower() {
+  const wake = live.state === 80;
+  pwrBusy = true; paintPower();
+  const r = await post(wake ? "/standby?wake=1" : "/standby").catch(() => null);
+  pwrBusy = false; paintPower();
+  if (!r?.ok) toast(r?.status === 409 ? t("notNow") : t("failed"));
+  else if (!wake) toast(t("standbyNow"));
+}
 function paintLive() {
   const [txt, col] = stateText();
   $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip i").className = live.ok && live.state === 70 ? "drop" : ""; // the tank: a drop, not only a colour $("#chip").style.color = col === "var(--faint)" ? "" : col;
   const title = txt + " · Orione"; // also in the tab and app switcher
   if (document.title !== title) document.title = title;
-  paintAlarm(); paintShotLive(); paintDial(); paintFlush(); paintPills();
+  paintAlarm(); paintShotLive(); paintDial(); paintFlush(); paintPills(); paintPower();
   if (live.ok && live.scale !== lastScaleState) { const was = lastScaleState; lastScaleState = live.scale; if (was !== null && $("#scaleNow")) loadScale(); } // connected or lost: the settings card too
   const n = $("#tNow");
   if (!n) return;
@@ -1641,7 +1671,7 @@ function connectLive() {
   es = new EventSource("/events");
   es.addEventListener("new_temps", e => {
     const d = JSON.parse(e.data);
-    if (live.state === 20 && d.state !== 20) { setTimeout(loadShots, 5000); setTimeout(loadShots, 16000); } // shot over: the firmware counts the drops for 4-15 s (until 2 s without), then logs them
+    if (live.state === 20 && d.state !== 20 && !live.rinse) { setTimeout(loadShots, 5000); setTimeout(loadShots, 16000); } // shot over: the firmware counts the drops for 4-15 s (until 2 s without), then logs them
     if (liveSeen && !live.ok) { loadShots(); if (dirty.has(shown)) render(); } // back after a gap (phone locked, WiFi): shots may have come meanwhile
     liveSeen = true;
     // standby switches the temperature control off on the machine, waking it switches it on: the switch follows
@@ -1653,7 +1683,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, bfc: d.bfc ?? 0, bfn: d.bfn ?? 0, bfp: d.bfp ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, bfc: d.bfc ?? 0, bfn: d.bfn ?? 0, bfp: d.bfp ?? 0, rinse: !!d.rinse, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -2260,6 +2290,7 @@ async function loadFonts() {
   drawChart(); drawShotCharts(); paintDial(); // canvases draw with it from now on
 }
 (async () => {
+  $("#pwrBtn").onclick = togglePower;
   fitScreen();
   try { await load(TABS[0].names); } catch (e) {}
   setLang();

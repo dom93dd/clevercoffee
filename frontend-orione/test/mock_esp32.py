@@ -100,6 +100,7 @@ class State:
         self.shots = []  # newest first, as GET /shots of the firmware (src/shotHistory.h)
         self.bf = 0      # shots since the last backflush
         self.live = {}  # POST /__live: fields that override the SSE values (e.g. a running shot)
+        self.standby = False  # POST /standby (src/main.cpp standbyRequestLoop)
         # the Bluetooth scale chosen in the settings (GET /scale): connected; select/forget/discover change it
         self.scale = {"address": "c8:2e:18:aa:01:02", "name": "BOOKOO_SC U 1234", "connect_at": 0.0, "search_from": 0.0}
         self.temp = 22.0
@@ -342,11 +343,11 @@ class Handler(BaseHTTPRequestHandler):
                     pid = S.p["pid.enabled"]["value"]
                     target = S.p["brew.setpoint"]["value"]
                     S.temp += (target - S.temp) * 0.08 if pid else (22 - S.temp) * 0.02
-                    state = 10 if pid else 60
+                    state = 80 if S.standby else 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
                             "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "pulses": 3, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False, "bfc": 0, "bfn": 5, "bfp": 0,
-                            "clean": S.clean}
+                            "clean": S.clean, "rinse": 0}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())
                 self.wfile.flush()
@@ -406,6 +407,20 @@ class Handler(BaseHTTPRequestHandler):
                     S.scale.update(address=q.get("address", [""])[0].lower(), name=q.get("name", [""])[0], connect_at=time.time() + 1.5)
                 else:
                     S.scale.update(address="", name="")
+            return self.send(202, "ok")
+        if url.path == "/standby":  # as the firmware: standby from ready, heating off or an empty tank; ?wake=1 from standby
+            with S.lock:
+                state = S.live.get("state", 80 if S.standby else 10 if S.p["pid.enabled"]["value"] else 60)
+                if "wake" in url.query:
+                    if state != 80:
+                        return self.send(409, "not now")
+                    S.standby = False
+                    S.p["pid.enabled"]["value"] = 1
+                else:
+                    if state not in (10, 60, 70):
+                        return self.send(409, "not now")
+                    S.standby = True
+                    S.p["pid.enabled"]["value"] = 0
             return self.send(202, "ok")
         if url.path == "/flush":  # warm-up flush by hand: the test drives the live values itself
             if not S.p["hardware.sensors.watertank.enabled"]["value"]:

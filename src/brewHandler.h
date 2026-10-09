@@ -39,7 +39,7 @@ inline bool brewEndedSwitchOn = false;   // the switch waits for release because
 inline bool brewWeightFallback = false;  // this shot: by weight, but without the scale, so the target time ends it
 inline bool backflushCompleted = false;  // all cycles ran: backflush mode goes off (kBackflushFinished)
 inline bool backflushSwitchReminder = false; // Orione: all cycles ran and the brew switch is still on: display and page say so
-inline bool rinseRun = false;                // Orione: this run of the brew switch is the rinse after a shot (no pre-infusion)
+inline bool rinseRun = false;                // Orione: this run of the brew switch is the rinse after a shot (orione::RinseAfterShot)
 constexpr double kBrewMaxSeconds = 60.0;  // no shot runs longer (unless the target time is longer)
 #endif
 
@@ -58,6 +58,13 @@ bool isPowerSwitchOperationAllowed();
 inline bool checkBrewActive() {
     return (currBrewState != kBrewIdle && currBrewState != kBrewFinished); // removed && !(machineState >= kEmergencyStop)
 }
+
+#ifdef CC_ORIONE
+/** The brew switch runs the rinse after a shot right now: display and page say "Spülen", not "Bezug" */
+inline bool rinseRunning() {
+    return rinseRun && checkBrewActive();
+}
+#endif
 
 /**
  * @brief True if in a machine state related to brew or flush, false if in other states
@@ -332,22 +339,19 @@ inline bool brew() {
                 LOG(INFO, "Brew started");
 #ifdef CC_ORIONE
                 brewStoppedByWeight = false;
-                // by weight without the scale (off, not chosen): the target time ends this shot (Dominik, 08.10.2026)
-                brewWeightFallback = brewByWeightEnabled && !brewScaleReady();
-
-                if (brewWeightFallback) {
-                    LOGF(WARNING, "Brew by weight without the scale: stops at the target time (%.0f s)", totalTargetBrewTime / 1000);
-                }
-#endif
-#ifdef CC_ORIONE
                 rinseRun = shot_history::rinseExpected();
                 preinfusionEnabled = config.get<bool>("brew.pre_infusion.enabled") && !rinseRun;
+                // by weight without the scale (off, not chosen): the target time ends this shot (Dominik, 08.10.2026)
+                brewWeightFallback = brewByWeightEnabled && !brewScaleReady() && !rinseRun;
 
-                if (rinseRun && config.get<bool>("brew.pre_infusion.enabled")) {
-                    LOG(INFO, "Rinse after the shot: no pre-infusion");
+                if (rinseRun) {
+                    LOG(INFO, "Rinse after the shot: until the switch is off, at most 10 s");
+                }
+                else if (brewWeightFallback) {
+                    LOGF(WARNING, "Brew by weight without the scale: stops at the target time (%.0f s)", totalTargetBrewTime / 1000);
                 }
 
-                shot_history::brewStarted(temperature, preinfusionEnabled);
+                shot_history::brewStarted(temperature, preinfusionEnabled, rinseRun);
 #endif
 
                 if (!preinfusionEnabled) {
@@ -363,7 +367,11 @@ inline bool brew() {
                     currBrewState = kPreinfusion;
                 }
 
+#ifdef CC_ORIONE
+                if (scale && config.get<bool>("hardware.sensors.scale.enabled") && config.get<int>("hardware.sensors.scale.type") == 2 && !rinseRun) { // a rinse: no tare, no timer
+#else
                 if (scale && config.get<bool>("hardware.sensors.scale.enabled") && config.get<int>("hardware.sensors.scale.type") == 2) {
+#endif
                     const auto bleScale = static_cast<BluetoothScale*>(scale);
 
                     if (config.get<bool>("display.blescale_brew_timer")) {
@@ -420,6 +428,17 @@ inline bool brew() {
                 debugPumpState("BrewRunning", "on");
 
 #ifdef CC_ORIONE
+                // the rinse after a shot: no target ends it (its water on the scale would stop it by weight at once),
+                // the switch does, or the time limit (orione::RinseAfterShot)
+                if (rinseRun) {
+                    if (orione::RinseAfterShot::over(static_cast<uint32_t>(currBrewTime))) {
+                        LOG(INFO, "Rinse stopped after 10 s");
+                        currBrewState = kBrewFinished;
+                    }
+
+                    break;
+                }
+
                 if (brewByWeightEnabled && !brewWeightFallback && !brewScaleReady()) {
                     LOGF(WARNING, "Scale lost during the shot: stops at the target time (%.0f s)", totalTargetBrewTime / 1000);
                     brewWeightFallback = true; // for the rest of this shot, also if it comes back: its weight missed a part
@@ -476,15 +495,28 @@ inline bool brew() {
                 LOG(INFO, "Brew finished");
                 LOGF(INFO, "Shot time: %4.1f s", currBrewTime / 1000);
 #ifdef CC_ORIONE
-                shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? std::max(0.0f, static_cast<float>(currBrewWeight)) : -1.0f, brewStoppedByWeight);
+                if (rinseRun) {
+                    shot_history::rinseEnded(currBrewTime / 1000);
+                }
+                else {
+                    shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? std::max(0.0f, static_cast<float>(currBrewWeight)) : -1.0f,
+                                            brewStoppedByWeight);
+                }
 #endif
                 LOG(INFO, "Brew idle");
                 currBrewState = kBrewIdle;
 
+#ifdef CC_ORIONE
+                if (scale && config.get<bool>("hardware.sensors.scale.enabled") && config.get<int>("hardware.sensors.scale.type") == 2 && config.get<bool>("display.blescale_brew_timer") && !rinseRun) {
+#else
                 if (scale && config.get<bool>("hardware.sensors.scale.enabled") && config.get<int>("hardware.sensors.scale.type") == 2 && config.get<bool>("display.blescale_brew_timer")) {
+#endif
                     static_cast<BluetoothScale*>(scale)->stopTimer();
                 }
 
+#ifdef CC_ORIONE
+                rinseRun = false; // the next target time includes the pre-infusion again
+#endif
                 break;
             }
 

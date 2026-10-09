@@ -52,6 +52,12 @@ inline rd::BandFilter roundBandFilter; // bands the panel already shows are not 
  * @brief determines if brew timer should be visible; postBrewTimerDuration defines how long the timer after the brew is shown
  */
 inline bool shouldDisplayBrewTimer() {
+#ifdef CC_ORIONE
+    if (rinseRunning()) {
+        roundBrewTimer.cancel(); // the rinse after a shot: the flush screen, and the shot's result does not come back after it
+        return false;
+    }
+#endif
     // a shot that stopped by itself stays on the display while the brew switch is still on (Dominik, 07.10.2026)
     const bool visible = roundBrewTimer.update(checkBrewActive(), static_cast<float>(currBrewTime / 1000), millis(), static_cast<float>(postBrewTimerDuration),
                                                brewSwitchHeldAfterBrew());
@@ -69,6 +75,11 @@ inline rd::Model roundDisplayModel() {
     rd::Model m;
 
     m.mode = rd::modeFromMachineState(machineState);
+#ifdef CC_ORIONE
+    if (rinseRunning()) {
+        m.mode = rd::Mode::ManualFlush; // "Spülen" with its time (m.flushTime), not a shot (orione::RinseAfterShot)
+    }
+#endif
     m.language = config.get<int>("display.language") == 0 ? rd::Language::German : rd::Language::English;
 
     m.temperature = static_cast<float>(temperature);

@@ -131,6 +131,7 @@ namespace live_events {
             int bfc;       // backflush: the cycle running, 0 when none
             int bfn;       // backflush: cycles in all
             int bfp;       // backflush: 0 idle, 1 pumping (filling), 2 pause (flushing), 3 last pause
+            bool rinse;    // the brew switch runs the rinse after a shot (state 20, but not a shot: rinseRunning())
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -138,7 +139,7 @@ namespace live_events {
     inline TaskHandle_t task = nullptr;
 
     inline void run(void*) {
-        char json[320]; // ~290 at most
+        char json[352]; // ~305 at most
 
         for (;;) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -163,7 +164,7 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s,"clean":%d)", v.held ? "true" : "false", v.sw ? "true" : "false",
                               v.steam, v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false", v.clean);
-                snprintf(json + n, sizeof(json) - n, R"(,"bfc":%d,"bfn":%d,"bfp":%d})", v.bfc, v.bfn, v.bfp);
+                snprintf(json + n, sizeof(json) - n, R"(,"bfc":%d,"bfn":%d,"bfp":%d,"rinse":%d})", v.bfc, v.bfn, v.bfp, v.rinse ? 1 : 0);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -714,6 +715,20 @@ inline void serverSetup() {
         request->send(202, "text/plain", "ok");
     });
 
+    // standby by hand from the page's header (Dominik, 09.10.2026), ?wake=1 wakes the machine; applied by loop()
+    // (standbyRequestLoop() in main.cpp). Not during a shot, a flush, a backflush or an alarm.
+    server.on("/standby", HTTP_POST, [](AsyncWebServerRequest* request) {
+        const bool wake = request->hasParam("wake");
+        const MachineState s = machineState;
+
+        if (wake ? s != kStandby : !(s == kPidNormal || s == kPidDisabled || s == kWaterTankEmpty) || checkBrewActive()) {
+            return request->send(409, "text/plain", "not now");
+        }
+
+        care::standbyRequest = wake ? -1 : 1;
+        request->send(202, "text/plain", "ok");
+    });
+
     // warm-up flush by hand (Wartung): ?start=1 or ?stop=1, applied by loop(); only with a water level sensor
     server.on("/flush", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!warmup_flush::sensorEnabled()) {
@@ -1165,7 +1180,8 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           currBrewState == kPreinfusion ? 1 : currBrewState == kPreinfusionPause ? 2 : 0, shot_history::flushPending,
                           backflushSwitchReminder, static_cast<int>(care::cleaning.phase()),
                           currBackflushState == kBackflushIdle || currBackflushState == kBackflushFinished ? 0 : currBackflushCycles, backflushCycles,
-                          currBackflushState == kBackflushFilling ? 1 : currBackflushState == kBackflushFlushing ? 2 : currBackflushState == kBackflushEnding ? 3 : 0});
+                          currBackflushState == kBackflushFilling ? 1 : currBackflushState == kBackflushFlushing ? 2 : currBackflushState == kBackflushEnding ? 3 : 0,
+                          rinseRunning()});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

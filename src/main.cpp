@@ -1489,6 +1489,8 @@ void setup() {
  * off time the machine goes into standby with the display off, as the standby timer does it. Needs the main switch on.
  * An off time during a shot or a backflush waits until the machine is idle.
  */
+void enterStandby(bool displayOff);
+
 void scheduleLoop() {
     static unsigned long lastCheck = 0;
     static bool offPending = false;
@@ -1524,10 +1526,41 @@ void scheduleLoop() {
 
         if (machineState != kStandby) {
             LOG(INFO, "Schedule: standby");
-            machineState = kStandby;
-            setRuntimePidState(false);
-            standbyModeRemainingTimeDisplayOffMillis = 0; // display off now
+            enterStandby(true);
         }
+    }
+}
+
+/**
+ * Into standby now, as the standby timer does it: heating off, the brew switch wakes the machine (kStandby).
+ * @param displayOff the display goes off at once (schedule); otherwise it shows the clock for TIME_TO_DISPLAY_OFF
+ *        minutes first, also with the standby timer off (standby.h)
+ */
+void enterStandby(const bool displayOff) {
+    machineState = kStandby;
+    setRuntimePidState(false);
+    standbyModeRemainingTimeMillis = 0;
+    standbyModeStartTimeMillis = millis() - getStandbyTimeoutMillis(); // the display's minutes count from now
+    standbyModeRemainingTimeDisplayOffMillis = displayOff ? 0 : TIME_TO_DISPLAY_OFF_MILLIS;
+}
+
+/** The page's standby button (POST /standby, Dominik 09.10.2026): standby or wake, checked again here */
+void standbyRequestLoop() {
+    const int8_t request = care::standbyRequest;
+
+    if (request == 0) {
+        return;
+    }
+
+    care::standbyRequest = 0;
+
+    if (request > 0 && (machineState == kPidNormal || machineState == kPidDisabled || machineState == kWaterTankEmpty) && !checkBrewActive()) {
+        LOG(INFO, "Standby from the web page");
+        enterStandby(false);
+    }
+    else if (request < 0 && machineState == kStandby) {
+        LOG(INFO, "Woken from the web page");
+        setRuntimePidState(true); // kStandby: heating on, display on, standby timer from the start
     }
 }
 #endif
@@ -1800,7 +1833,7 @@ void loopPid() {
 #ifdef CC_ORIONE
     // temperature course during the shot (brew.temp_end, OrioneCare.h): from the brew temperature to it plus the
     // setting over the target time (30 s without one); the display and the page keep showing the set temperature
-    if (machineState == kBrew && checkBrewActive() && !steamON) {
+    if (machineState == kBrew && checkBrewActive() && !rinseRun && !steamON) {
         setpoint = orione::TempProfile::setpoint(brewSetpoint, config.get<double>("brew.temp_end"), currBrewTime / 1000.0, totalTargetBrewTime > 0 ? totalTargetBrewTime / 1000.0 : 30.0);
     }
 #endif
@@ -1809,6 +1842,7 @@ void loopPid() {
     handleMachineState();
 #ifdef CC_ORIONE
     scheduleLoop();
+    standbyRequestLoop();
     care::loop(checkBrewActive() || machineState == kBackflush);
     brewSafetyStop();
     warmup_flush::loop();

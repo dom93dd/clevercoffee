@@ -1864,6 +1864,53 @@ test("Automatisch spülen: unter Ein & Aus mit Wartezeit, nur mit Wasserstandsse
   await p2.ctx.close();
 });
 
+test("Standby-Knopf oben: in Standby schalten und aufwecken, nicht während eines Bezugs", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  const btn = page.locator("#pwrBtn");
+  await page.locator("#state", {hasText: /Bereit|Heizt auf|Kühlt ab/}).waitFor();
+  assert.equal(await btn.isVisible(), true);
+  assert.equal(await btn.getAttribute("aria-label"), "In Standby schalten");
+  const box = await btn.boundingBox(), chip = await page.locator("#chip").boundingBox();
+  assert.ok(Math.abs(box.y + box.height / 2 - (chip.y + chip.height / 2)) < 2, "next to the chip, centred");
+  await btn.click();
+  await page.locator(".toast.show", {hasText: "Standby"}).waitFor();
+  assert.ok((await posts(BASE)).some(x => x.path === "/standby" && x.query === ""), JSON.stringify(await posts(BASE)));
+  await page.locator("#state", {hasText: "Standby"}).waitFor();
+  await page.waitForFunction(() => document.querySelector("#pwrBtn").getAttribute("aria-label") === "Aufwecken");
+  assert.equal(await btn.evaluate(e => e.classList.contains("on")), true, "in standby it wakes, shown in the heat colour");
+  await page.screenshot({path: OUT + "status-standby-button.png"});
+  await btn.click();
+  await page.locator("#state", {hasText: /Bereit|Heizt auf|Kühlt ab/}).waitFor();
+  assert.ok((await posts(BASE)).some(x => x.path === "/standby" && x.query === "wake=1"));
+  await mock(BASE, "/__live", {state: 20, brewTime: 4.0});
+  await page.waitForFunction(() => document.querySelector("#pwrBtn").disabled);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("S3 nach dem Bezug: Spülen statt Bezug, das Ergebnis des Bezugs geht, nichts wird geladen", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  await mock(BASE, "/__live", {state: 20, brewTime: 25.0, scale: 2, weight: 36.0});
+  await page.locator("#dialCard").waitFor();
+  await mock(BASE, "/__live", {state: 10, brewTime: 25.4, scale: 2, weight: 36.2, held: true});
+  await sleep(1200);
+  assert.equal(await page.locator("#dialCard").isVisible(), true, "the shot's result stays while the switch is on");
+  await mock(BASE, "/__live", {state: 20, brewTime: 3.2, rinse: 1, fp: true, scale: 2, weight: 20.0});
+  await page.locator("#state", {hasText: "Spülen 3,2 s"}).waitFor();
+  await page.locator("#dialCard").waitFor({state: "hidden"});
+  assert.equal(await page.locator("#tNow").isVisible(), true, "the temperature, not a shot");
+  await page.screenshot({path: OUT + "status-rinse-run.png"});
+  await tab(page, "Bezug");
+  assert.equal(await view(page).locator("#liveShot").isVisible(), false, "no shot in the brew tab either");
+  const before = (await page.evaluate(() => performance.getEntriesByType("resource").filter(e => e.name.includes("/shots")).length));
+  await mock(BASE, "/__live", {state: 10, brewTime: 6.0, rinse: 0, fp: false, held: false});
+  await sleep(1500);
+  assert.equal(await view(page).locator("#liveShot").isVisible(), false, "the shot does not come back after the rinse");
+  assert.equal(await page.evaluate(() => performance.getEntriesByType("resource").filter(e => e.name.includes("/shots")).length), before);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Letzte Bezüge: leer", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   await view(page).locator("#shotList .empty", {hasText: "Noch keine Bezüge"}).waitFor();

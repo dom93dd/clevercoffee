@@ -23,9 +23,16 @@ inline unsigned long getStandbyTimeoutMillis() {
  * @brief Decrements the remaining standby time every second, counting down from the configured duration
  */
 inline void updateStandbyTimer() {
+#ifdef CC_ORIONE
+    // standby by hand or by the schedule with the timer off: the display still goes off after its minutes
+    if (!standbyModeOn && !(machineState == kStandby && standbyModeRemainingTimeMillis == 0)) {
+        return;
+    }
+#else
     if (!standbyModeOn) {
         return;
     }
+#endif
 
     const unsigned long currentTime = millis();
 

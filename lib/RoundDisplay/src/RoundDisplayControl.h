@@ -70,6 +70,12 @@ namespace rd {
                 return lastShot_;
             }
 
+            /** Not a shot after all (the rinse after one): no result held, the last shot's time stays */
+            void cancel() {
+                state_ = State::Idle;
+                held_ = false;
+            }
+
             /** The switch has been left on for kRemindMs after the shot: show a hint to switch it off */
             /** The result stays because the brew switch is still on */
             bool held() const {

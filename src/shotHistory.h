@@ -212,11 +212,18 @@ namespace shot_history {
 
     inline void learnFromShot(); // below
 
-    /** @param preinfusion this run starts with the pre-infusion (not the rinse after a shot) */
-    inline void brewStarted(const double celsius, const bool preinfusion) {
+    /**
+     * @param preinfusion this run starts with the pre-infusion
+     * @param rinse this run is the rinse after a shot (brewHandler.h rinseRun): no curve, never a shot (rinseEnded())
+     */
+    inline void brewStarted(const double celsius, const bool preinfusion, const bool rinse) {
         if (shotLog.settleNow()) {
             save(); // the previous shot was still counting drops
             learnFromShot();
+        }
+
+        if (rinse) {
+            return; // the last shot's curve stays as it is
         }
 
         startCelsius = static_cast<float>(celsius);
@@ -304,6 +311,14 @@ namespace shot_history {
                 flushed();
                 care::rinse(static_cast<float>(seconds));
             }
+        }
+    }
+
+    /** The rinse after a shot ended (brewStarted() with rinse): never a shot, however long it ran or what the scale saw */
+    inline void rinseEnded(const double seconds) {
+        if (seconds >= 1.0) { // shorter: a slip of the switch, the next run is still the rinse
+            flushed();
+            care::rinse(static_cast<float>(seconds));
         }
     }
 
