@@ -256,6 +256,23 @@ bool AcaiaArduinoBLE::updateConnection() {
 
     switch (_connectionState) {
         case SCANNING:
+            // Orione: no scan while paused (standby, Dominik 09.10.2026: "ja, mach beides"); it starts again at once
+            // when the pause ends, as after a rest. A search from the settings still scans.
+            if (_scanPaused && !_pAdvertisedDeviceCallbacks->discovering()) {
+                if (_pBLEScan && _pBLEScan->isScanning()) {
+                    _pBLEScan->stop();
+                    clearScanResults();
+                }
+
+                _scanRestUntil = millis() + 1;
+
+                if (_scanRestUntil == 0) {
+                    _scanRestUntil = 1;
+                }
+
+                return false;
+            }
+
             // Orione: between two scans the radio is left to WiFi (see the timeout below)
             if (_scanRestUntil != 0) {
                 if (static_cast<long>(millis() - _scanRestUntil) < 0) {
@@ -1227,6 +1244,10 @@ void AcaiaArduinoBLE::discover(const uint32_t ms) {
         _pBLEScan->start(0);
         _connectionStartTime = millis();
     }
+}
+
+void AcaiaArduinoBLE::pauseScan(const bool paused) {
+    _scanPaused = paused;
 }
 
 bool AcaiaArduinoBLE::discovering() const {

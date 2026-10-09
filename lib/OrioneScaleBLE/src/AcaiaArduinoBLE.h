@@ -171,6 +171,7 @@ class AcaiaArduinoBLE {
         [[nodiscard]] bool discovering() const;
         int found(orione::FoundScale *out, int max);
         [[nodiscard]] int getBattery() const; // Orione: percent, -1 unknown
+        void pauseScan(bool paused);          // Orione: no scan while paused (standby), except a search from the page
 
     private:
         static void staticNotifyCallback(NimBLERemoteCharacteristic *pBLERemoteCharacteristic, uint8_t *pData,
@@ -208,6 +209,7 @@ class AcaiaArduinoBLE {
         bool _cleanupComplete;
         unsigned long _lastScanClear;
         unsigned long _scanRestUntil = 0; // Orione: no scan until then (0: scanning or no rest due)
+        bool _scanPaused = false;         // Orione: pauseScan()
 
         int _connectionAttempts;
 

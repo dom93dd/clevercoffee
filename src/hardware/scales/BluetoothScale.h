@@ -58,6 +58,11 @@ class BluetoothScale : public Scale {
         [[nodiscard]] bool discovering();
         [[nodiscard]] bool hasTarget();
         static constexpr uint32_t kDiscoverMs = 12000;
+
+        /** No search for the scale while paused (standby): WiFi has the radio alone. A connected scale stays. */
+        void pauseSearch(bool paused) {
+            searchPaused_ = paused;
+        }
 #endif
 
     private:
@@ -83,6 +88,7 @@ class BluetoothScale : public Scale {
         char pendingTarget_[18] = {}; // set by the web page, applied by the scale task
         bool targetPending_ = false;
         bool discoverPending_ = false;
-        uint32_t fakeDiscoverUntil_ = 0; // bench build: the simulated search
+        volatile bool searchPaused_ = false; // pauseSearch(), applied by the scale task
+        uint32_t fakeDiscoverUntil_ = 0;     // bench build: the simulated search
 #endif
 };

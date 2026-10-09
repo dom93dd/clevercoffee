@@ -415,6 +415,14 @@ void BluetoothScale::applyRequests() {
         bleScale->discover(kDiscoverMs);
         LOG(INFO, "Bluetooth scale: searching");
     }
+
+    static bool paused = false;
+
+    if (searchPaused_ != paused) {
+        paused = searchPaused_;
+        bleScale->pauseScan(paused);
+        LOG(INFO, paused ? "Bluetooth scale: no search in standby" : "Bluetooth scale: searching again");
+    }
 }
 
 int BluetoothScale::found(orione::FoundScale* out, const int max) {

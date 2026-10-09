@@ -56,6 +56,12 @@ inline void checkBluetoothScaleConnection() {
         return;
     }
 
+#ifdef CC_ORIONE
+    // in standby nobody weighs: no search for the scale, WiFi has the radio alone (09.10.2026: hardly reachable
+    // over a weak link); after waking it is found within ~20 s, while the machine heats up
+    static_cast<BluetoothScale*>(scale)->pauseSearch(machineState == kStandby);
+#endif
+
     // Check connection status periodically for logging/fallback logic
     if (const unsigned long currentTime = millis(); currentTime - lastScaleConnectionCheck > SCALE_CONNECTION_CHECK_INTERVAL) {
 #ifndef CC_ORIONE // Orione: the scale's own task keeps the connection (BluetoothScale::startConnectionTask)

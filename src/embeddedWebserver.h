@@ -24,6 +24,7 @@
 #include <OrionePointerSet.h>
 #include <mutex>
 #include "heapDiag.h"
+#include "tcpSendLimit.h"
 #endif
 #ifdef CC_ORIONE
 #include "flashAssets.h"
@@ -1094,9 +1095,11 @@ inline void serverSetup() {
         live_events::clients.remove(client);
     });
 
-    // the same for every request: an answer nobody acknowledges is aborted, not closed (see onConnect above)
+    // the same for every request: an answer nobody acknowledges is aborted, not closed (see onConnect above);
+    // and at most two segments of it in the TCP stack at a time (tcpSendLimit.h)
     server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
         request->client()->onTimeout([](void*, AsyncClient* c, uint32_t) { c->abort(); }, nullptr);
+        tcp_send_limit::limit(request->client());
         next();
     });
 #endif
