@@ -255,6 +255,7 @@ Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 m
 #include "panicLog.h"
 #include "orioneMachine.h"
 #include "warmupFlush.h"
+#include "descaleProgram.h"
 
 // loop() never used more than ~3 KB of its 8 KB (GET /boot, 08.10.2026, also while saving settings): 6 KB, the
 // 2 KB go to the web server's task (platformio.ini)
@@ -634,14 +635,18 @@ void handleMachineState() {
 
         case kManualFlush:
 #ifdef CC_ORIONE
-            if (!manualFlush() && !warmup_flush::flush.running()) { // the warm-up flush holds this state while it runs
+            if (!manualFlush() && !warmup_flush::flush.running() && !descale::running()) { // the warm-up flush and descaling hold this state
 #else
             if (!manualFlush()) {
 #endif
                 machineState = kPidNormal;
             }
 
+#ifdef CC_ORIONE
+            if (!pidON && !descale::running()) { // descaling keeps the heater off itself, also with it switched on
+#else
             if (!pidON) {
+#endif
                 machineState = kPidDisabled;
             }
 
@@ -1265,6 +1270,7 @@ void setup() {
     shot_history::begin();
     bean_profiles::begin();
     care::begin();
+    care::migrateSchedule();
 #endif
 
     ROUND_TIMING_DO(round_timing::heapMark("before wifi"));
@@ -1506,8 +1512,10 @@ void scheduleLoop() {
         return; // no clock yet
     }
 
-    const auto action = care::schedule.update(config.get<bool>("schedule.enabled"), static_cast<uint8_t>(config.get<int>("schedule.days")), static_cast<uint16_t>(config.get<int>("schedule.on")),
-                                              static_cast<uint16_t>(config.get<int>("schedule.off")), (t.tm_wday + 6) % 7, t.tm_hour * 60 + t.tm_min);
+    // holiday (schedule.pause_until): no on and no off through that local day
+    const int pauseUntil = config.get<int>("schedule.pause_until");
+    const bool paused = pauseUntil > 0 && care::localDay() <= pauseUntil;
+    const auto action = care::schedule.update(config.get<bool>("schedule.enabled"), care::plan(), (t.tm_wday + 6) % 7, t.tm_hour * 60 + t.tm_min, paused);
 
     if (action == orione::Schedule::kOn) {
         offPending = false;
@@ -1523,6 +1531,7 @@ void scheduleLoop() {
 
     if (offPending && (machineState == kPidNormal || machineState == kPidDisabled || machineState == kWaterTankEmpty || machineState == kStandby)) {
         offPending = false;
+        care::standbyWarm.coldNext(); // the schedule's off time: no keeping warm, also not in a standby running already
 
         if (machineState != kStandby) {
             LOG(INFO, "Schedule: standby");
@@ -1542,6 +1551,22 @@ void enterStandby(const bool displayOff) {
     standbyModeRemainingTimeMillis = 0;
     standbyModeStartTimeMillis = millis() - getStandbyTimeoutMillis(); // the display's minutes count from now
     standbyModeRemainingTimeDisplayOffMillis = displayOff ? 0 : TIME_TO_DISPLAY_OFF_MILLIS;
+}
+
+/** Keeping the block warm in standby (OrioneCare.h StandbyWarm): the setpoint and the heater follow it in loop() and loopPid() */
+void standbyWarmLoop() {
+    const bool was = care::standbyWarm.active();
+    const float celsius = static_cast<float>(config.get<double>("standby.warm_temp"));
+    const float hours = static_cast<float>(config.get<double>("standby.warm_hours"));
+    const bool warm = care::standbyWarm.update(millis(), machineState == kStandby, celsius, hours);
+
+    if (warm && !was) {
+        LOGF(INFO, "Standby: keeping it warm at %.0f °C for %.1f h", celsius, hours);
+    }
+
+    if (care::standbyWarm.takeEnded()) {
+        LOG(INFO, "Standby: warm-keeping over, heater off");
+    }
 }
 
 /** The page's standby button (POST /standby, Dominik 09.10.2026): standby or wake, checked again here */
@@ -1836,6 +1861,11 @@ void loopPid() {
     if (machineState == kBrew && checkBrewActive() && !rinseRun && !steamON) {
         setpoint = orione::TempProfile::setpoint(brewSetpoint, config.get<double>("brew.temp_end"), currBrewTime / 1000.0, totalTargetBrewTime > 0 ? totalTargetBrewTime / 1000.0 : 30.0);
     }
+
+    // standby keeping the block warm (standbyWarmLoop())
+    if (machineState == kStandby && care::standbyWarm.active()) {
+        setpoint = config.get<double>("standby.warm_temp");
+    }
 #endif
 
     updateStandbyTimer();
@@ -1843,9 +1873,11 @@ void loopPid() {
 #ifdef CC_ORIONE
     scheduleLoop();
     standbyRequestLoop();
+    standbyWarmLoop();
     care::loop(checkBrewActive() || machineState == kBackflush);
     brewSafetyStop();
     warmup_flush::loop();
+    descale::loop();
     orione_machine::loop();
     firmware_guard::loop(WiFi.status() == WL_CONNECTED);
 #ifdef ORIONE_CRASH_TEST
@@ -1907,7 +1939,12 @@ void loopPid() {
 #else
     const bool tankStopsHeater = machineState == kWaterTankEmpty;
 #endif
-    if (machineState == kPidDisabled || tankStopsHeater || machineState == kSensorError || machineState == kEmergencyStop || machineState == kStandby || machineState == kBackflush || brewPidDisabled) {
+#ifdef CC_ORIONE
+    const bool standbyCold = (machineState == kStandby && !care::standbyWarm.active()) || descale::running(); // warm standby: on; descaling: cold
+#else
+    const bool standbyCold = machineState == kStandby;
+#endif
+    if (machineState == kPidDisabled || tankStopsHeater || machineState == kSensorError || machineState == kEmergencyStop || standbyCold || machineState == kBackflush || brewPidDisabled) {
         if (bPID.GetMode() == 1) {
             // Force PID shutdown
             bPID.SetMode(0);
@@ -1923,7 +1960,7 @@ void loopPid() {
 
     // Regular PID operation
 #ifdef CC_ORIONE
-    if (machineState == kPidNormal || machineState == kWaterTankEmpty) { // heats on with an empty tank: with the set values
+    if (machineState == kPidNormal || machineState == kWaterTankEmpty || (machineState == kStandby && care::standbyWarm.active())) { // heats on with an empty tank, and in a warm standby: with the set values
 #else
     if (machineState == kPidNormal) {
 #endif

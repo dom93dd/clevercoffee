@@ -12,6 +12,7 @@
 #include <OrioneFlow.h>
 #include <OrioneBeans.h>
 #include <OrioneCare.h>
+#include <OrioneDescale.h>
 #include <OrionePointerSet.h>
 #include <OrioneHeat.h>
 #include <OrioneLogRing.h>
@@ -1082,21 +1083,77 @@ void test_log_ring_keeps_the_newest_lines() {
 
 
 void test_schedule_fires_once_at_its_minute_on_its_days() {
+    orione::WeekPlan weekdays; // Monday to Friday 6:30-22:00
+    TEST_ASSERT_TRUE(orione::WeekPlan::parse("06:30-22:00;06:30-22:00;06:30-22:00;06:30-22:00;06:30-22:00;;", weekdays));
     orione::Schedule s;
-    const uint8_t weekdays = 0b0011111; // Monday to Friday
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, weekdays, 390, 1320, 0, 390)); // just started at 6:30: no catching up
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, weekdays, 390, 1320, 0, 391));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, weekdays, 0, 390)); // just started at 6:30: no catching up
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, weekdays, 0, 391));
     orione::Schedule t;
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 1, 389)); // Tuesday 6:29
-    TEST_ASSERT_EQUAL(orione::Schedule::kOn, t.update(true, weekdays, 390, 1320, 1, 390));
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 1, 390)); // same minute again: once
-    TEST_ASSERT_EQUAL(orione::Schedule::kOff, t.update(true, weekdays, 390, 1320, 1, 1320)); // 22:00
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 5, 389)); // Saturday: not set
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 5, 390));
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, orione::Schedule::kNoTime, 0, 1320)); // no off time
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(false, weekdays, 390, 1320, 1, 389));
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(false, weekdays, 390, 1320, 1, 390)); // switched off
-    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 390, 1320, 1, 410)); // jumped over 6:30: no
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 1, 389)); // Tuesday 6:29
+    TEST_ASSERT_EQUAL(orione::Schedule::kOn, t.update(true, weekdays, 1, 390));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 1, 390)); // same minute again: once
+    TEST_ASSERT_EQUAL(orione::Schedule::kOff, t.update(true, weekdays, 1, 1320)); // 22:00
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 5, 389)); // Saturday: nothing set
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 5, 390));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(false, weekdays, 1, 389));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(false, weekdays, 1, 390)); // switched off
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 1, 410)); // jumped over 6:30: no
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 2, 389));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, t.update(true, weekdays, 2, 390, true)); // holiday: paused
+}
+
+void test_schedule_two_windows_per_day_and_over_midnight() {
+    orione::WeekPlan p;
+    TEST_ASSERT_TRUE(orione::WeekPlan::parse("06:30-09:00,17:00-20:00;;;;;22:00-01:30;08:00", p));
+    TEST_ASSERT_EQUAL(390, p.days[0][0].on);
+    TEST_ASSERT_EQUAL(1200, p.days[0][1].off);
+    TEST_ASSERT_EQUAL(orione::WeekPlan::kNone, p.days[1][0].on);
+    TEST_ASSERT_EQUAL(orione::WeekPlan::kNone, p.days[6][0].off); // Sunday 8:00, no off time
+    orione::Schedule s;
+    s.update(true, p, 0, 0);
+    TEST_ASSERT_EQUAL(orione::Schedule::kOn, s.update(true, p, 0, 390));
+    TEST_ASSERT_EQUAL(orione::Schedule::kOff, s.update(true, p, 0, 540));
+    TEST_ASSERT_EQUAL(orione::Schedule::kOn, s.update(true, p, 0, 1020)); // the second window
+    TEST_ASSERT_EQUAL(orione::Schedule::kOff, s.update(true, p, 0, 1200));
+    TEST_ASSERT_EQUAL(orione::Schedule::kOn, s.update(true, p, 5, 1320));  // Saturday 22:00
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, p, 5, 90));  // not Saturday's 1:30
+    TEST_ASSERT_EQUAL(orione::Schedule::kOff, s.update(true, p, 6, 90));   // Sunday 1:30: off, over midnight
+    TEST_ASSERT_EQUAL(orione::Schedule::kOn, s.update(true, p, 6, 480));
+    TEST_ASSERT_EQUAL(orione::Schedule::kNone, s.update(true, p, 0, 90)); // Monday 1:30: Sunday's window has no off time
+}
+
+void test_week_plan_text_round_trip_and_the_old_settings() {
+    orione::WeekPlan p;
+    char text[orione::WeekPlan::kMaxText];
+    const char* in = "06:30-09:00,17:00-20:00;06:30-09:00;;;;08:00-11:00;08:00";
+    TEST_ASSERT_TRUE(orione::WeekPlan::parse(in, p));
+    p.format(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING(in, text);
+    TEST_ASSERT_TRUE(orione::WeekPlan::parse("6:05-7:00;;;;;;", p)); // one-digit hours are fine
+    p.format(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("06:05-07:00;;;;;;", text);
+    TEST_ASSERT_TRUE(orione::WeekPlan::parse("07:00-07:00;;;;;;", p)); // no length: on only
+    TEST_ASSERT_EQUAL(orione::WeekPlan::kNone, p.days[0][0].off);
+    TEST_ASSERT_FALSE(orione::WeekPlan::parse("", p));                  // not a plan: empty
+    TEST_ASSERT_FALSE(orione::WeekPlan::parse("?", p));
+    TEST_ASSERT_FALSE(orione::WeekPlan::parse("25:00;;;;;;", p));
+    TEST_ASSERT_FALSE(orione::WeekPlan::parse("07:00,08:00,09:00;;;;;;", p)); // three windows
+    TEST_ASSERT_FALSE(orione::WeekPlan::parse(";;;;;;;", p));                 // eight days
+    TEST_ASSERT_FALSE(orione::WeekPlan::parse("07:00;;;;;", p));              // six days
+    TEST_ASSERT_EQUAL(orione::WeekPlan::kNone, p.days[0][0].on);              // left empty
+    // Dominik's schedule before 09.10.2026: Monday to Saturday at 7:00, no off time
+    orione::WeekPlan::fromDays(63, 420, 1440).format(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("07:00;07:00;07:00;07:00;07:00;07:00;", text);
+    orione::WeekPlan::fromDays(0b1000001, 390, 1320).format(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("06:30-22:00;;;;;;06:30-22:00", text);
+    char longest[orione::WeekPlan::kMaxText];
+    std::strcpy(longest, "00:00-23:59,12:00-13:00");
+    for (int d = 1; d < 7; ++d) {
+        std::strcat(longest, ";00:00-23:59,12:00-13:00");
+    }
+    TEST_ASSERT_TRUE(orione::WeekPlan::parse(longest, p));
+    p.format(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING(longest, text);
 }
 
 void test_standby_wakes_only_on_a_switch_turned_on_during_it() {
@@ -1173,6 +1230,135 @@ void test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes() {
     TEST_ASSERT_FALSE(R::expected(true, 90001 + R::kWindowMs, 90000)); // later: the next shot is prepared
     TEST_ASSERT_FALSE(R::expected(false, 100000, 90000));               // rinsed already
     TEST_ASSERT_TRUE(R::expected(true, 5000, 0xFFFFF000u));             // millis() ran over
+}
+
+void test_standby_keeps_warm_then_goes_off() {
+    orione::StandbyWarm w;
+    TEST_ASSERT_FALSE(w.update(0, false, 70.0f, 2.0f));
+    TEST_ASSERT_TRUE(w.update(1000, true, 70.0f, 2.0f)); // standby from the timer or the button: warm
+    TEST_ASSERT_EQUAL(120, w.minutesLeft(1000, 2.0f));
+    TEST_ASSERT_EQUAL(1, w.minutesLeft(1000 + 7200000 - 30000, 2.0f));
+    TEST_ASSERT_TRUE(w.update(1000 + 7199999, true, 70.0f, 2.0f));
+    TEST_ASSERT_FALSE(w.takeEnded());
+    TEST_ASSERT_FALSE(w.update(1000 + 7200000, true, 70.0f, 2.0f)); // two hours: off for good
+    TEST_ASSERT_TRUE(w.takeEnded());
+    TEST_ASSERT_FALSE(w.takeEnded());
+    TEST_ASSERT_EQUAL(-1, w.minutesLeft(1000 + 7200000, 2.0f));
+    TEST_ASSERT_FALSE(w.update(9000000, true, 70.0f, 2.0f)); // stays off in the same standby
+    TEST_ASSERT_FALSE(w.update(9001000, false, 70.0f, 2.0f)); // woken
+    TEST_ASSERT_TRUE(w.update(9002000, true, 70.0f, 2.0f));   // the next standby warms again
+}
+
+void test_standby_warm_off_by_setting_and_by_the_schedule() {
+    orione::StandbyWarm w;
+    TEST_ASSERT_FALSE(w.update(1000, true, 0.0f, 2.0f)); // 0 °C: heater off in standby, as before
+    w.update(2000, false, 0.0f, 2.0f);
+    w.coldNext(); // the schedule's off time puts it into standby
+    TEST_ASSERT_FALSE(w.update(3000, true, 70.0f, 2.0f));
+    TEST_ASSERT_FALSE(w.update(4000, true, 70.0f, 2.0f));
+    w.update(5000, false, 70.0f, 2.0f);
+    TEST_ASSERT_TRUE(w.update(6000, true, 70.0f, 2.0f)); // the next one from the timer warms
+    w.coldNext();                                         // the schedule's off time during a warm standby
+    TEST_ASSERT_FALSE(w.active());
+    TEST_ASSERT_FALSE(w.update(7000, true, 70.0f, 2.0f));
+    w.update(8000, false, 70.0f, 2.0f);
+    TEST_ASSERT_TRUE(w.update(9000, true, 70.0f, 2.0f)); // coldNext() only held for that standby
+    TEST_ASSERT_FALSE(w.update(10000, true, 0.0f, 2.0f)); // set to 0 meanwhile: off at once
+    TEST_ASSERT_TRUE(w.update(0xFFFFF000u, false, 70.0f, 2.0f) == false);
+    TEST_ASSERT_TRUE(w.update(0xFFFFF800u, true, 70.0f, 0.5f));
+    TEST_ASSERT_TRUE(w.update(1000, true, 70.0f, 0.5f)); // millis() ran over: still counting
+    TEST_ASSERT_FALSE(w.update(0xFFFFF800u + 1800000u, true, 70.0f, 0.5f));
+}
+
+void test_descale_program_runs_cold_rounds_then_rinses_twice() {
+    using D = orione::DescaleProgram;
+    D d;
+    const D::Inputs full{true, 93.0f}, cold{true, 55.0f}, empty{false, 40.0f};
+    TEST_ASSERT_FALSE(d.running());
+    d.start(0);
+    TEST_ASSERT_EQUAL(D::kCooling, d.phase());
+    TEST_ASSERT_FALSE(d.update(1000, full)); // still hot: waits, no pumping
+    TEST_ASSERT_EQUAL(D::kCooling, d.phase());
+    uint32_t t = 600000;
+    TEST_ASSERT_TRUE(d.update(t, cold)); // cooled down: round 1 pumps
+    TEST_ASSERT_EQUAL(D::kDescale, d.phase());
+    TEST_ASSERT_EQUAL(1, d.round());
+    TEST_ASSERT_EQUAL(10, d.secondsLeft(t));
+    TEST_ASSERT_TRUE(d.update(t + D::kPumpMs - 1, cold));
+    TEST_ASSERT_FALSE(d.update(t + D::kPumpMs, cold)); // soaking
+    TEST_ASSERT_EQUAL(300, d.secondsLeft(t + D::kPumpMs));
+    t += D::kPumpMs;
+    for (int r = 2; r <= D::kRounds; ++r) {
+        TEST_ASSERT_FALSE(d.update(t + D::kSoakMs - 1, cold));
+        TEST_ASSERT_TRUE(d.update(t + D::kSoakMs, cold));
+        TEST_ASSERT_EQUAL(r, d.round());
+        t += D::kSoakMs;
+        TEST_ASSERT_FALSE(d.update(t + D::kPumpMs, cold));
+        t += D::kPumpMs;
+    }
+    TEST_ASSERT_TRUE(d.update(t + D::kSoakMs, cold)); // the last soak over: the rest through
+    t += D::kSoakMs;
+    TEST_ASSERT_EQUAL(D::kRest, d.phase());
+    TEST_ASSERT_EQUAL(0, d.round());
+    TEST_ASSERT_FALSE(d.update(t + D::kBurstMs, cold)); // a break after each burst
+    TEST_ASSERT_TRUE(d.update(t + D::kBurstMs + D::kBurstRestMs, cold));
+    t += D::kBurstMs + D::kBurstRestMs + 5000;
+    TEST_ASSERT_FALSE(d.update(t, empty)); // tank empty: wait for clear water
+    TEST_ASSERT_EQUAL(D::kWaitRinse, d.phase());
+    TEST_ASSERT_EQUAL(1, d.pass());
+    TEST_ASSERT_FALSE(d.next(t + 1000, false)); // "Weiter" with the tank still empty: no
+    TEST_ASSERT_FALSE(d.update(t + 60000, empty));
+    TEST_ASSERT_TRUE(d.next(t + 60000, true));
+    TEST_ASSERT_TRUE(d.update(t + 60001, cold));
+    TEST_ASSERT_EQUAL(D::kRinse, d.phase());
+    TEST_ASSERT_FALSE(d.update(t + 70000, empty)); // first tank of clear water through
+    TEST_ASSERT_EQUAL(D::kWaitRinse, d.phase());
+    TEST_ASSERT_EQUAL(2, d.pass());
+    TEST_ASSERT_TRUE(d.next(t + 80000, true));
+    TEST_ASSERT_TRUE(d.update(t + 80001, cold));
+    TEST_ASSERT_FALSE(d.update(t + 80000 + D::kBurstMs, cold)); // ran empty during a break
+    TEST_ASSERT_FALSE(d.update(t + 80000 + D::kBurstMs + 1000, empty));
+    TEST_ASSERT_EQUAL(D::kDone, d.phase());
+    TEST_ASSERT_FALSE(d.running());
+}
+
+void test_descale_program_asks_for_more_solution_and_stops_on_its_own() {
+    using D = orione::DescaleProgram;
+    const D::Inputs cold{true, 30.0f}, empty{false, 30.0f};
+    D d;
+    d.start(0);
+    TEST_ASSERT_TRUE(d.update(0, cold)); // cold already: pumps at once
+    TEST_ASSERT_FALSE(d.update(5000, empty)); // ran empty in round 1
+    TEST_ASSERT_EQUAL(D::kRefill, d.phase());
+    TEST_ASSERT_EQUAL(1, d.round());
+    TEST_ASSERT_FALSE(d.update(200000, empty)); // waits for "Weiter"
+    TEST_ASSERT_TRUE(d.next(200000, true));
+    TEST_ASSERT_TRUE(d.update(200001, cold)); // round 1 pumps again, the full time
+    TEST_ASSERT_TRUE(d.update(200000 + D::kPumpMs - 1, cold));
+    TEST_ASSERT_FALSE(d.update(200000 + D::kPumpMs, cold));
+    TEST_ASSERT_FALSE(d.next(200000 + D::kPumpMs, true)); // nothing to continue while soaking
+    d.stop();
+    TEST_ASSERT_EQUAL(D::kOff, d.phase());
+    TEST_ASSERT_FALSE(d.update(999999, cold));
+    // a pass ends after kPassMaxMs of pumping even if the sensor never says empty
+    D r;
+    r.start(0);
+    r.update(0, cold);
+    uint32_t t = 0;
+    for (int k = 0; k < D::kRounds; ++k) {
+        r.update(t + D::kPumpMs, cold);
+        r.update(t + D::kPumpMs + D::kSoakMs, cold);
+        t += D::kPumpMs + D::kSoakMs;
+    }
+    TEST_ASSERT_EQUAL(D::kRest, r.phase());
+    const uint32_t restStart = t;
+    for (int k = 0; k < 100 && r.phase() == D::kRest; ++k) {
+        r.update(t + D::kBurstMs, cold);
+        r.update(t + D::kBurstMs + D::kBurstRestMs, cold);
+        t += D::kBurstMs + D::kBurstRestMs;
+    }
+    TEST_ASSERT_EQUAL(D::kWaitRinse, r.phase());
+    TEST_ASSERT_TRUE(t - restStart <= (D::kPassMaxMs / D::kBurstMs + 1) * (D::kBurstMs + D::kBurstRestMs)); // 15 min of pumping
 }
 
 void test_rinse_stops_after_ten_seconds() {
@@ -1424,6 +1610,25 @@ void test_shot_keeps_its_preinfusion() {
     TEST_ASSERT_EQUAL(orione::ShotLog::kPauseValveOpen, back.at(2).piFlags);
 }
 
+void test_shot_stopped_by_hand_is_marked_and_kept() {
+    orione::ShotLog log;
+    log.noteStoppedByHand(); // no shot yet: nothing to mark
+    TEST_ASSERT_EQUAL(0, log.count());
+    log.record(18.0f, 24.0f, 0, 10000);
+    log.notePreinfusion(2.0f, 4.0f, true);
+    log.noteStoppedByHand();
+    log.noteChanneling();
+    TEST_ASSERT_EQUAL(orione::ShotLog::kStoppedByHand | orione::ShotLog::kChanneling | orione::ShotLog::kPauseValveOpen, log.at(0).piFlags);
+    log.notePreinfusion(0.0f, 0.0f, true); // no pre-infusion: only that flag goes
+    TEST_ASSERT_EQUAL(orione::ShotLog::kStoppedByHand | orione::ShotLog::kChanneling, log.at(0).piFlags);
+    const auto stored = log.stored();
+    orione::ShotLog back;
+    TEST_ASSERT_TRUE(back.restore(&stored, sizeof(stored)));
+    TEST_ASSERT_EQUAL(orione::ShotLog::kStoppedByHand, back.at(0).piFlags & orione::ShotLog::kStoppedByHand);
+    log.record(25.0f, 36.0f, 0, 60000); // the next shot starts unmarked
+    TEST_ASSERT_EQUAL(0, log.at(0).piFlags & orione::ShotLog::kStoppedByHand);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_gate_answers_at_once_when_idle);
@@ -1498,11 +1703,18 @@ int main() {
     RUN_TEST(test_shot_keeps_its_preinfusion);
     RUN_TEST(test_log_ring_keeps_the_newest_lines);
     RUN_TEST(test_schedule_fires_once_at_its_minute_on_its_days);
+    RUN_TEST(test_schedule_two_windows_per_day_and_over_midnight);
+    RUN_TEST(test_week_plan_text_round_trip_and_the_old_settings);
     RUN_TEST(test_standby_wakes_only_on_a_switch_turned_on_during_it);
     RUN_TEST(test_pointer_set_keeps_a_few_without_heap);
     RUN_TEST(test_stats_keep_the_backflush_date_and_take_format_1_over);
     RUN_TEST(test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes);
+    RUN_TEST(test_standby_keeps_warm_then_goes_off);
+    RUN_TEST(test_standby_warm_off_by_setting_and_by_the_schedule);
+    RUN_TEST(test_descale_program_runs_cold_rounds_then_rinses_twice);
+    RUN_TEST(test_descale_program_asks_for_more_solution_and_stops_on_its_own);
     RUN_TEST(test_rinse_stops_after_ten_seconds);
+    RUN_TEST(test_shot_stopped_by_hand_is_marked_and_kept);
     RUN_TEST(test_flush_by_hand_with_one_pulse_for_the_rinse);
     RUN_TEST(test_beans_keep_their_roast_date_and_take_format_1_over);
     RUN_TEST(test_tank_sensor_counts_after_three_seconds_the_same_way);

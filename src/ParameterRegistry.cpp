@@ -323,12 +323,19 @@ void ParameterRegistry::initialize(Config& config) {
     addNumericConfigParam<int>("schedule.days", "Schedule days", kInteger, sPowerSection, 711, nullptr, 0, 127, "Bit 0 = Monday ... bit 6 = Sunday");
     addNumericConfigParam<int>("schedule.on", "Schedule on", kInteger, sPowerSection, 712, nullptr, 0, 1439, "Minute of the day, local time");
     addNumericConfigParam<int>("schedule.off", "Schedule off", kInteger, sPowerSection, 713, nullptr, 0, 1440, "Minute of the day, 1440 = none");
+    addStringConfigParam("schedule.plan", "Schedule per weekday", sPowerSection, 714, nullptr, orione::WeekPlan::kMaxText,
+                         "Monday to Sunday separated by ;, up to 2 windows HH:MM-HH:MM separated by , (OrioneCare.h)");
+    addNumericConfigParam<int>("schedule.pause_until", "Schedule paused until", kInteger, sPowerSection, 715, nullptr, 0, 100000, "Holiday: local day (days since 1970), 0 = none");
     addNumericConfigParam<double>("descale.litres", "Descale after (l)", kDouble, sMaintenanceSection, 406, nullptr, 0.0, 300.0,
                                   "Estimated water through the thermoblock until the reminder (0 = none)");
     addNumericConfigParam<double>("drip.capacity", "Drip tray holds (ml)", kDouble, sMaintenanceSection, 408, nullptr, 0.0, 2000.0,
                                   "Reminder to empty it at 80 % of the estimated water in it (0 = none)");
     addNumericConfigParam<double>("brew.temp_end", "Temperature at the end (K)", kDouble, sTempSection, 206, nullptr, -5.0, 5.0,
                                   "The setpoint moves to setpoint + this during the shot (0 = off)");
+    addNumericConfigParam<double>("standby.warm_temp", "Keep warm in standby (°C)", kDouble, sPowerSection, 803, nullptr, 0.0, 90.0,
+                                  "A standby from the timer or the web page keeps the block at this temperature (0 = heater off)");
+    addNumericConfigParam<double>("standby.warm_hours", "Then off after (h)", kDouble, sPowerSection, 804, nullptr, 0.5, 12.0,
+                                  "Hours of keeping warm, then the heater goes off; the schedule's off time turns it off at once");
 #endif
 
         addBoolConfigParam(

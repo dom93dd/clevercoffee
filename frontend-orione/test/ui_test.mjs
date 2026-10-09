@@ -1455,32 +1455,53 @@ test("Übersicht: letzter Bezug mit Bewertung und Zählern, Statuszeile; Tipp ö
   await ctx.close();
 });
 
-test("Zeitplan: einschalten, Uhrzeiten und Tage speichern, nächstes Einschalten auf der Übersicht", async ({browser}) => {
+test("Zeitplan je Wochentag: Zeiten, zweites Fenster, für alle Tage, Tag aus, Urlaub; nächstes Einschalten auf der Übersicht", async ({browser}) => {
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
-  assert.equal(await row(page, "Ein um").count(), 0, "times only while the schedule is on");
+  const plan = () => values(BASE).then(v => v["schedule.plan"]);
+  assert.equal(await view(page).locator("#planBox").count(), 0, "times only while the schedule is on");
   await row(page, "Automatisch einschalten").locator(".sw").click();
-  await row(page, "Ein um").waitFor();
-  await settle(page);
-  assert.equal((await values(BASE))["schedule.enabled"], 1);
-  assert.equal(await row(page, "Ein um").locator("input").inputValue(), "06:30");
-  assert.equal(await row(page, "Aus um").locator("input").inputValue(), "", "no off time");
-  await row(page, "Ein um").locator("input").fill("06:45"); await settle(page);
-  await row(page, "Aus um").locator("input").fill("22:00"); await settle(page);
-  let v = await values(BASE);
-  assert.equal(v["schedule.on"], 405); assert.equal(v["schedule.off"], 1320);
-  await row(page, "Aus um").locator("input").fill(""); await settle(page);
-  assert.equal((await values(BASE))["schedule.off"], 1440, "cleared: no off time");
-  const days = view(page).locator(".days button");
-  assert.deepEqual(await days.allTextContents(), ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]);
-  await days.nth(5).click(); await settle(page);
-  await days.nth(6).click(); await settle(page);
-  assert.equal((await values(BASE))["schedule.days"], 31, "Monday to Friday");
-  assert.equal(await days.nth(6).getAttribute("aria-pressed"), "false");
+  const days = view(page).locator("#planBox .planday");
+  await days.first().waitFor();
+  assert.deepEqual(await days.allTextContents(), ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => d + "06:30›"));
   const b = await days.first().boundingBox();
-  assert.ok(b.height >= 44, `day button ${b.height} px high`);
+  assert.ok(b.height >= 44, `day row ${b.height} px high`);
+  await days.nth(0).click();
+  const ed = view(page).locator(".planedit");
+  await ed.locator("input").first().waitFor();
+  assert.equal(await ed.locator("input").nth(1).inputValue(), "", "no off time");
+  await ed.locator("input").nth(1).fill("09:00"); await settle(page);
+  assert.equal(await plan(), "06:30-09:00;06:30;06:30;06:30;06:30;06:30;06:30");
+  await ed.locator("button", {hasText: "Zweites Fenster"}).click(); await settle(page);
+  assert.equal(await plan(), "06:30-09:00,17:00-20:00;06:30;06:30;06:30;06:30;06:30;06:30");
+  assert.equal(await days.nth(0).textContent(), "Mo06:30–09:00 · 17:00–20:00›");
+  await ed.locator("button", {hasText: "Zweites Fenster"}).waitFor({state: "detached"}); // two at most
+  await ed.locator("button", {hasText: "Für alle Tage übernehmen"}).click(); await settle(page);
+  assert.equal(await plan(), Array(7).fill("06:30-09:00,17:00-20:00").join(";"));
+  await days.nth(6).click();
+  await view(page).locator(".planedit button[aria-label='Fenster entfernen']").first().click(); await settle(page);
+  await view(page).locator(".planedit button[aria-label='Fenster entfernen']").first().click(); await settle(page);
+  assert.equal(await plan(), Array(6).fill("06:30-09:00,17:00-20:00").join(";") + ";");
+  assert.equal(await days.nth(6).textContent(), "Soaus›");
   await page.screenshot({path: OUT + "settings-schedule.png", fullPage: true});
+  // holiday through a week from now
+  const until = new Date(); until.setDate(until.getDate() + 7);
+  const iso = `${until.getFullYear()}-${String(until.getMonth() + 1).padStart(2, "0")}-${String(until.getDate()).padStart(2, "0")}`;
+  await row(page, "Urlaub").locator("input[type=date]").evaluate((e, v) => { e.value = v; e.dispatchEvent(new Event("change")); }, iso);
+  await row(page, "Urlaub").locator(".holiday").waitFor();
+  const day = Math.round(Date.UTC(until.getFullYear(), until.getMonth(), until.getDate()) / 864e5);
+  assert.equal((await values(BASE))["schedule.pause_until"], day);
+  const shown = until.toLocaleDateString("de-DE", {day: "2-digit", month: "2-digit", year: "numeric"});
+  assert.equal(await row(page, "Urlaub").locator(".holiday").textContent(), "pausiert bis " + shown);
   await tab(page, "Maschine");
-  assert.ok((await view(page).locator("#pills span").allTextContents()).some(x => /^Ein .+ 06:45$/.test(x)));
+  await page.waitForFunction(() => [...document.querySelectorAll("#pills span")].some(x => x.textContent.startsWith("Urlaub bis")));
+  const pills = await view(page).locator("#pills span").allTextContents();
+  assert.ok(pills.includes("Urlaub bis " + shown), pills.join(" | "));
+  assert.ok(!pills.some(x => /^Ein (heute|morgen) /.test(x)), "no switch-on during the holiday: " + pills.join(" | "));
+  await tab(page, "Einstellungen");
+  await row(page, "Urlaub").locator("button", {hasText: "Beenden"}).click(); await settle(page);
+  assert.equal((await values(BASE))["schedule.pause_until"], 0);
+  await tab(page, "Maschine");
+  await page.waitForFunction(() => [...document.querySelectorAll("#pills span")].some(x => /^Ein .+ (06:30|17:00)$/.test(x.textContent)));
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -1654,7 +1675,7 @@ test("Einstellungen: Standby und Zeitplan in einer Karte, Waagen-Timer und Feinw
   assert.deepEqual(cards, ["sPresets", "sCoffee", "sPreinf", "sTemp", "sPower", "sScale", "sClaude", "sTank", "sDisplay", "sPid", "sSystem"]);
   const power = view(page).locator('[data-card="sPower"]');
   assert.equal(await power.locator("h2").textContent(), "Ein & Aus");
-  assert.deepEqual(await power.locator(".lbl > div").allTextContents(), ["Standby", "Automatisch einschalten"]);
+  assert.deepEqual(await power.locator(".lbl > div").allTextContents(), ["Standby", "Im Standby warm halten", "Danach ganz aus nach", "Automatisch einschalten"]);
   assert.equal(await row(page, "Timer der Waage mitlaufen lassen").count(), 0);
   assert.equal(await row(page, "Offset").isVisible(), false, "folded under Fortgeschritten");
   assert.equal(await row(page, "FERTIG danach noch").count(), 1);
@@ -1677,7 +1698,7 @@ test("Wartung: Bezüge exportieren (JSON und CSV), letzter Backflush mit Datum",
   const json = JSON.parse(await (await import("node:fs/promises")).readFile(await files.find(f => f.suggestedFilename().endsWith(".json")).path(), "utf8"));
   assert.equal(json.shots.length, 1); assert.ok(json.shots[0].curve?.t?.length > 10, "with its curve");
   const csv = await (await import("node:fs/promises")).readFile(await files.find(f => f.suggestedFilename().endsWith(".csv")).path(), "utf8");
-  assert.match(csv, /^at;s;g;d;m;b;ratio;r;t0;fd;tw;sw;lg;pi;ch\n/);
+  assert.match(csv, /^at;s;g;d;m;b;ratio;r;t0;fd;tw;sw;lg;pi;ch;hs\n/);
   assert.match(csv, /;25,3;36,4;18,0;"12";"Röstwerk ""Hell""";2,02;/);
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -1845,7 +1866,7 @@ test("Automatisch spülen: unter Ein & Aus mit Wartezeit, nur mit Wasserstandsse
   await setp("hardware.sensors.watertank.enabled=1");
   const p2 = await open(browser, BASE, {hash: "#settings"});
   const pw = view(p2.page).locator('[data-card="sPower"]');
-  assert.deepEqual(await pw.locator(".lbl > div").allTextContents(), ["Standby", "Automatisch spülen", "Wartezeit", "Automatisch einschalten"]);
+  assert.deepEqual(await pw.locator(".lbl > div").allTextContents(), ["Standby", "Im Standby warm halten", "Danach ganz aus nach", "Automatisch spülen", "Wartezeit", "Automatisch einschalten"]);
   const wait = row(p2.page, "Wartezeit");
   assert.equal(await wait.locator("input").inputValue(), "2 min");
   for (let k = 0; k < 8; k++) await wait.locator("button", {hasText: "+"}).click();
@@ -1911,6 +1932,86 @@ test("S3 nach dem Bezug: Spülen statt Bezug, das Ergebnis des Bezugs geht, nich
   await ctx.close();
 });
 
+test("Vorzeitig von Hand gestoppt: Hinweis in Liste und Details, nicht bei normalen Bezügen", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 26.0, g: 36.0, at: now - 7200, d: 18.0});
+  await mock(BASE, "/__shot", {s: 17.5, g: 22.4, at: now - 600, d: 18.0, hs: true});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const rows = view(page).locator("#shotList .shot");
+  await rows.first().waitFor();
+  assert.match(await rows.nth(0).textContent(), /von Hand gestoppt/);
+  assert.doesNotMatch(await rows.nth(1).textContent(), /von Hand gestoppt/);
+  await rows.nth(0).click();
+  await view(page).locator(".shotinfo", {hasText: "Von Hand gestoppt, bevor Zeit oder Gewicht erreicht war."}).waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Standby warm halten: Einstellung unter Ein & Aus, Restzeit im Status", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  const card = view(page).locator(".card", {hasText: "Im Standby warm halten"});
+  await card.waitFor();
+  assert.match(await card.textContent(), /Danach ganz aus nach/);
+  await card.locator('.step[data-id="standby.warm_temp"] input').evaluate(e => { e.value = "0"; e.dispatchEvent(new Event("change")); });
+  for (let k = 0; k < 40 && !(await posts(BASE)).some(x => x.path === "/parameters" && x.body === "standby.warm_temp=0"); k++) await sleep(100); // saved after 0.7 s
+  await page.waitForFunction(() => ![...document.querySelectorAll("#main > div:not([hidden]) .card")].some(c => c.textContent.includes("Danach ganz aus nach")));
+  assert.ok((await posts(BASE)).some(x => x.path === "/parameters" && x.body === "standby.warm_temp=0"), JSON.stringify(await posts(BASE)));
+  await mock(BASE, "/__param", {"standby.warm_temp": 70.0});
+  await page.evaluate(() => fetch("/standby", {method: "POST"}));
+  await page.goto(BASE + "/#status");
+  await page.reload(); // only the hash changed: load the values again
+  await page.locator("#state", {hasText: "Standby"}).waitFor();
+  await page.waitForFunction(() => /warm/.test(document.querySelector("#pidState")?.textContent ?? ""));
+  assert.equal(await page.locator("#pidState").textContent(), "Standby · warm 70 °C, aus in 1 h 40 min");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Entkalken als Programm: nur mit Sensor; starten, Runden, Weiter beim klaren Wasser, fertig; Abbrechen", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  const card = view(page).locator(".card", {hasText: "Entkalken"}).first();
+  await card.locator(".shotinfo", {hasText: "braucht den Füllstandssensor"}).waitFor();
+  assert.equal(await card.locator("#dsStartBtn").count(), 0);
+  await ctx.close();
+  await setp("hardware.sensors.watertank.enabled=1");
+  const o = await open(browser, BASE, {hash: "#care"}), p = o.page;
+  p.on("dialog", d => d.accept());
+  const start = view(p).locator("#dsStartBtn");
+  await start.waitFor();
+  await mock(BASE, "/__live", {state: 70});
+  await start.click();
+  await p.locator(".toast.show", {hasText: "Erst den Tank füllen"}).waitFor();
+  await mock(BASE, "/__live", {state: 10});
+  await p.waitForFunction(() => !document.querySelector("#dsStartBtn").disabled);
+  await start.click(); await settle(p);
+  assert.ok((await posts(BASE)).some(x => x.path === "/descale" && x.query === "start=1"), JSON.stringify(await posts(BASE)));
+  await mock(BASE, "/__live", {state: 25, dsc: 2, dsr: 3, dst: 252, dsf: 0});
+  await view(p).locator("#dsNow", {hasText: "Runde 3 von 8: wirkt ein, noch 4:12"}).waitFor();
+  assert.equal(await p.locator("#state").textContent(), "Entkalken 3/8");
+  assert.equal(await start.isVisible(), false);
+  assert.equal(await view(p).locator("#dsNextBtn").isVisible(), false, "nothing to continue in the rounds");
+  await mock(BASE, "/__live", {state: 25, dsc: 5, dsp: 1});
+  await view(p).locator("#dsNow", {hasText: "mit klarem Wasser füllen, Gefäß leeren, dann Weiter (Klarspülen 1 von 2)"}).waitFor();
+  await p.screenshot({path: OUT + "care-descale.png", fullPage: true});
+  await view(p).locator("#dsNextBtn").click(); await settle(p);
+  assert.ok((await posts(BASE)).some(x => x.path === "/descale" && x.query === "next=1"));
+  await tab(p, "Maschine");
+  await view(p).locator(".note.ds", {hasText: "Klarspülen 1 von 2"}).waitFor();
+  await mock(BASE, "/__live", {state: 25, dsc: 6, dsp: 2, dsf: 1});
+  await view(p).locator(".note.ds", {hasText: "Klarspülen 2 von 2: läuft"}).waitFor();
+  assert.equal(await view(p).locator(".note.ds .btn").isVisible(), false);
+  await mock(BASE, "/__live", {state: 10});
+  await p.locator(".toast.show", {hasText: "Entkalken fertig"}).waitFor();
+  await view(p).locator(".note.ds").waitFor({state: "hidden"});
+  await tab(p, "Wartung");
+  await mock(BASE, "/__live", {state: 25, dsc: 1, currentTemp: 78.4});
+  await view(p).locator("#dsNow", {hasText: "kühlt ab: 78 °C"}).waitFor();
+  await view(p).locator("#dsStopBtn").click(); await settle(p);
+  assert.ok((await posts(BASE)).some(x => x.path === "/descale" && x.query === "stop=1"));
+  assert.deepEqual(errors, []); assert.deepEqual(o.errors, []);
+  await o.ctx.close();
+});
+
 test("Letzte Bezüge: leer", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   await view(page).locator("#shotList .empty", {hasText: "Noch keine Bezüge"}).waitFor();
@@ -1953,7 +2054,7 @@ for (const t of tests) {
     console.log(`ok    ${t.name} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   } catch (e) {
     failed++;
-    console.log(`FAIL  ${t.name}\n      ${String(e.message).split("\n").join("\n      ")}`);
+    console.log(`FAIL  ${t.name}\n      ${String(e.message || e.stack).split("\n").join("\n      ")}`);
   }
   while (contexts.length) await contexts.pop().close().catch(() => {});
 }

@@ -34,6 +34,10 @@ class FakeMachine {
         bool backflushDone = false;      // Orione: backflush over, brew switch still on
         uint8_t cleaningPhase = 0;       // Orione: cleaning with detergent (rd::Model::cleaningPhase)
         int16_t clockMinutes = 7 * 60 + 42; // local time for the standby screen (-1: no clock)
+        bool standbyWarm = false;           // standby keeps the block warm
+        uint8_t descalePhase = 0, descaleRound = 0, descalePass = 0; // the descaling program (OrioneDescale.h)
+        int16_t descaleSecondsLeft = -1;
+        bool descalePumping = false;
         rd::Language language = rd::Language::German;
 
         // Environment
@@ -60,6 +64,10 @@ class FakeMachine {
             emergency_ = false;
             pidEnabled_ = true;
             standby_ = false;
+            standbyWarm = false;
+            descalePhase = descaleRound = descalePass = 0;
+            descaleSecondsLeft = -1;
+            descalePumping = false;
         }
 
         // Controls -------------------------------------------------------------------------
@@ -266,6 +274,12 @@ class FakeMachine {
             m.cleaningPhase = cleaningPhase;
             m.switchWakes = true; // as the Orione build
             m.clockMinutes = clockMinutes;
+            m.standbyWarm = standbyWarm;
+            m.descalePhase = descalePhase;
+            m.descaleRound = descaleRound;
+            m.descalePass = descalePass;
+            m.descaleSecondsLeft = descaleSecondsLeft;
+            m.descalePumping = descalePumping;
 
             if (steamFromSwitch) {
                 m.mode = rd::Mode::Steam;

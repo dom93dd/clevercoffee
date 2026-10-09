@@ -11,14 +11,183 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 namespace orione {
 
     /**
-     * Heating schedule: on (and optionally off) at a minute of the day, on the days set in a mask (bit 0 = Monday).
-     * Fires once when the clock reaches the minute; a clock that jumps over it (time set by NTP, a restart) does not
-     * catch up, so a machine switched on at 9:00 does not heat because 6:30 has passed.
+     * The heating schedule as the page sets it (Dominik, 09.10.2026: "Je Wochentag eigene Zeiten"): per weekday up to
+     * kWindows windows, each an on time and an optional off time, as the text of the setting schedule.plan:
+     * Monday to Sunday separated by ';', windows by ',', a window "HH:MM-HH:MM" or "HH:MM" (no off time), an empty day
+     * has none. Example: "06:30-09:00,17:00-20:00;06:30-09:00;;;;08:00-11:00;08:00-11:00". An off time before the on
+     * time is on the next day (over midnight).
+     */
+    struct WeekPlan {
+            static constexpr int kWindows = 2;
+            static constexpr uint16_t kNone = 0xFFFF;
+            static constexpr size_t kMaxText = 7 * (kWindows * 12) + 8; // "HH:MM-HH:MM," per window, ';' per day
+
+            struct Window {
+                    uint16_t on = kNone;  // minute of the day, kNone: no window
+                    uint16_t off = kNone; // kNone: no off time
+            };
+
+            Window days[7][kWindows];
+
+            /** @return false if the text is not a plan (out is left empty then) */
+            static bool parse(const char* text, WeekPlan& out) {
+                out = WeekPlan{};
+
+                if (text == nullptr) {
+                    return false;
+                }
+
+                int day = 0, window = 0;
+                const char* p = text;
+
+                while (true) {
+                    if (*p == ';' || *p == '\0') {
+                        if (*p == '\0') {
+                            if (day != 6) {
+                                out = WeekPlan{};
+                            }
+
+                            return day == 6;
+                        }
+
+                        if (++day > 6) {
+                            out = WeekPlan{};
+                            return false;
+                        }
+
+                        window = 0;
+                        ++p;
+                        continue;
+                    }
+
+                    if (*p == ',') {
+                        ++p;
+                        continue;
+                    }
+
+                    int on = -1, off = -1;
+
+                    if (!time(p, on) || window >= kWindows) {
+                        out = WeekPlan{};
+                        return false;
+                    }
+
+                    if (*p == '-') {
+                        ++p;
+
+                        if (*p != ',' && *p != ';' && *p != '\0' && !time(p, off)) {
+                            out = WeekPlan{};
+                            return false;
+                        }
+                    }
+
+                    if (off == on) {
+                        off = -1; // no length: on only
+                    }
+
+                    out.days[day][window].on = static_cast<uint16_t>(on);
+                    out.days[day][window].off = off < 0 ? kNone : static_cast<uint16_t>(off);
+                    ++window;
+                }
+            }
+
+            /** The text for schedule.plan (at least kMaxText bytes) */
+            void format(char* out, const size_t size) const {
+                size_t n = 0;
+                const auto put = [&](const char* t) {
+                    while (*t != '\0' && n + 1 < size) {
+                        out[n++] = *t++;
+                    }
+                };
+                char buf[8];
+
+                for (int d = 0; d < 7; ++d) {
+                    bool first = true;
+
+                    for (int w = 0; w < kWindows; ++w) {
+                        const Window& x = days[d][w];
+
+                        if (x.on == kNone) {
+                            continue;
+                        }
+
+                        if (!first) {
+                            put(",");
+                        }
+
+                        first = false;
+                        snprintf(buf, sizeof(buf), "%02u:%02u", x.on / 60u, x.on % 60u);
+                        put(buf);
+
+                        if (x.off != kNone) {
+                            snprintf(buf, sizeof(buf), "-%02u:%02u", x.off / 60u, x.off % 60u);
+                            put(buf);
+                        }
+                    }
+
+                    if (d < 6) {
+                        put(";");
+                    }
+                }
+
+                if (size > 0) {
+                    out[n < size ? n : size - 1] = '\0';
+                }
+            }
+
+            /** The plan from the settings before 09.10.2026: one window on the days of a bit mask (bit 0 = Monday) */
+            static WeekPlan fromDays(const uint8_t daysMask, const uint16_t onMinute, const uint16_t offMinute) {
+                WeekPlan p;
+
+                for (int d = 0; d < 7; ++d) {
+                    if ((daysMask & (1u << d)) != 0 && onMinute < 1440) {
+                        p.days[d][0].on = onMinute;
+                        p.days[d][0].off = offMinute < 1440 && offMinute != onMinute ? offMinute : kNone;
+                    }
+                }
+
+                return p;
+            }
+
+        private:
+            static bool time(const char*& p, int& minutes) {
+                int h = 0, m = 0, digits = 0;
+
+                while (*p >= '0' && *p <= '9' && digits < 2) {
+                    h = h * 10 + (*p++ - '0');
+                    ++digits;
+                }
+
+                if (digits == 0 || *p != ':') {
+                    return false;
+                }
+
+                ++p;
+                digits = 0;
+
+                while (*p >= '0' && *p <= '9' && digits < 2) {
+                    m = m * 10 + (*p++ - '0');
+                    ++digits;
+                }
+
+                if (digits != 2 || h > 23 || m > 59) {
+                    return false;
+                }
+
+                minutes = h * 60 + m;
+                return true;
+            }
+    };
+
+    /**
+     * Heating schedule (machineCare.h): at a window's on time the controller goes on, at its off time the machine goes
+     * into standby. Fires once at that minute, not when the clock first appears later or jumps over it.
      */
     class Schedule {
         public:
@@ -28,13 +197,12 @@ namespace orione {
                 kOff = 2,
             };
 
-            static constexpr uint16_t kNoTime = 1440; // no off time
-
             /**
              * @param weekday 0 = Monday ... 6 = Sunday (local time)
              * @param minute minute of the day, 0..1439 (local time)
+             * @param paused holiday: no on and no off until the set day has passed
              */
-            Action update(const bool enabled, const uint8_t days, const uint16_t onMinute, const uint16_t offMinute, const int weekday, const int minute) {
+            Action update(const bool enabled, const WeekPlan& plan, const int weekday, const int minute, const bool paused = false) {
                 const int key = weekday * 1440 + minute;
 
                 if (key == last_) {
@@ -44,19 +212,23 @@ namespace orione {
                 const bool first = last_ < 0;
                 last_ = key;
 
-                if (first || !enabled || weekday < 0 || weekday > 6 || minute < 0 || minute > 1439 || !(days & (1u << weekday))) {
+                if (first || !enabled || paused || weekday < 0 || weekday > 6 || minute < 0 || minute > 1439) {
                     return kNone;
                 }
 
-                if (minute == onMinute) {
-                    return kOn;
+                const int yesterday = (weekday + 6) % 7;
+                bool on = false, off = false;
+
+                for (int w = 0; w < WeekPlan::kWindows; ++w) {
+                    const WeekPlan::Window& x = plan.days[weekday][w];
+                    const WeekPlan::Window& y = plan.days[yesterday][w];
+
+                    on = on || (x.on != WeekPlan::kNone && x.on == minute);
+                    off = off || (x.on != WeekPlan::kNone && x.off != WeekPlan::kNone && x.off > x.on && x.off == minute);
+                    off = off || (y.on != WeekPlan::kNone && y.off != WeekPlan::kNone && y.off < y.on && y.off == minute); // over midnight
                 }
 
-                if (offMinute < kNoTime && minute == offMinute) {
-                    return kOff;
-                }
-
-                return kNone;
+                return on ? kOn : off ? kOff : kNone;
             }
 
         private:
@@ -98,6 +270,74 @@ namespace orione {
             uint32_t lastMs_ = 0;
             bool running_ = false;
             bool seenOff_ = false;
+    };
+
+    /**
+     * Standby with the block kept warm (Dominik, 09.10.2026: "Temperatur wählbar, nach Zeit ganz aus"; Sanremo ECO,
+     * Ascaso, Profitec Eco and the Lelit Bianca keep it warm too): a standby from the timer or the page's button heats
+     * to a lower temperature for some hours, then the heater goes off. The schedule's off time is off at once
+     * (coldNext()). Call update() once per loop.
+     */
+    class StandbyWarm {
+        public:
+            /** The standby beginning now (or the one running) without warming: the schedule's off time */
+            void coldNext() {
+                cold_ = true;
+                active_ = false;
+            }
+
+            /**
+             * @param celsius warming temperature, <= 0: heater off in standby (as before)
+             * @param hours then off for good
+             * @return true: heat to celsius now
+             */
+            bool update(const uint32_t nowMs, const bool inStandby, const float celsius, const float hours) {
+                if (inStandby && !wasStandby_) {
+                    active_ = !cold_ && celsius > 0.0f;
+                    sinceMs_ = nowMs;
+                }
+
+                if (!inStandby || celsius <= 0.0f) {
+                    active_ = false;
+                }
+
+                if (active_ && static_cast<float>(nowMs - sinceMs_) >= hours * 3600000.0f) {
+                    active_ = false;
+                    ended_ = true;
+                }
+
+                wasStandby_ = inStandby;
+                cold_ = false;
+                return active_;
+            }
+
+            bool active() const {
+                return active_;
+            }
+
+            /** Minutes until the heater goes off (rounded up), -1 when not warming */
+            int minutesLeft(const uint32_t nowMs, const float hours) const {
+                if (!active_) {
+                    return -1;
+                }
+
+                const float left = hours * 3600000.0f - static_cast<float>(nowMs - sinceMs_);
+                return left <= 0.0f ? 0 : static_cast<int>((left + 59999.0f) / 60000.0f);
+            }
+
+            /** The warming time ran out since the last call (for a log line) */
+            bool takeEnded() {
+                const bool e = ended_;
+                ended_ = false;
+                return e;
+            }
+
+        private:
+            uint32_t sinceMs_ = 0;
+            bool active_ = false;
+            bool wasStandby_ = false;
+            bool cold_ = false;
+            bool ended_ = false;
     };
 
     /**

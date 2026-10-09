@@ -190,12 +190,20 @@ namespace orione {
             }
 
             static constexpr uint8_t kPauseValveOpen = 1;
-            static constexpr uint8_t kChanneling = 2; // the flow jumped during the shot (OrioneCare.h, ChannelCheck)
+            static constexpr uint8_t kChanneling = 2;    // the flow jumped during the shot (OrioneCare.h, ChannelCheck)
+            static constexpr uint8_t kStoppedByHand = 4; // the switch ended a shot set to stop by time or weight early (Dominik, 09.10.2026)
 
             /** The flow of the newest shot jumped (ChannelCheck) */
             void noteChanneling() {
                 if (count_ > 0) {
                     shots_[0].piFlags |= kChanneling;
+                }
+            }
+
+            /** The newest shot was set to stop by itself (time, weight) and the brew switch ended it before */
+            void noteStoppedByHand() {
+                if (count_ > 0) {
+                    shots_[0].piFlags |= kStoppedByHand;
                 }
             }
 

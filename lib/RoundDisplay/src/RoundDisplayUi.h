@@ -32,6 +32,7 @@ namespace rd {
         HotWater,
         Steam,
         Backflush,
+        Descale,
         WaterTankEmpty,
         Standby,
         PidDisabled,
@@ -200,6 +201,7 @@ namespace rd {
             void drawBrewWeightRing(Painter& p, bool done) const;
             void drawStopwatch(Painter& p, const char* label, float seconds) const;
             void drawBackflush(Painter& p) const;
+            void drawDescale(Painter& p) const;
             void drawWaterTankEmpty(Painter& p) const;
             void drawStandby(Painter& p) const;
             void drawPidDisabled(Painter& p) const;

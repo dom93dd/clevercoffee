@@ -399,6 +399,43 @@ namespace sim {
                  m.reset(71.0f);
                  m.toggleStandby();
              }},
+            {"descale-cooling", "Entkalken: Heizung aus, kühlt ab",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(78.0f);
+                 m.descalePhase = 1;
+             }},
+            {"descale-soak", "Entkalken: Runde 3 von 8, wirkt ein",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(41.0f);
+                 m.descalePhase = 2;
+                 m.descaleRound = 3;
+                 m.descaleSecondsLeft = 252;
+             }},
+            {"descale-refill", "Entkalken: Tank leer in den Runden",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(38.0f);
+                 m.descalePhase = 3;
+                 m.descaleRound = 5;
+             }},
+            {"descale-clear-water", "Entkalken: klares Wasser einfüllen, Weiter",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(35.0f);
+                 m.descalePhase = 5;
+                 m.descalePass = 1;
+             }},
+            {"descale-rinse", "Entkalken: Klarspülen 2 von 2",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(30.0f);
+                 m.descalePhase = 6;
+                 m.descalePass = 2;
+                 m.descalePumping = true;
+             }},
+            {"standby-warm", "Standby, Block wird warm gehalten",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.reset(70.0f);
+                 m.toggleStandby();
+                 m.standbyWarm = true;
+             }},
             {"standby-no-clock", "Standby ohne Uhrzeit (noch kein NTP)",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.reset(71.0f);

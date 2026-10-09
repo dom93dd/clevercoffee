@@ -22,6 +22,7 @@ namespace care {
     inline orione::MachineStats stats;
     inline orione::CleaningProgram cleaning;
     inline orione::Schedule schedule;
+    inline orione::StandbyWarm standbyWarm; // main.cpp standbyWarmLoop()
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED; // stats are read by the web server
     inline bool unsaved = false;
     inline unsigned long changedAt = 0;
@@ -72,6 +73,40 @@ namespace care {
 
             prefs.end();
         }
+    }
+
+    /**
+     * The schedule per weekday (schedule.plan) came on 09.10.2026; before it was one on/off time on the days of a mask.
+     * At the first start with it ("?") the old settings become the plan, so a schedule set before keeps running.
+     */
+    inline void migrateSchedule() {
+        if (config.get<String>("schedule.plan") != "?") {
+            return;
+        }
+
+        char text[orione::WeekPlan::kMaxText];
+        orione::WeekPlan::fromDays(static_cast<uint8_t>(config.get<int>("schedule.days")), static_cast<uint16_t>(config.get<int>("schedule.on")),
+                                   static_cast<uint16_t>(config.get<int>("schedule.off")))
+            .format(text, sizeof(text));
+        ParameterRegistry::getInstance().setParameterValue<String>("schedule.plan", String(text));
+        LOGF(INFO, "Schedule taken over per weekday: %s", text);
+    }
+
+    /** The plan of schedule.plan, parsed again only when the text changed */
+    inline const orione::WeekPlan& plan() {
+        static String text;
+        static orione::WeekPlan parsed;
+        const String now = config.get<String>("schedule.plan");
+
+        if (now != text) {
+            text = now;
+
+            if (!orione::WeekPlan::parse(text.c_str(), parsed)) {
+                LOGF(WARNING, "Schedule: not a plan: %s", text.c_str());
+            }
+        }
+
+        return parsed;
     }
 
     inline void save() {
@@ -146,17 +181,17 @@ namespace care {
     /**
      * {"today":n,"week":n,"total":n,"coffee":g,"water":ml,"descaledAt":UTC or 0,"descaleL":limit,"due":bool,"standby":minutes until
      * standby or -1,"rssi":dBm,"backflushAt":UTC of the last complete backflush or 0,"drip":ml in the drip tray,"dripCap":its capacity,
-     * "dripDue":bool}
+     * "dripDue":bool,"warm":minutes of keeping warm left in standby or -1}
      */
-    inline void writeJson(Print& out, const float descaleLitres, const int standbyMinutes, const int rssi, const float dripCapacityMl) {
+    inline void writeJson(Print& out, const float descaleLitres, const int standbyMinutes, const int rssi, const float dripCapacityMl, const int warmMinutes) {
         const int32_t day = localDay();
         portENTER_CRITICAL(&lock);
         const orione::MachineStats s = stats;
         portEXIT_CRITICAL(&lock);
-        out.printf(R"({"today":%u,"week":%u,"total":%u,"coffee":%.1f,"water":%u,"descaledAt":%u,"descaleL":%.0f,"due":%s,"standby":%d,"rssi":%d,"backflushAt":%u,"drip":%u,"dripCap":%.0f,"dripDue":%s})", s.today(day), s.week(day),
+        out.printf(R"({"today":%u,"week":%u,"total":%u,"coffee":%.1f,"water":%u,"descaledAt":%u,"descaleL":%.0f,"due":%s,"standby":%d,"rssi":%d,"backflushAt":%u,"drip":%u,"dripCap":%.0f,"dripDue":%s,"warm":%d})", s.today(day), s.week(day),
                    static_cast<unsigned>(s.total()), static_cast<double>(s.doseGrams()), static_cast<unsigned>(s.waterMl()), static_cast<unsigned>(s.descaledAt()),
                    static_cast<double>(descaleLitres), s.descaleDue(descaleLitres) ? "true" : "false", standbyMinutes, rssi, static_cast<unsigned>(s.backflushAt()),
-                   static_cast<unsigned>(s.dripMl()), static_cast<double>(dripCapacityMl), s.dripDue(dripCapacityMl) ? "true" : "false");
+                   static_cast<unsigned>(s.dripMl()), static_cast<double>(dripCapacityMl), s.dripDue(dripCapacityMl) ? "true" : "false", warmMinutes);
     }
 
 } // namespace care

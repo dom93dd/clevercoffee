@@ -274,8 +274,9 @@ namespace shot_history {
     /**
      * @param grams in the cup when the pump stopped, < 0 without a connected scale
      * @param byWeight the shot stopped at its target weight (minus the lead, noteStop())
+     * @param byHand set to stop by time or weight, the brew switch ended it before (marked in the list)
      */
-    inline void brewEnded(const double seconds, const float grams, const bool byWeight) {
+    inline void brewEnded(const double seconds, const float grams, const bool byWeight, const bool byHand) {
         shotCurve.stopped();
 
         if (shotLog.record(static_cast<float>(seconds), grams, nowUtc(), millis())) {
@@ -296,6 +297,10 @@ namespace shot_history {
 
             if (channeling >= 0) {
                 shotLog.noteChanneling();
+            }
+
+            if (byHand) {
+                shotLog.noteStoppedByHand();
             }
 
             LOGF(INFO, "Shot logged: %.1f s, %.1f g%s", seconds, grams, channeling >= 0 ? ", flow jumped (channeling?)" : "");
@@ -418,7 +423,7 @@ namespace shot_history {
         s.piTenths || s.piPauseTenths ? (void)out.printf("[%u.%u,%u.%u,%u]", s.piTenths / 10u, s.piTenths % 10u, s.piPauseTenths / 10u, s.piPauseTenths % 10u,
                                                          s.piFlags & orione::ShotLog::kPauseValveOpen ? 1u : 0u)
                                       : (void)out.print("null");
-        out.printf(R"(,"ch":%s})", s.piFlags & orione::ShotLog::kChanneling ? "true" : "false");
+        out.printf(R"(,"ch":%s,"hs":%s})", s.piFlags & orione::ShotLog::kChanneling ? "true" : "false", s.piFlags & orione::ShotLog::kStoppedByHand ? "true" : "false");
     }
 
     /**

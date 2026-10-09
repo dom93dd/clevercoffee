@@ -40,6 +40,7 @@ inline bool brewWeightFallback = false;  // this shot: by weight, but without th
 inline bool backflushCompleted = false;  // all cycles ran: backflush mode goes off (kBackflushFinished)
 inline bool backflushSwitchReminder = false; // Orione: all cycles ran and the brew switch is still on: display and page say so
 inline bool rinseRun = false;                // Orione: this run of the brew switch is the rinse after a shot (orione::RinseAfterShot)
+inline bool brewStoppedByHand = false;       // Orione: set to stop by time or weight, the switch ended this shot early
 constexpr double kBrewMaxSeconds = 60.0;  // no shot runs longer (unless the target time is longer)
 #endif
 
@@ -294,6 +295,10 @@ inline bool brew() {
         if (currBrewState != kBrewFinished) {
             LOG(INFO, "Brew stopped manually");
         }
+#ifdef CC_ORIONE
+        // before its time or weight: marked in the list (Dominik, 09.10.2026: "Nur vorzeitig gestoppte")
+        brewStoppedByHand = config.get<int>("brew.mode") != 0 && (config.get<bool>("brew.by_time.enabled") || config.get<bool>("brew.by_weight.enabled"));
+#endif
         currBrewState = kBrewFinished;
     }
     // calculated brew time while brew is running
@@ -339,6 +344,7 @@ inline bool brew() {
                 LOG(INFO, "Brew started");
 #ifdef CC_ORIONE
                 brewStoppedByWeight = false;
+                brewStoppedByHand = false;
                 rinseRun = shot_history::rinseExpected();
                 preinfusionEnabled = config.get<bool>("brew.pre_infusion.enabled") && !rinseRun;
                 // by weight without the scale (off, not chosen): the target time ends this shot (Dominik, 08.10.2026)
@@ -500,7 +506,7 @@ inline bool brew() {
                 }
                 else {
                     shot_history::brewEnded(currBrewTime / 1000, scale && config.get<bool>("hardware.sensors.scale.enabled") && scale->isConnected() ? std::max(0.0f, static_cast<float>(currBrewWeight)) : -1.0f,
-                                            brewStoppedByWeight);
+                                            brewStoppedByWeight, brewStoppedByHand);
                 }
 #endif
                 LOG(INFO, "Brew idle");

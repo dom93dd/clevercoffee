@@ -237,6 +237,8 @@ namespace rd {
                 return "Steam";
             case Screen::Backflush:
                 return "Backflush";
+            case Screen::Descale:
+                return "Descale";
             case Screen::WaterTankEmpty:
                 return "WaterTankEmpty";
             case Screen::Standby:
@@ -460,6 +462,10 @@ namespace rd {
             return Screen::Message;
         }
 
+        if (m.descalePhase != 0) {
+            return Screen::Descale; // the program holds the machine in the flush state
+        }
+
         if (m.brewTimerVisible) {
             return Screen::Brew;
         }
@@ -544,7 +550,9 @@ namespace rd {
         h = hashAdd(h, static_cast<int32_t>(m.backflushPhase) | m.backflushCycle << 8 | m.backflushCycles << 16 | m.cleaningPhase << 24);
         h = hashAdd(h, m.offlineMode | m.wifiConnected << 1 | m.wifiBars << 2 | m.mqttEnabled << 5 | m.mqttConnected << 6);
         h = hashAdd(h, q(m.emergencyResetTemp, 0.1f));
-        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3 | m.flushReminder << 4 | m.backflushDone << 5 | m.switchWakes << 6);
+        h = hashAdd(h, m.brewSwitchReminder | m.warmupFlushPending << 1 | m.steamByThermostat << 2 | m.steamCooling << 3 | m.flushReminder << 4 | m.backflushDone << 5 | m.switchWakes << 6 | m.standbyWarm << 7);
+        h = hashAdd(h, static_cast<int32_t>(m.descalePhase | m.descaleRound << 8 | m.descalePass << 16 | static_cast<uint32_t>(m.descalePumping) << 24));
+        h = hashAdd(h, m.descaleSecondsLeft);
         h = hashAdd(h, m.clockMinutes); // the standby clock: redrawn when the minute changes
 
         if (screen_ == Screen::EmergencyStop || screen_ == Screen::SensorError) {
@@ -640,6 +648,9 @@ namespace rd {
                 break;
             case Screen::Backflush:
                 drawBackflush(p);
+                break;
+            case Screen::Descale:
+                drawDescale(p);
                 break;
             case Screen::WaterTankEmpty:
                 drawWaterTankEmpty(p);
@@ -1672,6 +1683,74 @@ namespace rd {
         }
     }
 
+    void RoundUi::drawDescale(Painter& p) const {
+        p.setLayer(Layer::Frame); // ring, ticks and markers
+        // one segment per round, as the backflush cycles; after the rounds (rest, rinsing) all of them
+        const Model& m = view_;
+        const Strings& s = strings(m.language);
+        const int rounds = std::max<int>(m.descaleRounds, 1);
+        const float slot = 360.0f / static_cast<float>(rounds);
+        const float gap = rounds > 1 ? 6.0f : 0.0f;
+        const bool after = m.descalePhase >= 4;
+
+        for (int i = 0; i < rounds; ++i) {
+            Color c = kTrack;
+
+            if (after || i + 1 < m.descaleRound) {
+                c = kCool;
+            }
+            else if (i + 1 == m.descaleRound) {
+                c = mix(kCool, kBackground, 0.5f);
+            }
+
+            p.arc(kCx, kCy, kRingRadius, kRingWidth, static_cast<float>(i) * slot + gap * 0.5f, static_cast<float>(i + 1) * slot - gap * 0.5f, c, false);
+        }
+
+        p.setLayer(Layer::Content);
+        p.text(fonts::label(), s.descale, kCx, kLabelY, kCool);
+        char num[16];
+        char buf[40];
+
+        switch (m.descalePhase) {
+            case 1:
+                formatNumber(num, sizeof(num), m.temperature, 0, m.language);
+                snprintf(buf, sizeof(buf), "%s°", num);
+                p.text(fonts::mid(), buf, kCx, 136.0f, kText);
+                p.text(fonts::textSmall(), s.dsCooling, kCx, kRowAY, kTextDim);
+                break;
+            case 2:
+                snprintf(buf, sizeof(buf), "%d/%d", m.descaleRound, m.descaleRounds);
+                p.text(fonts::big(), buf, kCx, kValueY, kText);
+
+                if (m.descaleSecondsLeft >= 0) {
+                    snprintf(buf, sizeof(buf), "%s %d:%02d", m.descalePumping ? s.dsPumping : s.dsSoaking, m.descaleSecondsLeft / 60, m.descaleSecondsLeft % 60);
+                    p.text(fonts::textSmall(), buf, kCx, kRowAY, kTextDim);
+                }
+                break;
+            case 3:
+                p.text(fonts::text(), s.dsRefill, kCx, 124.0f, kText);
+                p.text(fonts::text(), s.dsNextInApp, kCx, 150.0f, kTextDim);
+                break;
+            case 4:
+                p.text(fonts::text(), s.dsRest, kCx, 124.0f, kText);
+                p.text(fonts::textSmall(), m.descalePumping ? s.dsPumping : "", kCx, 150.0f, kTextDim);
+                break;
+            case 5:
+                p.text(fonts::text(), s.dsFill, kCx, 124.0f, kText);
+                p.text(fonts::text(), s.dsNextInApp, kCx, 150.0f, kTextDim);
+                snprintf(buf, sizeof(buf), "%s %d/2", s.clearWater, m.descalePass);
+                p.text(fonts::hint(), buf, kCx, kRowBY, kCool);
+                break;
+            case 6:
+                snprintf(buf, sizeof(buf), "%d/2", m.descalePass);
+                p.text(fonts::big(), buf, kCx, kValueY, kText);
+                p.text(fonts::textSmall(), s.clearWater, kCx, kRowAY, kTextDim);
+                break;
+            default:
+                break;
+        }
+    }
+
     void RoundUi::drawWaterTankEmpty(Painter& p) const {
         p.setLayer(Layer::Frame); // ring, ticks and markers
         const Model& m = view_;
@@ -1692,7 +1771,7 @@ namespace rd {
         char buf[24];
 
         formatNumber(num, sizeof(num), m.temperature, 0, m.language);
-        snprintf(buf, sizeof(buf), "%s°", num);
+        snprintf(buf, sizeof(buf), m.standbyWarm ? "warm %s°" : "%s°", num); // the same word in German and English
 
         if (m.clockMinutes >= 0 && m.clockMinutes < 24 * 60) {
             // the time of day, as GaggiMate users asked for (#508, #618); the temperature small under it

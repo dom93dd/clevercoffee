@@ -60,6 +60,14 @@ namespace rd {
             const char* rinseBasket;     // between the rounds: rinse the blind basket out
             const char* switchOffOn;     // ... then the brew switch off and on again
             const char* switchWakes;     // standby: the brew switch wakes the machine
+            const char* descale;         // descaling program (label, capitals)
+            const char* dsCooling;       // heater off, the block cools down
+            const char* dsPumping;
+            const char* dsSoaking;
+            const char* dsRefill;        // the tank ran empty during the rounds
+            const char* dsRest;          // the rest of the solution runs through
+            const char* dsFill;          // fill the tank with clear water
+            const char* dsNextInApp;     // ... then "Weiter" on the web page
     };
 
     inline constexpr Strings kGerman = {
@@ -107,6 +115,14 @@ namespace rd {
         "Sieb ausspülen",
         "Schalter aus und an",
         "Bezugsschalter weckt",
+        "ENTKALKEN",
+        "Kühlt ab",
+        "pumpt",
+        "wirkt ein",
+        "Lösung nachfüllen",
+        "Rest läuft durch",
+        "Klares Wasser in Tank",
+        "dann App: Weiter",
     };
 
     inline constexpr Strings kEnglish = {
@@ -154,6 +170,14 @@ namespace rd {
         "Rinse basket",
         "Switch off and on",
         "Brew switch wakes",
+        "DESCALING",
+        "Cooling down",
+        "pumping",
+        "soaking",
+        "Add solution",
+        "Rest runs through",
+        "Clear water in tank",
+        "then Next in the app",
     };
 
     inline const Strings& strings(const Language lang) {

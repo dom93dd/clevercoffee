@@ -8,6 +8,7 @@
 #pragma once
 
 #ifdef CC_ORIONE
+#include <OrioneCare.h>
 #include <OrioneFixed.h>
 #endif
 #include "ConfigDef.h"
@@ -467,9 +468,15 @@ class Config {
             _configDefs.emplace("schedule.days", ConfigDef::forInt(127, 0, 127)); // bit 0 = Monday
             _configDefs.emplace("schedule.on", ConfigDef::forInt(390, 0, 1439));  // minute of the day, local time
             _configDefs.emplace("schedule.off", ConfigDef::forInt(1440, 0, 1440)); // 1440: no off time
+            // the schedule per weekday since 09.10.2026 (OrioneCare.h WeekPlan); "?": not set yet, taken over from the
+            // three settings above at the start (machineCare.h migrateSchedule()), which are not shown any more
+            _configDefs.emplace("schedule.plan", ConfigDef::forString("?", orione::WeekPlan::kMaxText));
+            _configDefs.emplace("schedule.pause_until", ConfigDef::forInt(0, 0, 100000)); // holiday: local day (days since 1970) to pause through, 0 = none
             _configDefs.emplace("descale.litres", ConfigDef::forDouble(40.0, 0.0, 300.0)); // 0: no reminder
             _configDefs.emplace("drip.capacity", ConfigDef::forDouble(600.0, 0.0, 2000.0)); // ml, 0: no reminder; the Orione 3000 tray holds 600 (Dominik, 09.10.2026)
             _configDefs.emplace("brew.temp_end", ConfigDef::forDouble(0.0, -5.0, 5.0));
+            _configDefs.emplace("standby.warm_temp", ConfigDef::forDouble(70.0, 0.0, 90.0)); // °C in standby, 0: heater off (OrioneCare.h StandbyWarm)
+            _configDefs.emplace("standby.warm_hours", ConfigDef::forDouble(2.0, 0.5, 12.0)); // then off for good
 #endif
 
             // Pre-infusion

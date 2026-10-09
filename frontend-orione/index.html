@@ -198,6 +198,23 @@ body.reboot main{padding-bottom:82px} /* room for the restart bar above the tabs
 .stats div{background:var(--bg);border-radius:12px;padding:10px 4px}
 .stats b{display:block;font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
 .stats small{color:var(--mute);font-size:12px}
+/* the schedule per weekday (planBox()) */
+.plan{display:flex;flex-direction:column;gap:6px;margin:8px 0 4px}
+.planday{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:8px 12px;border:0;border-radius:12px;background:var(--bg);color:var(--text);font:inherit;font-size:15px;text-align:left;cursor:pointer}
+.planday b{width:26px;color:var(--mute);font-weight:700}
+.planday span{flex:1;font-variant-numeric:tabular-nums}
+.planday span.off{color:var(--faint)}
+.planday i{color:var(--faint);font-style:normal;transition:transform .2s}
+.planday.open i{transform:rotate(90deg)}
+.planedit{display:flex;flex-direction:column;gap:8px;padding:4px 4px 10px}
+.planwin{display:grid;grid-template-columns:auto 1fr auto 1fr 44px;align-items:center;gap:8px}
+.planwin small{color:var(--mute);font-size:13px}
+.planwin input{min-width:0;width:100%}
+.planwin button{min-height:44px;padding:0}
+.planacts{display:flex;flex-wrap:wrap;gap:8px}
+.holiday{color:var(--mute);font-size:14px;align-self:center}
+.dsbox{margin-top:10px}
+.shotinfo.ds{color:var(--cool);font-weight:600}
 .days{display:flex;gap:6px}
 .days button{flex:1;min-height:44px;border:0;border-radius:10px;background:var(--bg);color:var(--mute);font-size:14px;font-weight:600;cursor:pointer}
 .days button.on{color:var(--text);box-shadow:inset 0 0 0 2px var(--heat)}
@@ -302,6 +319,7 @@ const T = {
     "display.blinking.delta": "Bereit ab", "display.blinking.deltaHint": "Abweichung vom Soll, ab der „Bereit“ gilt",
     "standby.enabled": "Standby", "standby.enabledHint": "Heizung aus, wenn die Maschine länger nicht benutzt wird",
     "standby.time": "Nach", "hardware.sensors.watertank.enabled": "Füllstandssensor",
+    "standby.warm_temp": "Im Standby warm halten", "standby.warm_tempHint": "0 = Heizung im Standby aus", "standby.warm_hours": "Danach ganz aus nach",
     "hardware.sensors.watertank.mode": "Schaltart", "display.language": "Sprache",
     "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I-Max",
     "brew.heat_boost": "Heizen beim Bezug", "brew.heat_boostHint": "Mindestleistung, solange die Pumpe läuft (0 = aus)",
@@ -319,17 +337,26 @@ const T = {
     restarting: "Startet neu …", uploaded: "Eingespielt, startet neu", version: "Version", restartNow: "Jetzt neu starten",
     sSchedule: "Zeitplan", "schedule.enabled": "Automatisch einschalten", "schedule.enabledHint": "Hauptschalter bleibt dafür an",
     "schedule.on": "Ein um", "schedule.off": "Aus um", "schedule.offHint": "optional", "schedule.days": "Tage", dayNames: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+    planNone: "aus", planOn: "Ein", planOff: "Aus", planAdd: "Zeit hinzufügen", planAdd2: "Zweites Fenster", planRemove: "Fenster entfernen", planCopy: "Für alle Tage übernehmen", planCopied: "Für alle Tage übernommen",
+    "schedule.pause_until": "Urlaub", "schedule.pause_untilHint": "Zeitplan pausieren, bis einschließlich", holidayUntil: "pausiert bis {d}", holidayEnd: "Beenden", holidayPick: "Datum wählen", holidayPill: "Urlaub bis {d}",
     "brew.temp_end": "Verlauf im Bezug", "brew.temp_endHint": "Soll ändert sich bis zum Bezugsende um so viel (0 = aus)",
     sCount: "Zähler", cToday: "heute", cWeek: "Woche", cTotal: "gesamt", cCoffee: "Kaffee", cTodayN: "{n} heute", cWeekN: "{n} diese Woche",
     sDescale: "Entkalken", descaleSince: "≈ {l} l seit dem Entkalken am {d}", descaleCounted: "≈ {l} l bisher gezählt", "descale.litres": "Erinnern bei", "descale.litresHint": "0 = nie",
     descaled: "Entkalkt", reallyDescaled: "Entkalken erledigt? Der Zähler beginnt wieder bei 0.", descaleDue: "Entkalken fällig (≈ {l} l). Danach in Wartung bestätigen.",
     bfIn: "Backflush in {n} Bezügen", descaleIn: "Entkalken in ≈ {l} l", dripIn: "Tropfschale ≈ {ml} ml", careCard: "Pflege",
     cleanStart: "Reinigung mit Reiniger", clean1: "Reinigung: Reiniger ins Blindsieb, dann Bezugsschalter an.", clean2: "Blindsieb ausspülen, Bezugsschalter aus und wieder an: Klarspülen.", clean3: "Klarspülen mit Wasser.",
-    chNote: "Durchfluss sprang – Kanalbildung?", refSet: "Als Referenz", refClear: "Referenz entfernen", refChip: "Referenz", refSaved: "Als Referenz gespeichert", refCleared: "Referenz entfernt",
+    chNote: "Durchfluss sprang – Kanalbildung?", handStop: "von Hand gestoppt", handStopNote: "Von Hand gestoppt, bevor Zeit oder Gewicht erreicht war.", refSet: "Als Referenz", refClear: "Referenz entfernen", refChip: "Referenz", refSaved: "Als Referenz gespeichert", refCleared: "Referenz entfernt",
     lastShot: "Letzter Bezug", todayCard: "Heute", tomorrow: "morgen", sPower: "Ein & Aus", fine: "Feineinstellung",
-    heatOn: "an", heatOnStandby: "an · Standby in {n} min", heatStandby: "Standby · Bezugsschalter weckt", heatOff: "aus: die Maschine heizt nicht",
+    heatOn: "an", heatOnStandby: "an · Standby in {n} min", heatStandby: "Standby · Bezugsschalter weckt", heatStandbyWarm: "Standby · warm {c} °C, aus in {t}", heatOff: "aus: die Maschine heizt nicht",
     toStandby: "In Standby schalten", wakeUp: "Aufwecken", standbyNow: "Standby · der Bezugsschalter oder dieser Knopf weckt die Maschine", notNow: "Gerade nicht möglich",
     exportShots: "Bezüge exportieren", descaleHow: "So geht's",
+    dsStart: "Entkalken starten", dsNeedsSensor: "Das Programm braucht den Füllstandssensor: er beendet die Durchläufe.",
+    dsConfirm: "Entkalker nach Packungsangabe in den Tank, Siebträger raus, großes Gefäß unter die Gruppe. Die Heizung geht aus; ist die Maschine warm, wartet das Programm, bis sie unter 60 °C ist. Danach 8 Runden mit je 10 s Pumpen und 5 min Einwirken, der Rest der Lösung, dann zweimal ein Tank klares Wasser. Dauer etwa 1 Stunde. Starten?",
+    dsCooling: "Heizung aus, kühlt ab: {c} °C (startet unter 60 °C)", dsRound: "Runde {r} von {n}: {what}, noch {t}", dsPumping: "pumpt", dsSoaking: "wirkt ein",
+    dsRefill: "Tank leer: Entkalker-Lösung nachfüllen, dann Weiter.", dsRest: "Der Rest der Lösung läuft durch, bis der Tank leer ist.",
+    dsWaitRinse: "Tank ausspülen und mit klarem Wasser füllen, Gefäß leeren, dann Weiter (Klarspülen {p} von 2).", dsRinse: "Klarspülen {p} von 2: läuft, bis der Tank leer ist.",
+    dsNext: "Weiter", dsStop: "Abbrechen", dsReallyStop: "Entkalken abbrechen? Die Pumpe stoppt, die Heizung geht wieder an.", dsDone: "Entkalken fertig, der Zähler steht wieder bei 0", dsStopped: "Entkalken abgebrochen",
+    dsTankEmpty: "Erst den Tank füllen", dsChip: "Entkalken",
     sDrip: "Tropfschale", "drip.capacity": "Fasst", "drip.capacityHint": "einmal ausmessen; 0 = keine Erinnerung", dripNow: "≈ {ml} ml von {cap} ml (geschätzt)", dripDue: "Tropfschale leeren (≈ {ml} ml)", dripEmptied: "Geleert",
     bfProgress: "Backflush: Zyklus {c} von {n} · {p} · noch ≈ {s} s",
     descale1: "Entkalker nach Packungsangabe in den Tank.", descale2: "Ohne Siebträger, Gefäß unter die Gruppe: Bezugsschalter immer wieder kurz an, dazwischen einwirken lassen, bis der halbe Tank durch ist.",
@@ -399,6 +426,7 @@ const T = {
     "display.blinking.delta": "Ready within", "display.blinking.deltaHint": "Distance from target that counts as ready",
     "standby.enabled": "Standby", "standby.enabledHint": "Heater off when the machine is not used for a while",
     "standby.time": "After", "hardware.sensors.watertank.enabled": "Level sensor",
+    "standby.warm_temp": "Keep warm in standby", "standby.warm_tempHint": "0 = heater off in standby", "standby.warm_hours": "Then off after",
     "hardware.sensors.watertank.mode": "Switch type", "display.language": "Language",
     "pid.regular.kp": "Kp", "pid.regular.tn": "Tn", "pid.regular.tv": "Tv", "pid.regular.i_max": "I max",
     "brew.heat_boost": "Heating during a shot", "brew.heat_boostHint": "Minimum power while the pump runs (0 = off)",
@@ -416,17 +444,26 @@ const T = {
     restarting: "Restarting …", uploaded: "Restored, restarting", version: "Version", restartNow: "Restart now",
     sSchedule: "Schedule", "schedule.enabled": "Switch on automatically", "schedule.enabledHint": "The main switch stays on for it",
     "schedule.on": "On at", "schedule.off": "Off at", "schedule.offHint": "optional", "schedule.days": "Days", dayNames: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    planNone: "off", planOn: "On", planOff: "Off", planAdd: "Add a time", planAdd2: "Second window", planRemove: "Remove window", planCopy: "Use for all days", planCopied: "Used for all days",
+    "schedule.pause_until": "Holiday", "schedule.pause_untilHint": "Pause the schedule through", holidayUntil: "paused until {d}", holidayEnd: "End", holidayPick: "Pick a date", holidayPill: "Holiday until {d}",
     "brew.temp_end": "Course during the shot", "brew.temp_endHint": "The setpoint changes by this until the end of the shot (0 = off)",
     sCount: "Counters", cToday: "today", cWeek: "week", cTotal: "total", cCoffee: "coffee", cTodayN: "{n} today", cWeekN: "{n} this week",
     sDescale: "Descaling", descaleSince: "≈ {l} l since descaling on {d}", descaleCounted: "≈ {l} l counted so far", "descale.litres": "Remind at", "descale.litresHint": "0 = never",
     descaled: "Descaled", reallyDescaled: "Descaling done? The counter starts again at 0.", descaleDue: "Descaling due (≈ {l} l). Confirm in Care afterwards.",
     bfIn: "backflush in {n} shots", descaleIn: "descaling in ≈ {l} l", dripIn: "drip tray ≈ {ml} ml", careCard: "Care",
     cleanStart: "Clean with detergent", clean1: "Cleaning: detergent into the blind basket, then the brew switch on.", clean2: "Rinse the blind basket, brew switch off and on again: clear water.", clean3: "Rinsing with clear water.",
-    chNote: "Flow jumped – channeling?", refSet: "Set as reference", refClear: "Remove reference", refChip: "Reference", refSaved: "Saved as reference", refCleared: "Reference removed",
+    chNote: "Flow jumped – channeling?", handStop: "stopped by hand", handStopNote: "Stopped by hand before the time or weight was reached.", refSet: "Set as reference", refClear: "Remove reference", refChip: "Reference", refSaved: "Saved as reference", refCleared: "Reference removed",
     lastShot: "Last shot", todayCard: "Today", tomorrow: "tomorrow", sPower: "On & off", fine: "Fine tuning",
-    heatOn: "on", heatOnStandby: "on · standby in {n} min", heatStandby: "Standby · the brew switch wakes it", heatOff: "off: the machine does not heat",
+    heatOn: "on", heatOnStandby: "on · standby in {n} min", heatStandby: "Standby · the brew switch wakes it", heatStandbyWarm: "Standby · warm {c} °C, off in {t}", heatOff: "off: the machine does not heat",
     toStandby: "Standby now", wakeUp: "Wake up", standbyNow: "Standby · the brew switch or this button wakes the machine", notNow: "Not possible right now",
     exportShots: "Export shots", descaleHow: "How to",
+    dsStart: "Start descaling", dsNeedsSensor: "The program needs the level sensor: it ends the runs.",
+    dsConfirm: "Descaler as the pack says into the tank, portafilter out, a large vessel under the group. The heater goes off; a warm machine is waited for until below 60 °C. Then 8 rounds of 10 s pumping and 5 min soaking, the rest of the solution, then two tanks of clear water. About 1 hour. Start?",
+    dsCooling: "Heater off, cooling down: {c} °C (starts below 60 °C)", dsRound: "Round {r} of {n}: {what}, {t} left", dsPumping: "pumping", dsSoaking: "soaking",
+    dsRefill: "Tank empty: add descaler solution, then Next.", dsRest: "The rest of the solution runs through until the tank is empty.",
+    dsWaitRinse: "Rinse the tank and fill it with clear water, empty the vessel, then Next (clear water {p} of 2).", dsRinse: "Clear water {p} of 2: runs until the tank is empty.",
+    dsNext: "Next", dsStop: "Stop", dsReallyStop: "Stop descaling? The pump stops, the heater goes back on.", dsDone: "Descaling done, the counter is back at 0", dsStopped: "Descaling stopped",
+    dsTankEmpty: "Fill the tank first", dsChip: "Descaling",
     sDrip: "Drip tray", "drip.capacity": "Holds", "drip.capacityHint": "measure it once; 0 = no reminder", dripNow: "≈ {ml} ml of {cap} ml (estimated)", dripDue: "Empty the drip tray (≈ {ml} ml)", dripEmptied: "Emptied",
     bfProgress: "Backflush: cycle {c} of {n} · {p} · ≈ {s} s left",
     descale1: "Descaler into the tank as its pack says.", descale2: "No portafilter, a bowl under the group: brew switch on briefly again and again, let it work in between, until half the tank is through.",
@@ -441,10 +478,10 @@ const optLabel = l => lang === "de" ? (OPTION_DE[l] ?? l) : l;
 
 // ---------- what the tabs show (ids of the firmware's parameters) ----------
 const UNIT = {"brew.heat_boost": "%", "brew.setpoint": "°C", "brew.temp_offset": "°C", "display.blinking.delta": "°C", "brew.by_time.target_time": "s",
-  "brew.by_weight.target_weight": "g", "brew.by_weight.lag": "s", "display.post_brew_timer_duration": "s", "standby.time": "min",
+  "brew.by_weight.target_weight": "g", "brew.by_weight.lag": "s", "display.post_brew_timer_duration": "s", "standby.time": "min", "standby.warm_temp": "°C", "standby.warm_hours": "h",
   "backflush.fill_time": "s", "backflush.flush_time": "s", "pid.regular.tn": "s", "pid.regular.tv": "s"};
 const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1, "display.blinking.delta": .1, "brew.by_time.target_time": .5,
-  "brew.by_weight.target_weight": .5, "brew.by_weight.lag": .05, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
+  "brew.by_weight.target_weight": .5, "brew.by_weight.lag": .05, "display.post_brew_timer_duration": .5, "standby.time": 5, "standby.warm_temp": 5, "standby.warm_hours": .5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
 const PREFIX = {}; // before the number, e.g. "1:" for a ratio
@@ -462,7 +499,7 @@ const TABS = [
     ["sCoffee", ["brew.grinder", "brew.grind_scale", "brew.beans"]],
     ["sPreinf", ["brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"]],
     ["sTemp", ["brew.temp_end"]],
-    ["sPower", ["standby.enabled", "standby.time", "brew.warmup_flush", "brew.warmup_flush_wait", "hardware.sensors.watertank.enabled", "schedule.enabled", "schedule.on", "schedule.off", "schedule.days"]], // powerCard()
+    ["sPower", ["standby.enabled", "standby.time", "standby.warm_temp", "standby.warm_hours", "brew.warmup_flush", "brew.warmup_flush_wait", "hardware.sensors.watertank.enabled", "schedule.enabled", "schedule.plan", "schedule.pause_until"]], // powerCard()
     ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn"]],
     ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
     ["sTank", ["hardware.sensors.watertank.enabled", "hardware.sensors.watertank.mode"]],
@@ -478,9 +515,9 @@ const TABS = [
 ];
 
 // rows shown only while their switch is on
-const SHOWN_IF = {"brew.pre_infusion.time": "brew.pre_infusion.enabled", "brew.pre_infusion.pause": "brew.pre_infusion.enabled", "standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
+const SHOWN_IF = {"standby.warm_hours": "standby.warm_temp", "brew.pre_infusion.time": "brew.pre_infusion.enabled", "brew.pre_infusion.pause": "brew.pre_infusion.enabled", "standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
   "brew.by_weight.auto_tare": "brew.by_weight.enabled",
-  "brew.warmup_flush_wait": "brew.warmup_flush", "schedule.on": "schedule.enabled", "schedule.off": "schedule.enabled", "schedule.days": "schedule.enabled"};
+  "brew.warmup_flush_wait": "brew.warmup_flush", "schedule.plan": "schedule.enabled", "schedule.pause_until": "schedule.enabled"};
 const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint", "brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"];
 // what a bean keeps (src/beanProfiles.h): switching beans sets these
 const RECIPE = ["brew.dose", "brew.grind", "brew.by_weight.target_weight", "brew.setpoint", "brew.by_weight.lag"];
@@ -667,7 +704,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, bfc: 0, bfn: 0, bfp: 0, rinse: false, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, bfc: 0, bfn: 0, bfp: 0, rinse: false, dsc: 0, dsr: 0, dsp: 0, dst: -1, dsf: false, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -682,6 +719,7 @@ function statusView(m) {
   const cn = el("div", "note clean"); cn.hidden = true; m.append(cn); // paintFlush()
   const bp = el("div", "note bfprog"); bp.hidden = true; m.append(bp); // paintFlush(): the backflush running
   m.append(dripNote()); // paintCare()
+  m.append(dsNote()); // paintDescale()
   const dn = el("div", "note"); dn.id = "descaleNote"; dn.hidden = true; m.append(dn); // paintCare()
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
@@ -972,6 +1010,7 @@ function paintShots(box = $("#shotList")) {
     const r = el("div", "shot" + (shotKey(x) === openShot ? " open" : "")), cv = el("div", "curve");
     const when = el("small", null, whenText(x.at));
     if (coldStart(x)) when.append(" · ", el("span", "cold", t("coldStart")));
+    if (x.hs) when.append(" · ", el("span", "hand", t("handStop"))); // ended early with the switch (firmware: kStoppedByHand)
     const g = el("span", null, x.g == null ? "–" : num(x.g, 1) + " g"), dev = deviation(x);
     if (dev != null) g.append(el("small", "dev" + (Math.abs(dev) > 1 ? " off" : ""), signed(dev)));
     r.append(el("b", null, num(x.s, 1) + " s"), g, when, el("i", null, "›"));
@@ -1062,6 +1101,7 @@ function fillDetail(cv, x, i) {
     cv.append(el("canvas"), el("div", "legend", (d.w ? `<span><i style="background:#ece2d0"></i>${t("shotWeight")}</span>` : "") + (d.f ? `<span><i style="background:var(--cool)"></i>${t("flowLine")}</span>` : "") + `<span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("pumpOff")}</span>`));
   }
   if (x.ch) cv.append(el("p", "shotinfo ch", t("chNote")));
+  if (x.hs) cv.append(el("p", "shotinfo", t("handStopNote")));
   if (rc && Math.abs(rc.d) >= 1.5) cv.append(el("p", "shotinfo ch", t(rc.d < 0 ? "fasterRef" : "slowerRef").replace("{s}", num(Math.abs(rc.d), 1))));
   cv.append(tasteRow(x, i));
   const others = shots.filter(o => o !== x), ref = reference && !isRef(x);
@@ -1306,6 +1346,7 @@ function coffeeContext() {
     if (x.tw != null) p.push(`Ziel ${num(x.tw, 1)} g, Pumpe aus bei ${x.sw != null ? num(x.sw, 1) : "?"} g (${num(x.ld ?? 0, 1)} g vor dem Ziel${x.lg != null && x.fs != null ? `: gelernte Nachlaufzeit ${num(x.lg, 2)} s × Durchfluss beim Stopp ${num(x.fs, 1)} g/s` : ""}), Nachlauf ${x.sw != null && x.g != null ? num(Math.max(0, x.g - x.sw), 1) : "?"} g, ${deviation(x) != null ? signed(deviation(x)) : "?"} g zum Ziel`);
     if (x.t0 != null) p.push(`Brühtemperatur beim Start ${num(x.t0, 1)} °C`);
     if (x.ch) p.push("Durchfluss sprang während des Bezugs plötzlich an (Hinweis auf Kanalbildung)");
+    if (x.hs) p.push("vom Nutzer vorzeitig mit dem Bezugsschalter beendet, bevor Zielzeit oder Zielgewicht erreicht waren");
     out.push(`${i + 1}. ${whenText(x.at)}: ${p.join(", ")}`);
   });
   if (reference) { const x = reference.shot, r10 = t10Of(reference.curve); out.push(`Referenzbezug, vom Nutzer als Vorbild gewählt (${whenText(x.at)}): ${[num(x.s, 1) + " s", x.g != null ? num(x.g, 1) + " g" : "", x.d ? num(x.d, 1) + " g Kaffee" : "", x.m ? "Mahlgrad " + x.m : "", x.b ? "Bohne " + x.b : "", x.fd != null ? `erster Tropfen nach ${num(x.fd, 1)} s` : "", r10 != null ? `10 g nach ${num(r10, 1)} s` : ""].filter(Boolean).join(", ")}.`); }
@@ -1464,6 +1505,7 @@ function stateText() {
   const s = live.state, d = Math.abs((live.temp ?? 0) - (live.target ?? 0)), band = P["display.blinking.delta"]?.value ?? .5;
   const map = {0: ["start", "var(--faint)"], 20: [null, "var(--brew)"], 25: ["flush", "var(--brew)"], 30: ["steam", "var(--heat)"], 40: ["water", "var(--cool)"],
     50: ["backflush", "var(--cool)"], 60: ["pidOff", "var(--faint)"], 70: ["tank", "var(--cool)"], 80: ["standby", "var(--faint)"], 100: ["overtemp", "var(--err)"], 110: ["sensor", "var(--err)"]};
+  if (live.dsc > 0 && live.dsc < 7) return [t("dsChip") + (live.dsc === 2 ? ` ${live.dsr}/8` : ""), "var(--cool)"]; // the program holds the flush state (25)
   if (s === 20) return [t(live.rinse ? "flush" : "brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"]; // the rinse after a shot: not a shot
   if (s === 50 && live.bfc > 0) return [`${t("backflush")} ${live.bfc}/${live.bfn}`, "var(--cool)"];
   if (s === 25 && flushRunning()) return [t("flush") + (live.pulses > 1 ? " " + live.pulse + "/" + live.pulses : ""), "var(--brew)"];
@@ -1630,7 +1672,7 @@ function paintLive() {
   $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip i").className = live.ok && live.state === 70 ? "drop" : ""; // the tank: a drop, not only a colour $("#chip").style.color = col === "var(--faint)" ? "" : col;
   const title = txt + " · Orione"; // also in the tab and app switcher
   if (document.title !== title) document.title = title;
-  paintAlarm(); paintShotLive(); paintDial(); paintFlush(); paintPills(); paintPower();
+  paintAlarm(); paintShotLive(); paintDial(); paintFlush(); paintPills(); paintPower(); paintDescale();
   if (live.ok && live.scale !== lastScaleState) { const was = lastScaleState; lastScaleState = live.scale; if (was !== null && $("#scaleNow")) loadScale(); } // connected or lost: the settings card too
   const n = $("#tNow");
   if (!n) return;
@@ -1680,10 +1722,12 @@ function connectLive() {
       P["pid.enabled"].value = pidNow;
       const sw = $("#pidSw"); if (sw) { sw.classList.toggle("on", !!pidNow); sw.setAttribute("aria-checked", String(!!pidNow)); }
     }
+    // the descaling program ended: done after the last rinse (the counter is 0 again), otherwise stopped
+    if (liveSeen && live.dsc > 0 && !(d.dsc > 0)) { toast(t(live.dsc >= 6 ? "dsDone" : "dsStopped")); setTimeout(loadCare, 1500); }
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, bfc: d.bfc ?? 0, bfn: d.bfn ?? 0, bfp: d.bfp ?? 0, rinse: !!d.rinse, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, bfc: d.bfc ?? 0, bfn: d.bfn ?? 0, bfp: d.bfp ?? 0, rinse: !!d.rinse, dsc: d.dsc ?? 0, dsr: d.dsr ?? 0, dsp: d.dsp ?? 0, dst: d.dst ?? -1, dsf: !!d.dsf, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -2005,12 +2049,60 @@ function descaleCard() {
     await loadCare();
   };
   w.append(b); c.append(w);
+  c.append(descaleProgram());
   const how = el("details", "fine"), ol = el("ol", "howto");
   how.append(el("summary", null, t("descaleHow")));
   for (const k of ["descale1", "descale2", "descale3", "descale4"]) ol.append(el("li", null, t(k)));
   how.append(ol, el("p", "shotinfo", t("descaleSrc"))); c.append(how);
   setTimeout(paintCare);
   return c;
+}
+// ---------- descaling as a program (src/descaleProgram.h, lib/Orione/src/OrioneDescale.h; Dominik 09.10.2026) ----------
+// live values: dsc phase (0 off, 1 cooling, 2 rounds, 3 more solution, 4 rest, 5 clear water then "Weiter", 6 rinsing,
+// 7 done), dsr round, dsp rinse pass, dst seconds left of the step in the rounds, dsf pump on
+function dsText() {
+  const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
+  switch (live.dsc) {
+    case 1: return t("dsCooling").replace("{c}", num(live.temp ?? 0, 0));
+    case 2: return t("dsRound").replace("{r}", live.dsr).replace("{n}", 8).replace("{what}", t(live.dsf ? "dsPumping" : "dsSoaking")).replace("{t}", live.dst >= 0 ? mmss(live.dst) : "–");
+    case 3: return t("dsRefill");
+    case 4: return t("dsRest");
+    case 5: return t("dsWaitRinse").replace("{p}", live.dsp);
+    case 6: return t("dsRinse").replace("{p}", live.dsp);
+    default: return "";
+  }
+}
+async function descaleCall(q) {
+  const r = await post("/descale?" + q).catch(() => null);
+  if (!r?.ok) { const why = r ? await r.text() : ""; toast(why === "tank empty" ? t("dsTankEmpty") : r?.status === 409 ? t("notNow") : t("failed")); }
+  return !!r?.ok;
+}
+function descaleProgram() {
+  const box = el("div", "dsbox");
+  if (!P["hardware.sensors.watertank.enabled"]?.value) { box.append(el("p", "shotinfo", t("dsNeedsSensor"))); return box; }
+  const st = el("p", "shotinfo ds"), w = el("div", "btns"), start = el("button", "btn pri", t("dsStart")), next = el("button", "btn pri", t("dsNext")), stop = el("button", "btn", t("dsStop"));
+  st.id = "dsNow"; start.id = "dsStartBtn"; next.id = "dsNextBtn"; stop.id = "dsStopBtn";
+  start.onclick = async () => { if (confirm(t("dsConfirm"))) await descaleCall("start=1"); };
+  next.onclick = () => descaleCall("next=1");
+  stop.onclick = async () => { if (confirm(t("dsReallyStop"))) await descaleCall("stop=1"); };
+  w.append(start, next, stop); box.append(st, w);
+  setTimeout(paintDescale);
+  return box;
+}
+// the program's state in Wartung and as a note on the overview
+function paintDescale() {
+  const on = live.ok && live.dsc > 0 && live.dsc < 7, waiting = on && (live.dsc === 3 || live.dsc === 5), txt = on ? dsText() : "";
+  const st = $("#dsNow"); if (st) { st.hidden = !on; if (st.textContent !== txt) st.textContent = txt; }
+  const sb = $("#dsStartBtn"); if (sb) { sb.hidden = on; sb.disabled = !live.ok || ![10, 60].includes(live.state); }
+  const nb = $("#dsNextBtn"); if (nb) nb.hidden = !waiting;
+  const xb = $("#dsStopBtn"); if (xb) xb.hidden = !on;
+  document.querySelectorAll(".note.ds").forEach(n => { n.hidden = !on; const s = n.firstChild; if (s.textContent !== txt) s.textContent = txt; n.lastChild.hidden = !waiting; });
+}
+function dsNote() {
+  const n = el("div", "note ds"), b = el("button", "btn", t("dsNext"));
+  n.append(el("span"), b); n.hidden = true;
+  b.onclick = () => descaleCall("next=1");
+  return n;
 }
 // heating schedule (src/main.cpp scheduleLoop): minutes of the day, local time; off 1440 = none; days bit 0 = Monday
 const hm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
@@ -2019,9 +2111,10 @@ function powerCard() {
   c.append(el("h2", null, t("sPower")));
   // the warm-up flush only runs with the water level sensor: its rows only then (Dominik, 09.10.2026: here, with a wait)
   const flushRows = P["hardware.sensors.watertank.enabled"]?.value ? ["brew.warmup_flush", "brew.warmup_flush_wait"] : [];
-  for (const id of ["standby.enabled", "standby.time", ...flushRows]) {
+  for (const id of ["standby.enabled", "standby.time", "standby.warm_temp", "standby.warm_hours", ...flushRows]) {
     if (!P[id] || (SHOWN_IF[id] && !P[SHOWN_IF[id]]?.value)) continue;
-    const r = el("div", "row"), ctl = control(id);
+    // keeping warm on or off (0) shows or hides its time
+    const r = el("div", "row"), ctl = id === "standby.warm_temp" ? stepCtl(id, async (k, v) => { const was = P[k].value > 0, ok = await save(k, v); if (ok && (Number(v) > 0) !== was) refresh(); return ok; }) : control(id);
     r.append(lbl(id), ctl); c.append(r);
     if (ctl.classList.contains("sw")) rowToggles(r, ctl);
   }
@@ -2029,62 +2122,120 @@ function powerCard() {
   const r = el("div", "row"), sw = switchCtl("schedule.enabled");
   r.append(lbl("schedule.enabled"), sw); rowToggles(r, sw); c.append(r);
   if (!P["schedule.enabled"].value) return c;
-  for (const id of ["schedule.on", "schedule.off"]) {
-    if (!P[id]) continue;
-    const row = el("div", "row"), inp = el("input", "txt"), shown = () => { inp.value = P[id].value < 1440 ? hm(P[id].value) : ""; };
-    inp.type = "time"; inp.setAttribute("aria-label", t(id)); shown();
-    inp.onchange = async () => {
-      if (!inp.value && id === "schedule.on") return shown(); // the on time is needed, the off time not
-      const [h, mi] = inp.value.split(":").map(Number);
-      if (!await save(id, inp.value ? h * 60 + mi : 1440)) shown();
-      paintPills();
-    };
-    row.append(lbl(id), inp); c.append(row);
-  }
-  if (P["schedule.days"]) {
-    const row = el("div", "row stack"), d = el("div", "days");
-    t("dayNames").forEach((name, k) => {
-      const b = el("button", P["schedule.days"].value & (1 << k) ? "on" : "", name);
-      b.setAttribute("aria-pressed", String(!!(P["schedule.days"].value & (1 << k))));
-      b.onclick = async () => {
-        const v = P["schedule.days"].value ^ (1 << k);
-        if (!await save("schedule.days", v)) return;
-        b.classList.toggle("on", !!(v & (1 << k))); b.setAttribute("aria-pressed", String(!!(v & (1 << k)))); paintPills();
-      };
-      d.append(b);
-    });
-    row.append(lbl("schedule.days"), d); c.append(row);
-  }
+  if (P["schedule.plan"]) c.append(planBox());
+  if (P["schedule.pause_until"]) c.append(holidayRow());
   return c;
+}
+// ---------- the schedule per weekday (schedule.plan, lib/Orione/src/OrioneCare.h WeekPlan; Dominik 09.10.2026) ----------
+// Monday..Sunday separated by ";", up to 2 windows "HH:MM-HH:MM" ("HH:MM": no off time) separated by ","
+const PLAN_WINDOWS = 2;
+const toMin = x => { const m = /^(\d{1,2}):(\d{2})$/.exec(x ?? ""); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : null; };
+function parsePlan(text) {
+  const days = String(text ?? "").split(";");
+  if (days.length !== 7) return Array.from({length: 7}, () => []); // "?": the firmware takes the old settings over at its start
+  return days.map(d => d.split(",").filter(Boolean).slice(0, PLAN_WINDOWS).map(w => { const [a, b] = w.split("-"); return {on: toMin(a), off: toMin(b)}; }).filter(w => w.on != null));
+}
+const planText = plan => plan.map(d => d.map(w => hm(w.on) + (w.off != null && w.off !== w.on ? "-" + hm(w.off) : "")).join(",")).join(";");
+const winText = w => hm(w.on) + (w.off != null && w.off !== w.on ? "–" + hm(w.off) : "");
+let planOpen = -1; // the day being edited
+function planBox() {
+  const box = el("div", "plan"), plan = parsePlan(P["schedule.plan"].value);
+  box.id = "planBox";
+  t("dayNames").forEach((name, k) => {
+    const b = el("button", "planday" + (planOpen === k ? " open" : ""));
+    b.append(el("b", null, name), el("span", plan[k].length ? "" : "off", plan[k].length ? plan[k].map(winText).join(" · ") : t("planNone")), el("i", null, "›"));
+    b.setAttribute("aria-expanded", String(planOpen === k));
+    b.onclick = () => { planOpen = planOpen === k ? -1 : k; box.replaceWith(planBox()); };
+    box.append(b);
+    if (planOpen === k) box.append(planEditor(k, plan));
+  });
+  return box;
+}
+async function savePlan(plan) {
+  const ok = await save("schedule.plan", planText(plan));
+  $("#planBox")?.replaceWith(planBox()); paintPills();
+  return ok;
+}
+function planEditor(k, plan) {
+  const e = el("div", "planedit"), day = plan[k], name = t("dayNames")[k];
+  day.forEach((w, j) => {
+    const r = el("div", "planwin"), on = el("input", "txt"), off = el("input", "txt"), del = el("button", "btn", "−");
+    on.type = off.type = "time"; on.value = hm(w.on); off.value = w.off != null && w.off !== w.on ? hm(w.off) : "";
+    on.setAttribute("aria-label", `${name} ${t("planOn")} ${j + 1}`); off.setAttribute("aria-label", `${name} ${t("planOff")} ${j + 1}`); del.setAttribute("aria-label", t("planRemove"));
+    on.onchange = () => { const m = toMin(on.value); if (m == null) { on.value = hm(w.on); return; } w.on = m; savePlan(plan); }; // the on time is needed, the off time not
+    off.onchange = () => { w.off = off.value ? toMin(off.value) : null; savePlan(plan); };
+    del.onclick = () => { day.splice(j, 1); savePlan(plan); };
+    r.append(el("small", null, t("planOn")), on, el("small", null, t("planOff")), off, del);
+    e.append(r);
+  });
+  const acts = el("div", "planacts");
+  if (day.length < PLAN_WINDOWS) {
+    const add = el("button", "btn", t(day.length ? "planAdd2" : "planAdd"));
+    add.onclick = () => { day.push(day.length ? {on: 17 * 60, off: 20 * 60} : {on: 7 * 60, off: null}); savePlan(plan); };
+    acts.append(add);
+  }
+  if (day.length) {
+    const all = el("button", "btn", t("planCopy"));
+    all.onclick = async () => { if (await savePlan(plan.map(() => day.map(w => ({...w}))))) toast(t("planCopied")); };
+    acts.append(all);
+  }
+  e.append(acts);
+  return e;
+}
+// holiday: the schedule pauses through a day (schedule.pause_until, local days since 1970 as the firmware counts them)
+function holidayRow() {
+  const r = el("div", "row"), until = P["schedule.pause_until"].value;
+  r.append(lbl("schedule.pause_until"));
+  if (until >= dayNow()) {
+    const w = el("div", "btns"), b = el("button", "btn", t("holidayEnd"));
+    b.onclick = async () => { if (await save("schedule.pause_until", 0)) refresh(); };
+    w.append(el("span", "holiday", t("holidayUntil").replace("{d}", roastDate(until))), b); r.append(w);
+    return r;
+  }
+  const box = el("div", "datebox"), i = el("input");
+  i.type = "date"; i.setAttribute("aria-label", t("schedule.pause_until"));
+  const today = new Date(); i.min = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  i.onchange = async () => {
+    if (!i.value) return;
+    const [y, m, d] = i.value.split("-").map(Number);
+    if (await save("schedule.pause_until", dayOf(new Date(y, m - 1, d)))) { refresh(); paintPills(); }
+  };
+  box.append(el("span", null, t("holidayPick")), i); r.append(box);
+  return r;
 }
 // the next switch-on by the schedule, in the browser's time zone (the machine's: Germany)
 function nextOn() {
-  const v = id => P[id]?.value;
-  if (!v("schedule.enabled") || v("schedule.on") == null) return null;
-  const days = v("schedule.days") ?? 127, on = v("schedule.on"), now = new Date();
+  if (!P["schedule.enabled"]?.value || !P["schedule.plan"]) return null;
+  const plan = parsePlan(P["schedule.plan"].value), now = new Date(), pause = P["schedule.pause_until"]?.value ?? 0;
   for (let k = 0; k < 8; k++) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, Math.floor(on / 60), on % 60);
-    if (d > now && days & (1 << (d.getDay() + 6) % 7)) return d;
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k);
+    if (pause && dayOf(day) <= pause) continue; // holiday
+    for (const on of plan[(day.getDay() + 6) % 7].map(w => w.on).sort((a, b) => a - b)) {
+      const d = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(on / 60), on % 60);
+      if (d > now) return d;
+    }
   }
   return null;
 }
 // a line of small states under the temperature: scale, schedule, standby, WiFi
-let pillsText = "";
 function paintPills() {
   const box = $("#pills");
   if (!box) return;
   const out = [], pill = (txt, col) => out.push(`<span><i style="background:${col}"></i>${txt}</span>`);
   if (live.ok && (live.scale === 1 || live.scale === 2)) pill(live.scale === 2 ? t("scale") + (live.battery != null ? ` · ${live.battery} %` : "") : t("scaleGone"), live.scale === 2 ? (live.battery != null && live.battery <= 20 ? "var(--heat)" : "var(--ready)") : "var(--faint)");
+  const holiday = P["schedule.enabled"]?.value && (P["schedule.pause_until"]?.value ?? 0) >= dayNow();
+  if (holiday) pill(t("holidayPill").replace("{d}", roastDate(P["schedule.pause_until"].value)), "var(--calm)");
   const on = nextOn();
   if (on) {
     const days = Math.round((new Date(on.toDateString()) - new Date(new Date().toDateString())) / 864e5);
-    pill(t("schedNext").replace("{d}", days === 0 ? t("today") : days === 1 ? t("tomorrow") : on.toLocaleDateString(loc(), {weekday: "short"})).replace("{t}", hm(P["schedule.on"].value)), "var(--heat)");
+    pill(t("schedNext").replace("{d}", days === 0 ? t("today") : days === 1 ? t("tomorrow") : on.toLocaleDateString(loc(), {weekday: "short"})).replace("{t}", hm(on.getHours() * 60 + on.getMinutes())), "var(--heat)");
   }
   if (care?.rssi < 0) pill(`${t("wifi")} −${-care.rssi} dBm`, care.rssi >= -67 ? "var(--ready)" : care.rssi >= -75 ? "var(--heat)" : "var(--err)");
   const ps = $("#pidState");
-  if (ps) ps.textContent = live.ok && live.state === 80 ? t("heatStandby") : !P["pid.enabled"]?.value ? t("heatOff") : care?.standby >= 0 ? t("heatOnStandby").replace("{n}", care.standby) : t("heatOn");
+  const dur = m => m >= 60 ? `${Math.floor(m / 60)} h` + (m % 60 ? ` ${m % 60} min` : "") : `${m} min`;
+  if (ps) ps.textContent = live.ok && live.state === 80 ? (care?.warm >= 0 ? t("heatStandbyWarm").replace("{c}", fmt(P["standby.warm_temp"]?.value ?? 70)).replace("{t}", dur(care.warm)) : t("heatStandby")) : !P["pid.enabled"]?.value ? t("heatOff") : care?.standby >= 0 ? t("heatOnStandby").replace("{n}", care.standby) : t("heatOn");
   const html = out.join("");
-  if (html !== pillsText || box.hidden === !html) { pillsText = html; box.innerHTML = html; box.hidden = !html; }
+  if (html !== box.dataset.html || box.hidden === !html) { box.dataset.html = html; box.innerHTML = html; box.hidden = !html; } // per element: a new one after a re-render is filled
 }
 // the newest shot on the overview: its numbers, the taste, Claude's word (folded) and the counters; a tap opens it
 // the shot counters, with the last shot (or alone without one)
@@ -2185,9 +2336,9 @@ async function exportShots() {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   };
   const de = lang === "de", n = (v, d = 1) => v == null ? "" : de ? Number(v).toFixed(d).replace(".", ",") : Number(v).toFixed(d), q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const head = ["at", "s", "g", "d", "m", "b", "ratio", "r", "t0", "fd", "tw", "sw", "lg", "pi", "ch"];
+  const head = ["at", "s", "g", "d", "m", "b", "ratio", "r", "t0", "fd", "tw", "sw", "lg", "pi", "ch", "hs"];
   const rows = shots.map(x => [x.at ? new Date(x.at * 1000).toISOString() : "", n(x.s), n(x.g), n(x.d), q(x.m), q(x.b), x.d && x.g != null ? n(x.g / x.d, 2) : "", ["", "sour", "good", "bitter"][x.r] ?? "",
-    n(x.t0), n(x.fd), n(x.tw), n(x.sw), n(x.lg, 2), x.pi ? q(x.pi.join("/")) : "", x.ch ? 1 : 0].join(de ? ";" : ","));
+    n(x.t0), n(x.fd), n(x.tw), n(x.sw), n(x.lg, 2), x.pi ? q(x.pi.join("/")) : "", x.ch ? 1 : 0, x.hs ? 1 : 0].join(de ? ";" : ","));
   download(`orione-shots-${stamp}.json`, "application/json", JSON.stringify(out, null, 1));
   download(`orione-shots-${stamp}.csv`, "text/csv", [head.join(de ? ";" : ",")].concat(rows).join("\n"));
 }

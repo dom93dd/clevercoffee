@@ -73,6 +73,15 @@ namespace rd {
             bool backflushDone = false;      // backflush over, brew switch still on: switch it off (Orione)
             bool switchWakes = false;        // standby: the brew switch wakes the machine (Orione)
             int16_t clockMinutes = -1;       // standby: local time of day in minutes, -1 = no clock (no NTP yet)
+            bool standbyWarm = false;        // standby: the block is kept warm (Orione), "warm" before the temperature
+            // descaling program (Orione, OrioneDescale.h): phase 0 off, 1 cooling, 2 rounds, 3 more solution, 4 rest
+            // through, 5 clear water then "Weiter", 6 rinsing, 7 done
+            uint8_t descalePhase = 0;
+            uint8_t descaleRound = 0;      // 1..descaleRounds in the rounds
+            uint8_t descaleRounds = 8;
+            uint8_t descalePass = 0;       // rinse pass 1..2
+            int16_t descaleSecondsLeft = -1; // of pumping or soaking in the rounds
+            bool descalePumping = false;
             bool steamByThermostat = false;  // steam screen: the original steam thermostat heats, the firmware only watches
             bool steamCooling = false;       // after steam: too hot for espresso until it has cooled down
             float flushTime = 0;

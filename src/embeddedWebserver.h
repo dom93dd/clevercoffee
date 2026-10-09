@@ -133,6 +133,11 @@ namespace live_events {
             int bfn;       // backflush: cycles in all
             int bfp;       // backflush: 0 idle, 1 pumping (filling), 2 pause (flushing), 3 last pause
             bool rinse;    // the brew switch runs the rinse after a shot (state 20, but not a shot: rinseRunning())
+            int dsc;       // descaling: orione::DescaleProgram::Phase, 0 off
+            int dsr;       // its round 1..8 (0 outside the rounds)
+            int dsp;       // its rinse pass 1..2 (0 otherwise)
+            int dst;       // seconds left of pumping or soaking in the rounds, -1 otherwise
+            bool dsf;      // its pump runs
     };
 
     inline portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
@@ -140,7 +145,7 @@ namespace live_events {
     inline TaskHandle_t task = nullptr;
 
     inline void run(void*) {
-        char json[352]; // ~305 at most
+        char json[416]; // ~350 at most
 
         for (;;) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -165,7 +170,8 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
                 n += snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s,"clean":%d)", v.held ? "true" : "false", v.sw ? "true" : "false",
                               v.steam, v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false", v.clean);
-                snprintf(json + n, sizeof(json) - n, R"(,"bfc":%d,"bfn":%d,"bfp":%d,"rinse":%d})", v.bfc, v.bfn, v.bfp, v.rinse ? 1 : 0);
+                n += snprintf(json + n, sizeof(json) - n, R"(,"bfc":%d,"bfn":%d,"bfp":%d,"rinse":%d)", v.bfc, v.bfn, v.bfp, v.rinse ? 1 : 0);
+                snprintf(json + n, sizeof(json) - n, R"(,"dsc":%d,"dsr":%d,"dsp":%d,"dst":%d,"dsf":%d})", v.dsc, v.dsr, v.dsp, v.dst, v.dsf ? 1 : 0);
                 events.send(json, "new_temps", millis());
             }
         }
@@ -730,6 +736,33 @@ inline void serverSetup() {
         request->send(202, "text/plain", "ok");
     });
 
+    // descaling program (descaleProgram.h, Wartung → Entkalken): ?start=1, ?next=1 ("Weiter"), ?stop=1; applied by loop()
+    server.on("/descale", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!descale::sensorEnabled()) {
+            return request->send(409, "text/plain", "no water level sensor");
+        }
+
+        if (request->hasParam("stop")) {
+            descale::requestFromWeb(descale::kStop);
+        }
+        else if (request->hasParam("next")) {
+            if (!waterTankFull) {
+                return request->send(409, "text/plain", "tank empty");
+            }
+
+            descale::requestFromWeb(descale::kNext);
+        }
+        else if (!descale::running()) {
+            if (!descale::canStart()) {
+                return request->send(409, "text/plain", waterTankFull ? "busy" : "tank empty");
+            }
+
+            descale::requestFromWeb(descale::kStart);
+        }
+
+        request->send(202, "text/plain", "ok");
+    });
+
     // warm-up flush by hand (Wartung): ?start=1 or ?stop=1, applied by loop(); only with a water level sensor
     server.on("/flush", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!warmup_flush::sensorEnabled()) {
@@ -847,7 +880,8 @@ inline void serverSetup() {
     server.on("/care", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         const int standby = standbyModeOn && machineState != kStandby ? static_cast<int>((standbyModeRemainingTimeMillis + 59999) / 60000) : -1;
-        care::writeJson(*response, config.get<float>("descale.litres"), standby, static_cast<int>(WiFi.RSSI()), config.get<float>("drip.capacity"));
+        care::writeJson(*response, config.get<float>("descale.litres"), standby, static_cast<int>(WiFi.RSSI()), config.get<float>("drip.capacity"),
+                        care::standbyWarm.minutesLeft(millis(), static_cast<float>(config.get<double>("standby.warm_hours"))));
         request->send(response);
     }));
 
@@ -1184,7 +1218,8 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                           backflushSwitchReminder, static_cast<int>(care::cleaning.phase()),
                           currBackflushState == kBackflushIdle || currBackflushState == kBackflushFinished ? 0 : currBackflushCycles, backflushCycles,
                           currBackflushState == kBackflushFilling ? 1 : currBackflushState == kBackflushFlushing ? 2 : currBackflushState == kBackflushEnding ? 3 : 0,
-                          rinseRunning()});
+                          rinseRunning(), static_cast<int>(descale::program.phase()), descale::program.round(), descale::program.pass(),
+                          descale::program.secondsLeft(millis()), descale::program.pumping()});
 #else
     if (events.count() > 0) {
         events.send("ping", nullptr, millis());

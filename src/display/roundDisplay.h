@@ -118,10 +118,17 @@ inline rd::Model roundDisplayModel() {
     m.backflushDone = backflushSwitchReminder;
     m.cleaningPhase = static_cast<uint8_t>(care::cleaning.phase());
     m.switchWakes = true; // src/main.cpp kStandby, orione::StandbyWake
+    m.descalePhase = static_cast<uint8_t>(descale::program.phase()); // descaleProgram.h
+    m.descaleRound = static_cast<uint8_t>(descale::program.round());
+    m.descaleRounds = static_cast<uint8_t>(orione::DescaleProgram::kRounds);
+    m.descalePass = static_cast<uint8_t>(descale::program.pass());
+    m.descaleSecondsLeft = static_cast<int16_t>(descale::program.secondsLeft(millis()));
+    m.descalePumping = descale::program.pumping();
 
     if (machineState == kStandby) {
         struct tm now;
         m.clockMinutes = care::localNow(now) ? static_cast<int16_t>(now.tm_hour * 60 + now.tm_min) : -1;
+        m.standbyWarm = care::standbyWarm.active();
     }
 #else
     m.brewTargetTime = static_cast<float>(totalTargetBrewTime / 1000);

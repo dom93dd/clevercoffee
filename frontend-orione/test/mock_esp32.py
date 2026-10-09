@@ -67,6 +67,8 @@ BASE = {
     "TARE_ON": dict(type=1, value=0, min=0, max=1),
     "standby.enabled": dict(type=1, value=0, min=0, max=1),
     "standby.time": dict(type=2, value=35, min=5, max=300),
+    "standby.warm_temp": dict(type=2, value=70.0, min=0, max=90),
+    "standby.warm_hours": dict(type=2, value=2.0, min=0.5, max=12),
     "display.language": dict(type=5, value=0, min=0, max=2, options=["Deutsch", "English", "Español"]),
     "display.blescale_brew_timer": dict(type=1, value=0, min=0, max=1),
     "display.post_brew_timer_duration": dict(type=2, value=10.0, min=0, max=60),
@@ -83,6 +85,8 @@ BASE = {
     "schedule.days": dict(type=0, value=127, min=0, max=127),
     "schedule.on": dict(type=0, value=390, min=0, max=1439),
     "schedule.off": dict(type=0, value=1440, min=0, max=1440),
+    "schedule.plan": dict(type=4, value="06:30;06:30;06:30;06:30;06:30;06:30;06:30", min=0, max=176),  # taken over from the three above (machineCare.h)
+    "schedule.pause_until": dict(type=0, value=0, min=0, max=100000),
     "descale.litres": dict(type=2, value=40.0, min=0, max=300),
     "drip.capacity": dict(type=2, value=600.0, min=0, max=2000),
     "brew.temp_end": dict(type=2, value=0.0, min=-5, max=5),
@@ -207,7 +211,8 @@ class State:
         standby = 23 if self.p["standby.enabled"]["value"] else -1
         cap, drip = self.p["drip.capacity"]["value"], self.care.get("drip", 230)
         return {**self.care, "descaleL": limit, "due": limit > 0 and self.care["water"] >= limit * 1000, "standby": standby, "rssi": self.care.get("rssi", -71),
-                "backflushAt": self.care.get("backflushAt", 0), "drip": drip, "dripCap": cap, "dripDue": cap > 0 and drip >= cap * 0.8}
+                "backflushAt": self.care.get("backflushAt", 0), "drip": drip, "dripCap": cap, "dripDue": cap > 0 and drip >= cap * 0.8,
+                "warm": 100 if self.standby and self.p["standby.warm_temp"]["value"] > 0 else -1}
 
     @staticmethod
     def curve(shot):
@@ -421,6 +426,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self.send(409, "not now")
                     S.standby = True
                     S.p["pid.enabled"]["value"] = 0
+            return self.send(202, "ok")
+        if url.path == "/descale":  # descaling program (src/descaleProgram.h): the test drives the live values itself
+            if not S.p["hardware.sensors.watertank.enabled"]["value"]:
+                return self.send(409, "no water level sensor")
+            if "stop" not in url.query and S.live.get("state") == 70:
+                return self.send(409, "tank empty")
             return self.send(202, "ok")
         if url.path == "/flush":  # warm-up flush by hand: the test drives the live values itself
             if not S.p["hardware.sensors.watertank.enabled"]["value"]:
