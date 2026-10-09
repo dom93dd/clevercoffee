@@ -24,3 +24,6 @@ commit 9afd589, MIT, see `LICENSE`) with three fixes for the slim Orione build. 
    fifth of the airtime, and in the assembled machine, with a weak WiFi signal, the web page got seconds
    slow. A scale switched on is found within ~20 s; `discover()` (the search in the settings) scans at once
    and without rest.
+5. **`pauseScan()`** (09.10.2026): no scan at all while paused; the firmware pauses it while the machine is
+   in standby. A connected scale stays connected, `discover()` still scans, and the scan starts again at once
+   when the pause ends.
