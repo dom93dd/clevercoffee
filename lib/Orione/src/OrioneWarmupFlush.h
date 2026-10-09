@@ -46,6 +46,7 @@ namespace orione {
                     bool tankOk;     // the sensor sees water
                     bool ready;      // nothing else going on (machine state normal, or this flush)
                     bool userActive; // brew switch on, brewing, backflush, hot water, steam
+                    uint32_t settledMs = kSettledMs; // that long steady at the setpoint before the first pulse (setting, 09.10.2026)
             };
 
             /** @return true while valve and pump should run. Call every loop. */
@@ -88,7 +89,7 @@ namespace orione {
                         runMin_ = std::fmin(runMin_, celsius);
                         runMax_ = std::fmax(runMax_, celsius);
 
-                        if (nowMs - settledSince_ >= kSettledMs) {
+                        if (nowMs - settledSince_ >= in.settledMs) {
                             begin(nowMs, kPulses);
                             return true;
                         }

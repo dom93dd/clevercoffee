@@ -27,6 +27,7 @@
 --st:env(safe-area-inset-top,0px);--sl:env(safe-area-inset-left,0px);--sr:env(safe-area-inset-right,0px);
 --sb:env(safe-area-inset-bottom,0px)} /* fitScreen() may lower it in the home screen app */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body,button,input,select,a,label,summary{touch-action:manipulation} /* no double-tap zoom (Dominik 09.10.2026); pinch zoom stays */
 html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 var(--font)}
 button,input,select{font-family:inherit}
 /* a column at least as high as the screen; the tab bar sticks to its bottom (position: fixed is unreliable in iOS home screen apps) */
@@ -70,7 +71,7 @@ nav button.on svg{color:var(--heat)}
 .row.stack{flex-direction:column;align-items:stretch;gap:10px}
 .row.stack .seg{width:100%}
 .row.stack .seg button{flex:1;padding:8px 4px}
-select,.txt,.datein{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:16px;font-weight:600} /* 16 px: iOS does not zoom in */
+select,.txt{flex:none;max-width:52%;background:var(--bg);color:var(--text);border:0;border-radius:12px;padding:10px 12px;font-size:16px;font-weight:600} /* 16 px: iOS does not zoom in */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;background:var(--line);color:var(--text);text-decoration:none}
 .btn.pri{background:var(--heat);color:#1a1006}
 .btn.bad{background:none;color:var(--err);box-shadow:inset 0 0 0 1.5px var(--err)}
@@ -114,7 +115,8 @@ canvas.livecurve,.dialcard canvas.livecurve{width:100%;height:150px;aspect-ratio
 .recipe .txt{max-width:none;width:100%;text-align:center}
 .recipe .bean{grid-column:1/-1}
 .recipe .roast{grid-column:1/-1}
-.recipe .datein{max-width:none;width:100%}
+.datebox{position:relative;display:block;background:var(--bg);border-radius:12px;padding:10px 12px;font-size:16px;font-weight:600;color:var(--text);cursor:pointer}
+.datebox input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;margin:0;font-size:16px;cursor:pointer}
 .recipe .roast span{color:var(--faint)}
 .recipe select{max-width:none;width:100%}
 .beanrow{border-top:1px solid var(--line)}
@@ -166,11 +168,12 @@ body.reboot main{padding-bottom:82px} /* room for the restart bar above the tabs
 .bars{height:120px;margin:6px 0 2px}
 .shot small{color:var(--mute);font-size:13px}
 .empty{color:var(--mute);margin:10px 0 4px}
-.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 6px}
+.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 6px}
 .chips button{border:0;border-radius:12px;background:var(--bg);color:var(--text);font-size:15px;font-weight:600;padding:10px 4px;cursor:pointer}
-.chips small{display:block;margin-top:2px;color:var(--mute);font-size:12px;font-weight:500}
+.chips small{display:block;margin-top:2px;color:var(--mute);font-size:12px;font-weight:500;white-space:nowrap}
 .chips button.on{box-shadow:inset 0 0 0 2px var(--heat)}
 .chips button.on small{color:var(--heat)}
+@media (max-width:380px){.chips small{font-size:11px}} /* four chips side by side on small phones */
 .pair{display:flex;flex-direction:column;gap:6px;flex:none}
 .pills{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:14px}
 .pills span{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:99px;background:var(--bg);font-size:13px;color:var(--mute)}
@@ -240,9 +243,9 @@ const T = {
     sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
     sDisplay: "Display", sPid: "Fortgeschritten", sSystem: "System", sBf: "Backflush", sFlush: "Spülen",
     flushWhat: "Drei Spülstöße à 3 s (20 s Pause) wärmen Schlauch, Gruppe und Siebträger vor. Leeren Siebträger eingespannt lassen, Tasse unterstellen.",
-    "brew.warmup_flush": "Nach dem Kaltstart automatisch", "brew.warmup_flushHint": "sobald die Temperatur 2 min stabil am Soll ist",
+    "brew.warmup_flush": "Automatisch spülen", "brew.warmup_flushHint": "nach dem Kaltstart: 3 kurze Spülstöße", "brew.warmup_flush_wait": "Wartezeit", "brew.warmup_flush_waitHint": "so lange stabil am Soll, dann spülen",
     flushNow: "Jetzt spülen", flushStop: "Spülen abbrechen", flushPulse: "Spülstoß {n} von {m}", flushPause: "Pause, gleich Spülstoß {n} von {m}", rinsing: "Spült …",
-    flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist.",
+    flushPending: "Spült automatisch, sobald die Temperatur {n} min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist.",
     flushNeedsSensor: "Nur mit Wasserstandssensor (Schutz vor Trockenlauf). Einschalten unter Einstellungen → Wassertank.",
     flushNote: "Spült gleich automatisch (3 × kurz). Leeren Siebträger drinlassen, Tasse unterstellen.",
     bfDoneNote: "Backflush fertig: Bezugsschalter auf AUS stellen, Blindsieb raus und kurz spülen.",
@@ -282,7 +285,7 @@ const T = {
     lagLast: "Letzter Bezug: {f} g/s, also {g} g vor dem Ziel", lagAt: "Bei {f} g/s: {g} g vor dem Ziel",
     beansSaved: "Gespeicherte Bohnen", beansHint: "Jede Bohne merkt sich Dosis, Mahlgrad, Zielgewicht, Temperatur und Nachlaufzeit.",
     beanActive: "aktiv", beanUse: "Wählen", beanDelete: "Löschen", reallyDeleteBean: "Die Bohne „{n}“ mit ihren Werten löschen?", beanBack: "„{n}“ geladen", beanNew: "Neue Bohne „{n}“ angelegt",
-    roast: "Röstdatum", roastAge: "Tag {n} nach Röstung", beanNewOpt: "+ Neue Bohne …", beanNewQ: "Name der neuen Bohne (Sorte und Röstung)", beanNone: "keine angegeben", beanLag: "Nachlauf",
+    roast: "Röstdatum", roastAge: "Tag {n} nach Röstung", roastNone: "– eintragen", manual: "Manuell", manualSub: "ohne Hilfen", beanNewOpt: "+ Neue Bohne …", beanNewQ: "Name der neuen Bohne (Sorte und Röstung)", beanNone: "keine angegeben", beanLag: "Nachlauf",
     "brew.by_weight.learn": "Stopp automatisch lernen", "brew.by_weight.learnHint": "aus jedem Bezug nach Gewicht",
     target: "Ziel", atStop: "Pumpe aus bei", drip: "Nachlauf", overTarget: "über Ziel", underTarget: "unter Ziel", switchBack: "Bezugsschalter wieder auf AUS stellen",
     "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
@@ -336,9 +339,9 @@ const T = {
     sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
     sDisplay: "Display", sPid: "Advanced", sSystem: "System", sBf: "Backflush", sFlush: "Flush",
     flushWhat: "Three 3 s flushes (20 s apart) warm up hose, group and portafilter. Leave the empty portafilter in, put a cup under it.",
-    "brew.warmup_flush": "Automatically after a cold start", "brew.warmup_flushHint": "once the temperature has been steady at the setpoint for 2 min",
+    "brew.warmup_flush": "Flush automatically", "brew.warmup_flushHint": "after a cold start: 3 short flushes", "brew.warmup_flush_wait": "Wait", "brew.warmup_flush_waitHint": "this long steady at the setpoint, then flush",
     flushNow: "Flush now", flushStop: "Stop flushing", flushPulse: "Flush {n} of {m}", flushPause: "Pause, flush {n} of {m} next", rinsing: "Rinsing …",
-    flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready.",
+    flushPending: "Flushes by itself once the temperature has been steady at the setpoint for {n} min.", flushBusy: "Possible once the machine is ready.",
     flushNeedsSensor: "Only with a water level sensor (keeps the pump from running dry). Switch it on under Settings → Water tank.",
     flushNote: "Flushes by itself shortly (3 × briefly). Leave the empty portafilter in, put a cup under it.",
     bfDoneNote: "Backflush done: switch the brew switch off, take the blind basket out and rinse briefly.",
@@ -378,7 +381,7 @@ const T = {
     lagLast: "Last shot: {f} g/s, so {g} g before the target", lagAt: "At {f} g/s: {g} g before the target",
     beansSaved: "Saved beans", beansHint: "Each bean keeps dose, grind, target weight, temperature and drop time.",
     beanActive: "current", beanUse: "Use", beanDelete: "Delete", reallyDeleteBean: "Delete the beans “{n}” and their values?", beanBack: "“{n}” loaded", beanNew: "New beans “{n}” added",
-    roast: "Roast date", roastAge: "day {n} after roasting", beanNewOpt: "+ New beans …", beanNewQ: "Name of the new beans (kind and roast)", beanNone: "none given", beanLag: "drops",
+    roast: "Roast date", roastAge: "day {n} after roasting", roastNone: "– add", manual: "Manual", manualSub: "no helpers", beanNewOpt: "+ New beans …", beanNewQ: "Name of the new beans (kind and roast)", beanNone: "none given", beanLag: "drops",
     "brew.by_weight.learn": "Learn the stop", "brew.by_weight.learnHint": "from each shot by weight",
     target: "Target", atStop: "pump off at", drip: "drops", overTarget: "over target", underTarget: "under target", switchBack: "Switch the brew switch back off",
     "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
@@ -436,6 +439,7 @@ const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
 const PREFIX = {}; // before the number, e.g. "1:" for a ratio
+UNIT["brew.warmup_flush_wait"] = "min"; STEP["brew.warmup_flush_wait"] = 1;
 UNIT["drip.capacity"] = "ml"; STEP["drip.capacity"] = 50;
 UNIT["brew.temp_end"] = "K"; STEP["brew.temp_end"] = .5; UNIT["descale.litres"] = "l"; STEP["descale.litres"] = 5;
 UNIT["brew.dose"] = "g"; UNIT["brew.pre_infusion.time"] = UNIT["brew.pre_infusion.pause"] = "s"; STEP["brew.pre_infusion.time"] = STEP["brew.pre_infusion.pause"] = .5;
@@ -449,7 +453,7 @@ const TABS = [
     ["sCoffee", ["brew.grinder", "brew.grind_scale", "brew.beans"]],
     ["sPreinf", ["brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"]],
     ["sTemp", ["brew.temp_end"]],
-    ["sPower", ["standby.enabled", "standby.time", "schedule.enabled", "schedule.on", "schedule.off", "schedule.days"]], // powerCard()
+    ["sPower", ["standby.enabled", "standby.time", "brew.warmup_flush", "brew.warmup_flush_wait", "hardware.sensors.watertank.enabled", "schedule.enabled", "schedule.on", "schedule.off", "schedule.days"]], // powerCard()
     ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn"]],
     ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
     ["sTank", ["hardware.sensors.watertank.enabled", "hardware.sensors.watertank.mode"]],
@@ -467,7 +471,7 @@ const TABS = [
 // rows shown only while their switch is on
 const SHOWN_IF = {"brew.pre_infusion.time": "brew.pre_infusion.enabled", "brew.pre_infusion.pause": "brew.pre_infusion.enabled", "standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
   "brew.by_weight.auto_tare": "brew.by_weight.enabled",
-  "schedule.on": "schedule.enabled", "schedule.off": "schedule.enabled", "schedule.days": "schedule.enabled"};
+  "brew.warmup_flush_wait": "brew.warmup_flush", "schedule.on": "schedule.enabled", "schedule.off": "schedule.enabled", "schedule.days": "schedule.enabled"};
 const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint", "brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"];
 // what a bean keeps (src/beanProfiles.h): switching beans sets these
 const RECIPE = ["brew.dose", "brew.grind", "brew.by_weight.target_weight", "brew.setpoint", "brew.by_weight.lag"];
@@ -734,11 +738,24 @@ function presetActive(p) {
 }
 function fillChips(chips) {
   const cur = stopMode(), byWeight = cur === "weight" || (cur === "hand" && P["hardware.sensors.scale.enabled"]?.value);
+  const man = el("button", manualActive() ? "on" : "", `${t("manual")}<small>${t("manualSub")}</small>`);
+  man.onclick = () => applyManual();
   chips.replaceChildren(...presets().map((p, i) => {
-    const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? "1:" + num(p.r, 1) + " · " + fmt(goalOf(p.r)) + " g" : fmt(p.s) + " s"}</small>`);
+    const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? "1:" + fmt(Math.round(p.r * 10) / 10) + " · " + fmt(goalOf(p.r)) + " g" : fmt(p.s) + " s"}</small>`);
     b.onclick = () => applyPreset(i);
     return b;
-  }));
+  }), man);
+}
+// "Manuell": every help off at once, as Lelit Bianca testers wished (Sprometheus: "just one switch to flip to turn them
+// all off when you want to use manual mode"): stop by hand, no pre-infusion. What was set before is kept in this browser
+// and comes back with the next quick choice.
+const manualActive = () => stopMode() === "hand" && !P["brew.pre_infusion.enabled"]?.value;
+async function applyManual() {
+  if (manualActive()) return;
+  store.set("orione.manualBack", JSON.stringify({mode: stopMode(), pi: !!P["brew.pre_infusion.enabled"]?.value}));
+  if (stopMode() !== "hand" && !await setStop("hand")) return;
+  if (P["brew.pre_infusion.enabled"]?.value && !await save("brew.pre_infusion.enabled", 0)) return;
+  refresh();
 }
 // a target changed in the brew tab: the quick choice that was chosen takes it along (Dominik, 08.10.2026: "wenn man
 // das zielgewicht unter Bezug verändert, dann wird das nicht für die schnellauswahl übernommen"), as a ratio
@@ -756,6 +773,13 @@ async function saveTarget(id, value) {
 // a tap: stop by weight (scale on) or time unless one of them is chosen already, then both targets
 async function applyPreset(i) {
   const p = presets()[i];
+  let back = null;
+  try { back = JSON.parse(store.get("orione.manualBack") || "null"); } catch (e) {}
+  if (back) { // back from "Manuell": the stop and the pre-infusion as they were
+    store.set("orione.manualBack", null);
+    if (back.pi && P["brew.pre_infusion.enabled"] && !P["brew.pre_infusion.enabled"].value && !await save("brew.pre_infusion.enabled", 1)) return;
+    if (stopMode() === "hand" && back.mode !== "hand" && !await setStop(back.mode)) return;
+  }
   if (stopMode() === "hand" && !await setStop(P["hardware.sensors.scale.enabled"]?.value ? "weight" : "time")) return;
   if (stopMode() === "hand" && !await setStop("time")) return; // weight not offered: scale off since the last start
   for (const [id, v] of [["brew.by_time.target_time", p.s], ["brew.by_weight.target_weight", goalOf(p.r)]])
@@ -792,14 +816,17 @@ function shotCard() {
     const rc = el("div", "recipe");
     if (P["brew.beans"]) { const b = el("div", "bean"), s = el("select"); s.id = "beanPick"; s.setAttribute("aria-label", t("brew.beans")); b.append(el("label", null, t("brew.beans")), s); rc.append(b); }
     if (P["brew.beans"]) { // the roast date of the beans in the grinder (kept with the bean, src/beanProfiles.h)
-      const b = el("div", "roast"), l = el("label", null, t("roast")), i = el("input", "datein"), age = el("span");
-      i.type = "date"; i.id = "roastPick"; i.setAttribute("aria-label", t("roast")); age.id = "roastAge"; l.append(age);
+      // our own text in the box (iOS draws its date field wider than the card and in the phone's language); the real
+      // date field lies invisible over it and opens the phone's date picker
+      const b = el("div", "roast"), l = el("label", null, t("roast")), box = el("div", "datebox"), shown = el("span"), i = el("input"), age = el("span");
+      i.type = "date"; i.id = "roastPick"; i.setAttribute("aria-label", t("roast")); age.id = "roastAge"; shown.id = "roastText"; l.append(age);
+      box.append(shown, i);
       i.onchange = async () => {
         const r = await post(`/beans/roast?n=${encodeURIComponent(beans?.now ?? "")}&d=${i.value}`).catch(() => null);
         if (!r?.ok) toast(t("failed"));
         await pause(300); await loadBeans();
       };
-      b.append(l, i); rc.append(b);
+      b.append(l, box); rc.append(b);
     }
     for (const id of ["brew.dose", "brew.grind"]) if (P[id]) { const b = el("div"), ctl = control(id); b.append(el("label", null, t(id)), ctl); rc.append(b); }
     c.append(rc);
@@ -1653,7 +1680,6 @@ const flushRunning = () => live.warmup === 2 || live.warmup === 3;
 function flushCard() {
   const c = el("section", "card"), sensor = !!P["hardware.sensors.watertank.enabled"]?.value;
   c.append(el("h2", null, t("sFlush")), el("p", "shotinfo", t("flushWhat")));
-  if (sensor && P["brew.warmup_flush"]) { const r = el("div", "row"), ctl = control("brew.warmup_flush"); r.append(lbl("brew.warmup_flush"), ctl); c.append(r); }
   const w = el("div", "btns"), b = el("button", "btn", t("flushNow")), st = el("p", "shotinfo");
   b.id = "flushBtn"; st.id = "flushSt"; b.disabled = !sensor;
   b.onclick = async () => {
@@ -1732,7 +1758,7 @@ function paintFlush() {
   b.textContent = t(run ? "flushStop" : "flushNow");
   b.disabled = !run && !(live.ok && live.state === 10 && !live.sw); // the firmware starts only from "ready" (kPidNormal), switch off
   st.textContent = run ? t(live.warmup === 2 ? "flushPulse" : "flushPause").replace("{n}", live.warmup === 2 ? live.pulse : live.pulse + 1).replace("{m}", live.pulses)
-    : live.ok && live.sw ? t("flushSwitch") : live.ok && live.warmup === 1 ? t("flushPending") : b.disabled && live.ok ? t("flushBusy") : "";
+    : live.ok && live.sw ? t("flushSwitch") : live.ok && live.warmup === 1 ? t("flushPending").replace("{n}", fmt(P["brew.warmup_flush_wait"]?.value ?? 2)) : b.disabled && live.ok ? t("flushBusy") : "";
 }
 // Bluetooth scale (src/hardware/scales/BluetoothScale.h): only the scale chosen here is connected.
 // GET /scale {state: 0 off, 1 chosen not connected, 2 connected, 3 none chosen, name, address, battery,
@@ -1782,6 +1808,7 @@ function paintBeans() {
   if (rp) {
     rp.closest(".roast").hidden = !beans || !beanName(now);
     if (document.activeElement !== rp) rp.value = cur?.rd ? new Date(cur.rd * 864e5).toISOString().slice(0, 10) : "";
+    $("#roastText").textContent = cur?.rd ? roastDate(cur.rd) : t("roastNone");
     $("#roastAge").textContent = cur?.rd ? " · " + t("roastAge").replace("{n}", roastAge(cur.rd)) : "";
   }
   if (pick) { // names typed by the user: text, not HTML
@@ -1960,7 +1987,9 @@ const hm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 6
 function powerCard() {
   const c = el("section", "card");
   c.append(el("h2", null, t("sPower")));
-  for (const id of ["standby.enabled", "standby.time"]) {
+  // the warm-up flush only runs with the water level sensor: its rows only then (Dominik, 09.10.2026: here, with a wait)
+  const flushRows = P["hardware.sensors.watertank.enabled"]?.value ? ["brew.warmup_flush", "brew.warmup_flush_wait"] : [];
+  for (const id of ["standby.enabled", "standby.time", ...flushRows]) {
     if (!P[id] || (SHOWN_IF[id] && !P[SHOWN_IF[id]]?.value)) continue;
     const r = el("div", "row"), ctl = control(id);
     r.append(lbl(id), ctl); c.append(r);

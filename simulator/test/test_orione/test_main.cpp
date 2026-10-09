@@ -1279,6 +1279,20 @@ void test_stats_count_the_drip_tray_and_take_format_2_over() {
     TEST_ASSERT_EQUAL_UINT32(0, c.dripMl());
 }
 
+void test_flush_waits_as_long_as_set_after_ready() {
+    orione::WarmupFlush f;
+    orione::WarmupFlush::Inputs in{true, true, true, true, false, 10 * 60000u};
+    f.update(0, 20.0, 93.0, in); // cold start
+    TEST_ASSERT_FALSE(f.update(1000, 93.0, 93.0, in));
+    TEST_ASSERT_FALSE(f.update(1000 + 9 * 60000, 93.0, 93.0, in)); // 9 of 10 minutes steady
+    TEST_ASSERT_TRUE(f.update(1000 + 10 * 60000, 93.0, 93.0, in));  // 10: the first pulse
+    orione::WarmupFlush g;
+    in.settledMs = 0; // no wait: as soon as it is near the setpoint
+    g.update(0, 20.0, 93.0, in);
+    TEST_ASSERT_FALSE(g.update(1000, 80.0, 93.0, in)); // still heating
+    TEST_ASSERT_TRUE(g.update(2000, 92.0, 93.0, in));
+}
+
 void test_water_estimates() {
     TEST_ASSERT_EQUAL_UINT32(50, orione::Water::shotMl(33.4f, 16.5f, 28.0f)); // cup + what the puck keeps
     TEST_ASSERT_EQUAL_UINT32(56, orione::Water::shotMl(-1.0f, 16.5f, 28.0f)); // no scale: the time
@@ -1484,6 +1498,7 @@ int main() {
     RUN_TEST(test_beans_keep_their_roast_date_and_take_format_1_over);
     RUN_TEST(test_tank_sensor_counts_after_three_seconds_the_same_way);
     RUN_TEST(test_stats_count_the_drip_tray_and_take_format_2_over);
+    RUN_TEST(test_flush_waits_as_long_as_set_after_ready);
     RUN_TEST(test_water_estimates);
     RUN_TEST(test_stats_count_days_weeks_and_descaling);
     RUN_TEST(test_cleaning_with_detergent_then_rinse);

@@ -76,6 +76,7 @@ BASE = {
     "system.log_level": dict(type=5, value=2, min=0, max=6, options=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "SILENT"]),
     "hardware.sensors.watertank.enabled": dict(type=1, value=0, min=0, max=1, reboot=True),
     "brew.warmup_flush": dict(type=1, value=1, min=0, max=1),
+    "brew.warmup_flush_wait": dict(type=2, value=2.0, min=0, max=30),
     "hardware.sensors.watertank.mode": dict(type=5, value=1, min=0, max=1, options=["Normally Open", "Normally Closed"], reboot=True),
     "hardware.sensors.scale.enabled": dict(type=1, value=1, min=0, max=1, reboot=True),
     "schedule.enabled": dict(type=1, value=0, min=0, max=1),

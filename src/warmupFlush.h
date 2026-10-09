@@ -56,7 +56,9 @@ namespace warmup_flush {
         const bool userActive = currBrewSwitchState != kBrewSwitchIdle || machineState == kBrew || machineState == kBackflush || machineState == kHotWater ||
                                 machineState == kSteam || backflushOn;
         const bool ready = machineState == kPidNormal || (machineState == kManualFlush && wasRunning);
-        const bool flow = flush.update(millis(), temperature, brewSetpoint, {sensorEnabled(), config.get<bool>("brew.warmup_flush"), waterTankFull, ready, userActive});
+        // the wait after "ready" before it flushes: a setting in minutes (Dominik, 09.10.2026)
+        const auto waitMs = static_cast<uint32_t>(config.get<double>("brew.warmup_flush_wait") * 60000.0);
+        const bool flow = flush.update(millis(), temperature, brewSetpoint, {sensorEnabled(), config.get<bool>("brew.warmup_flush"), waterTankFull, ready, userActive, waitMs});
 
         if (flow != flowing) {
             flowing = flow;

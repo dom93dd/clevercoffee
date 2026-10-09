@@ -316,6 +316,8 @@ void ParameterRegistry::initialize(Config& config) {
                                "Remind of a backflush after this many shots (0 = never)");
     addBoolConfigParam("brew.warmup_flush", "Warm-up flush after a cold start", sMaintenanceSection, 405, nullptr,
                        "Three short flushes once the temperature has settled after a cold start (only with a water level sensor)");
+    addNumericConfigParam<double>("brew.warmup_flush_wait", "Warm-up flush after (min)", kDouble, sMaintenanceSection, 409, nullptr, 0.0, 30.0,
+                                  "Minutes steady at the setpoint before the warm-up flush starts");
     // src/machineCare.h: schedule, descaling, cleaning with detergent, temperature course
     addBoolConfigParam("schedule.enabled", "Heating schedule", sPowerSection, 710, nullptr, "Heat at a set time; the main switch stays on");
     addNumericConfigParam<int>("schedule.days", "Schedule days", kInteger, sPowerSection, 711, nullptr, 0, 127, "Bit 0 = Monday ... bit 6 = Sunday");

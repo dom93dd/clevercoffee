@@ -208,7 +208,7 @@ test("Waage aus: Neustart-Hinweis, neu starten, Seite lädt danach neu", async (
   const st = await mock(BASE, "/__state");
   assert.equal(st.restarts, 1); assert.equal(st.pageLoads, 2);
   assert.equal(await page.locator("#rebootBar").isHidden(), true);
-  assert.deepEqual(await view(page).locator(".chips button").allTextContents(), ["Espresso25 s", "Doppio30 s", "Lungo45 s"], "scale off since the start");
+  assert.deepEqual(await view(page).locator(".chips button").allTextContents(), ["Espresso25 s", "Doppio30 s", "Lungo45 s", "Manuellohne Hilfen"], "scale off since the start");
   await ctx.close();
 });
 
@@ -369,8 +369,8 @@ test("Letzte Bezüge: Zeit, Gewicht, wann; neuer Bezug erscheint von selbst", as
 test("Schnellwahl: Tipp setzt Stopp-Art und Ziele (mit Waage nach Gewicht)", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   const chips = view(page).locator(".chips button");
-  assert.deepEqual(await chips.allTextContents(), ["Espresso1:2,0 · 36 g", "Doppio1:2,5 · 45 g", "Lungo1:4,5 · 81 g"], "a ratio, in grams at the dose");
-  assert.equal(await view(page).locator(".chips button.on").count(), 0, "by hand: no preset active");
+  assert.deepEqual(await chips.allTextContents(), ["Espresso1:2 · 36 g", "Doppio1:2,5 · 45 g", "Lungo1:4,5 · 81 g", "Manuellohne Hilfen"], "a ratio, in grams at the dose");
+  assert.equal(await view(page).locator(".chips button.on").textContent(), "Manuellohne Hilfen", "by hand without pre-infusion: Manuell");
   await chips.nth(1).click();
   await row(page, "Zielgewicht").waitFor();
   await settle(page);
@@ -389,7 +389,7 @@ test("Schnellwahl: ein im Reiter Bezug geändertes Ziel übernimmt der gewählte
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
   await view(page).locator(".chips button.on", {hasText: "Espresso"}).waitFor(); // 36 g: Espresso
   await row(page, "Zielgewicht").locator("button", {hasText: "−"}).click();
-  await view(page).locator(".chips button.on", {hasText: "Espresso1:2,0 · 35,5 g"}).waitFor(); // the chip keeps the ratio of the new target
+  await view(page).locator(".chips button.on", {hasText: "Espresso1:2 · 35,5 g"}).waitFor(); // the chip keeps the ratio of the new target
   await settle(page);
   let v = await values(BASE);
   assert.equal(v["brew.by_weight.target_weight"], 35.5);
@@ -415,7 +415,7 @@ test("Schnellwahl ohne Waage: nach Zeit", async ({browser}) => {
   await mock(BASE, "/restart", ""); // the scale settings go with the next start, as in the firmware
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   const chips = view(page).locator(".chips button");
-  assert.deepEqual(await chips.allTextContents(), ["Espresso25 s", "Doppio30 s", "Lungo45 s"]);
+  assert.deepEqual(await chips.allTextContents(), ["Espresso25 s", "Doppio30 s", "Lungo45 s", "Manuellohne Hilfen"]);
   await chips.nth(2).click();
   await row(page, "Bezugszeit").waitFor();
   await settle(page);
@@ -988,7 +988,7 @@ test("Wartung: Spülen ohne Wasserstandssensor gesperrt, Backflush-Zähler bleib
   assert.deepEqual(await cards.evaluateAll(cs => cs.map(c => c.dataset.card)), ["sFlush", "sBf", "sDescale", "sDrip", "sCount"]);
   assert.equal(await page.locator("#flushBtn").isDisabled(), true);
   assert.match(await page.locator("#flushSt").textContent(), /^Nur mit Wasserstandssensor/);
-  assert.equal(await row(page, "Nach dem Kaltstart automatisch").count(), 0, "no switch without the sensor");
+  assert.equal(await row(page, "Automatisch spülen").count(), 0, "no switch without the sensor (and it is under Ein & Aus now)");
   await page.locator('[data-card="sBf"] #bfSince', {hasText: "vor 7 Bezügen"}).waitFor(); // still in the backflush card
   assert.equal(await (await fetch(BASE + "/flush?start=1", {method: "POST"})).status, 409, "the firmware refuses too");
   await ctx.close();
@@ -1000,7 +1000,7 @@ test("Wartung: Spülen von Hand, Fortschritt, abbrechen; Hinweis auf der Startse
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
   const btn = page.locator("#flushBtn"), st = page.locator("#flushSt");
   await page.locator("#flushBtn:not([disabled])", {hasText: "Jetzt spülen"}).waitFor();
-  assert.equal(await row(page, "Nach dem Kaltstart automatisch").count(), 1);
+  assert.equal(await row(page, "Automatisch spülen").count(), 0, "the automatic flush is set under Einstellungen → Ein & Aus");
   await btn.click(); await settle(page);
   assert.deepEqual((await posts(BASE)).filter(p => p.path === "/flush").map(p => p.query), ["start=1"]);
   await mock(BASE, "/__live", {state: 25, warmup: 2, pulse: 1});
@@ -1601,11 +1601,11 @@ test("Schnellwahl: alte Werte in Gramm werden als Verhältnis gelesen, Laden än
   await setp("brew.presets=25,33;30,45;45,80&brew.dose=16.5&brew.mode=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0&brew.by_weight.target_weight=33");
   const before = (await posts(BASE)).length; // the test's own settings
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
-  assert.deepEqual(await view(page).locator(".chips button").allTextContents(), ["Espresso1:2,0 · 33 g", "Doppio1:2,7 · 45 g", "Lungo1:4,9 · 80 g"]);
-  assert.equal(await view(page).locator(".chips button.on").textContent(), "Espresso1:2,0 · 33 g");
+  assert.deepEqual(await view(page).locator(".chips button").allTextContents(), ["Espresso1:2 · 33 g", "Doppio1:2,7 · 45 g", "Lungo1:4,9 · 80 g", "Manuellohne Hilfen"]);
+  assert.equal(await view(page).locator(".chips button.on").textContent(), "Espresso1:2 · 33 g");
   assert.deepEqual((await posts(BASE)).slice(before), [], "loading the page must not rewrite the presets");
   await view(page).locator(".recipe .step input").fill("18"); await view(page).locator(".recipe .step input").press("Enter"); // more coffee: the cup follows
-  await view(page).locator(".chips button.on", {hasText: "Espresso1:2,0 · 36 g"}).waitFor();
+  await view(page).locator(".chips button.on", {hasText: "Espresso1:2 · 36 g"}).waitFor();
   await settle(page);
   assert.equal((await values(BASE))["brew.by_weight.target_weight"], 36);
   assert.deepEqual(errors, []);
@@ -1799,6 +1799,69 @@ test("Live-Kurve im Bezug: wächst mit, Referenz dahinter, bleibt nach dem Stopp
   await page.screenshot({path: OUT + "brew-live-curve.png", fullPage: true});
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test("Chip Manuell: alle Hilfen aus, die nächste Schnellwahl stellt Stopp und Pre-Infusion wieder her", async ({browser}) => {
+  await setp("brew.mode=1&brew.pre_infusion.enabled=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0");
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  await view(page).locator(".chips button", {hasText: "Manuell"}).click();
+  await view(page).locator(".chips button.on", {hasText: "Manuell"}).waitFor();
+  await settle(page);
+  let v = await values(BASE);
+  assert.equal(v["brew.mode"], 0, "stop by hand"); assert.equal(v["brew.pre_infusion.enabled"], 0, "no pre-infusion");
+  assert.equal(await view(page).locator(".seg button.on").first().textContent(), "von Hand");
+  await view(page).locator(".chips button", {hasText: "Espresso"}).click();
+  await view(page).locator(".chips button.on", {hasText: "Espresso"}).waitFor();
+  await settle(page);
+  v = await values(BASE);
+  assert.equal(v["brew.mode"], 1); assert.equal(v["brew.by_weight.enabled"], 1, "back to stop by weight");
+  assert.equal(v["brew.pre_infusion.enabled"], 1, "the pre-infusion as it was");
+  assert.equal(v["brew.by_weight.target_weight"], 36);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Röstdatum: eigenes Feld in Kartenbreite mit deutschem Datum; kein Doppeltipp-Zoom", async ({browser}) => {
+  await setp("brew.beans=Ettli Don Pedro");
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  const box = view(page).locator(".datebox");
+  await box.waitFor();
+  assert.equal(await page.locator("#roastText").textContent(), "– eintragen");
+  await page.locator("#roastPick").fill("2026-10-01");
+  await page.locator("#roastText", {hasText: "01.10.2026"}).waitFor();
+  const [b, card] = await Promise.all([box.boundingBox(), view(page).locator(".recipe").boundingBox()]);
+  assert.ok(b.x + b.width <= card.x + card.width + 0.5, `the date box stays inside the card (${b.x + b.width} > ${card.x + card.width})`);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).touchAction), "manipulation", "no double-tap zoom");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".chips button")).touchAction), "manipulation");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Automatisch spülen: unter Ein & Aus mit Wartezeit, nur mit Wasserstandssensor", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  const power = view(page).locator('[data-card="sPower"]');
+  assert.equal(await power.locator(".row", {hasText: "Automatisch spülen"}).count(), 0, "without the sensor it never runs: not offered");
+  await ctx.close();
+  await setp("hardware.sensors.watertank.enabled=1");
+  const p2 = await open(browser, BASE, {hash: "#settings"});
+  const pw = view(p2.page).locator('[data-card="sPower"]');
+  assert.deepEqual(await pw.locator(".lbl > div").allTextContents(), ["Standby", "Automatisch spülen", "Wartezeit", "Automatisch einschalten"]);
+  const wait = row(p2.page, "Wartezeit");
+  assert.equal(await wait.locator("input").inputValue(), "2 min");
+  for (let k = 0; k < 8; k++) await wait.locator("button", {hasText: "+"}).click();
+  await settle(p2.page);
+  assert.equal((await values(BASE))["brew.warmup_flush_wait"], 10);
+  await row(p2.page, "Automatisch spülen").locator(".sw").click(); // off: the wait goes
+  await row(p2.page, "Wartezeit").waitFor({state: "detached"});
+  await settle(p2.page);
+  assert.equal((await values(BASE))["brew.warmup_flush"], 0);
+  await row(p2.page, "Automatisch spülen").locator(".sw").click();
+  await settle(p2.page);
+  await mock(BASE, "/__live", {state: 10, warmup: 1});
+  await tab(p2.page, "Wartung");
+  await p2.page.locator("#flushSt", {hasText: "Spült automatisch, sobald die Temperatur 10 min stabil am Soll ist."}).waitFor();
+  assert.deepEqual(p2.errors, []);
+  await p2.ctx.close();
 });
 
 test("Letzte Bezüge: leer", async ({browser}) => {
