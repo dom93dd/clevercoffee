@@ -251,7 +251,6 @@ Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 m
 
 #ifdef CC_ORIONE
 #include "heapStages.h"
-#include <esp_bt.h>
 #define ORIONE_HEAP_MARK(name) heap_stages::mark(name)
 #include "firmwareGuard.h"
 #include "orioneLog.h"
@@ -1119,13 +1118,6 @@ extern const char sysVersion[] = STR(AUTO_VERSION);
 #endif
 
 void setup() {
-#ifdef CC_ORIONE
-    // Bluetooth Classic is never used: its ~15 KB go to the heap now, while nothing else runs. NimBLE releases them
-    // when the scale starts, a few seconds after WiFi, the web server and mDNS began to use the heap; both crashes of
-    // 09.10.2026 came in exactly that second (a heap walk in async_tcp, the mDNS task reading a bad pointer). Own
-    // conclusion, not proven. NimBLE's own call later does nothing (already released) and its result is ignored.
-    esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-#endif
     // Start serial console
     Serial.begin(115200);
     ROUND_TIMING_DO(round_timing::heapMark("start"));
@@ -1311,6 +1303,17 @@ void setup() {
     care::migrateSchedule();
 #endif
 
+#ifdef CC_ORIONE
+    // The Bluetooth scale before WiFi, the web server and mDNS: the crashes of 09./10.2026 all came in the second the
+    // scale started while those already ran (a heap walk in async_tcp, the mDNS task reading a bad pointer; 1 of 3
+    // restarts). Releasing the Bluetooth Classic memory first thing did not help and the display's band buffers then
+    // landed in it (stripes instead of the intro, Dominik 10.10.2026). Own conclusion, to be checked by restarts.
+    if (config.get<bool>("hardware.sensors.scale.enabled")) {
+        initScale();
+        ORIONE_HEAP_MARK("scale");
+    }
+#endif
+
     ROUND_TIMING_DO(round_timing::heapMark("before wifi"));
     ORIONE_HEAP_MARK("before wifi");
     if (!config.get<bool>("system.offline_mode")) { // WiFi Mode
@@ -1487,10 +1490,11 @@ void setup() {
     ROUND_TIMING_DO(round_timing::heapMark("before scale"));
     ORIONE_HEAP_MARK("before scale");
     // Init Scale
+#ifndef CC_ORIONE // Orione: before WiFi, see above
     if (config.get<bool>("hardware.sensors.scale.enabled")) {
         initScale();
-        ORIONE_HEAP_MARK("scale");
     }
+#endif
 
     if (config.get<bool>("hardware.sensors.pressure.enabled")) {
         previousMillisPressure = currentTime;
