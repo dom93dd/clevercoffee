@@ -34,9 +34,17 @@ BUSY = {20: "Bezug", 25: "Spülen", 50: "Backflush"}
 
 
 def get(host, path, timeout=6, raw=False):
-    with urllib.request.urlopen(f"http://{host}{path}", timeout=timeout) as r:
-        body = r.read()
-        return body if raw else json.loads(body) if r.headers.get_content_type() == "application/json" else body.decode(errors="replace")
+    # the machine answers 503 while its request gate is full or the heap low (src/webRequestGate.h): try again
+    # a few times (09.10.2026: the backup and the comparison broke off on it with a weak WiFi)
+    for attempt in range(6):
+        try:
+            with urllib.request.urlopen(f"http://{host}{path}", timeout=timeout) as r:
+                body = r.read()
+                return body if raw else json.loads(body) if r.headers.get_content_type() == "application/json" else body.decode(errors="replace")
+        except urllib.error.HTTPError as e:
+            if e.code != 503 or attempt == 5:
+                raise
+            time.sleep(2 + attempt * 2)
 
 
 def try_get(host, path, timeout=4, raw=False):
