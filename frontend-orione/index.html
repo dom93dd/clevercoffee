@@ -104,7 +104,8 @@ details[open] summary:after{content:"−"}
 .scalenow{margin:14px 0 0;font-size:15px}
 .scalenow.on{color:var(--ready)}
 .foundscale{border-top:1px solid var(--line)}
-.dialcard{display:flex;justify-content:center;padding:16px}
+.dialcard{display:flex;flex-direction:column;align-items:center;padding:16px}
+canvas.livecurve,.dialcard canvas.livecurve{width:100%;height:150px;aspect-ratio:auto;margin-top:10px}
 .dialcard canvas{width:min(100%,300px);height:auto;aspect-ratio:1;margin:0}
 .recipe{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0 4px;border-top:1px solid var(--line)}
 .recipe label{display:block;font-size:13px;color:var(--mute);margin:0 0 6px}
@@ -682,7 +683,7 @@ function statusView(m) {
     const hp = el("p"); hp.id = "pidState"; r.firstChild.append(hp); // paintPills(): on, standby countdown, standby, off
     c.append(r); m.append(c);
   }
-  const dc = el("section", "card dialcard", "<canvas id='dial'></canvas>"); dc.id = "dialCard"; dc.hidden = true; m.insertBefore(dc, h); // the display's shot screen
+  const dc = el("section", "card dialcard", "<canvas id='dial'></canvas><canvas class='livecurve' id='dialCurve'></canvas>"); dc.id = "dialCard"; dc.hidden = true; m.insertBefore(dc, h); // the display's shot screen
   const g = el("section", "card");
   g.innerHTML = `<h2>${t("history")}</h2><canvas id="chart"></canvas><div class="legend"><span><i style="background:var(--heat)"></i>${t("tempLine")}</span><span><i style="background:var(--faint)"></i>${t("setLine")}</span><span><i style="background:rgba(255,146,38,.35)"></i>${t("heatLine")}</span></div>`;
   m.append(g);
@@ -779,7 +780,7 @@ function presetCard() {
 function shotCard() {
   const c = el("section", "card");
   c.append(el("h2", null, t("sShot")));
-  const ls = el("div", "liveshot", `<div class="lab" id="lsLab"></div><div class="nums"><b id="lsTime"></b><span id="lsWeight"></span></div><div class="bar" id="lsBarBox"><b id="lsBar"></b></div><div class="goal" id="lsGoal"></div><div class="goal hint" id="lsHint" hidden></div>`);
+  const ls = el("div", "liveshot", `<div class="lab" id="lsLab"></div><div class="nums"><b id="lsTime"></b><span id="lsWeight"></span></div><div class="bar" id="lsBarBox"><b id="lsBar"></b></div><div class="goal" id="lsGoal"></div><div class="goal hint" id="lsHint" hidden></div><canvas class="livecurve" id="lsCurve"></canvas>`);
   ls.id = "liveShot"; ls.hidden = true; c.append(ls);
   c.append(rinseNote()); // paintFlush()
   const cur = stopMode(), r = el("div", "row"), seg = el("div", "seg");
@@ -1126,11 +1127,11 @@ function drawShotBars(c) {
 }
 // one shot: weight (left scale) and brew temperature (right scale) over the seconds, dashed line where
 // the pump stopped; another shot (o) dashed and paler behind it, on the same scales
-function drawCurve(c, d, o, target, pi) {
+function drawCurve(c, d, o, target, pi, span = 0) { // span: seconds the axis shows at least (the live curve grows into it)
   const g = canvas2d(c);
   if (!g || d.t.length < 2) return;
   const w = c.clientWidth, h = c.clientHeight, L = 30, R = w - 34, T = 10, B = h - 20, all = o ? [d, o] : [d];
-  const total = Math.max(...all.map(s => (s.t.length - 1) * s.dt / 1000)), X = (s, k) => L + k * s.dt / 1000 / total * (R - L);
+  const total = Math.max(span, ...all.map(s => (s.t.length - 1) * s.dt / 1000)), X = (s, k) => L + k * s.dt / 1000 / total * (R - L);
   const temps = all.flatMap(s => s.t.filter(v => v != null).map(v => v / 10)), wts = all.flatMap(s => (s.w || []).filter(v => v != null).map(v => v / 10));
   let tLo = temps.length ? Math.min(...temps) : 90, tHi = temps.length ? Math.max(...temps) : 94;
   if (tHi - tLo < 4) { const m = (tHi + tLo) / 2; tLo = m - 2; tHi = m + 2; }
@@ -1445,6 +1446,36 @@ function paintAlarm() {
   a.hidden = !k;
   if (k) { a.className = "alarm " + k[1]; a.innerHTML = (k[0] === "alarmTank" ? DROP : "") + `${t(k[0])}<p>${t(k[0] + "Hint")}</p>`; }
 }
+// The shot as it runs: the live values (one a second) on a 1 s grid, then the drops after the stop; drawn like a saved
+// curve, the reference shot dashed behind it. The saved curve (0.5 s) replaces it once the shot is in the list.
+let liveCurve = null; // {pts: [{s, w, f, t}], stop: index or null}
+function noteLiveCurve(brewing, x) {
+  if (brewing) {
+    if (!liveCurve || liveCurve.stop != null) liveCurve = {pts: [], stop: null};
+    const last = liveCurve.pts.at(-1);
+    if (!last || live.brewTime > last.s) liveCurve.pts.push({s: live.brewTime, w: live.scale === 2 ? live.weight : null, f: live.flow, t: live.temp});
+  }
+  else if (liveCurve && x?.doneAt) {
+    if (liveCurve.stop == null) liveCurve.stop = Math.round(liveCurve.pts.at(-1)?.s ?? 0) + 1;
+    const s = x.t + (Date.now() - x.doneAt) / 1000, last = liveCurve.pts.at(-1);
+    if (live.cup != null && last && s >= last.s + 1) liveCurve.pts.push({s, w: live.cup, f: null, t: live.temp}); // the drops
+  }
+}
+function liveCurveData() {
+  const pts = liveCurve?.pts ?? [];
+  if (pts.length < 2) return null;
+  const n = Math.round(pts.at(-1).s) + 1, w = Array(n).fill(null), f = Array(n).fill(null), tt = Array(n).fill(null);
+  for (const p of pts) { const k = Math.round(p.s); if (p.w != null) w[k] = Math.round(p.w * 10); if (p.f != null) f[k] = Math.round(p.f * 100); if (p.t != null) tt[k] = Math.round(p.t * 10); }
+  for (let k = 1; k < n; k++) { if (tt[k] == null) tt[k] = tt[k - 1]; if (w[k] == null && w[k - 1] != null) w[k] = w[k - 1]; } // a gap in the live values
+  return {dt: 1000, stop: liveCurve.stop ?? -1, w: w.some(v => v != null) ? w : null, f: f.some(v => v != null) ? f : null, t: tt};
+}
+function drawLiveCurve(c) {
+  const d = liveCurveData();
+  if (!c || !d) return;
+  const m = stopMode(), goalT = (P["brew.by_time.target_time"]?.value ?? 0) + piSeconds();
+  drawCurve(c, d, reference?.curve ?? null, m === "weight" ? P["brew.by_weight.target_weight"]?.value : null, P["brew.pre_infusion.enabled"]?.value ? [P["brew.pre_infusion.time"]?.value ?? 0, P["brew.pre_infusion.pause"]?.value ?? 0] : null,
+    m === "time" ? goalT : 30);
+}
 function paintShotLive() {
   const ls = $("#liveShot"), st = $("#scaleSt");
   if (st) {
@@ -1465,6 +1496,7 @@ function paintShotLive() {
   // as the round display: a shot that stopped by itself stays while the brew switch is still on, then the hold time
   if (!brewing && lastShot?.until && live.held) lastShot.until = Date.now() + doneHoldMs(); // also after a gap in the live values
   if (!brewing && lastShot?.until && live.cup != null) lastShot.w = Math.max(lastShot.w ?? 0, live.cup); // the drops after the stop
+  noteLiveCurve(brewing, lastShot);
   if (!ls) return;
   const x = brewing ? lastShot : lastShot && Date.now() < lastShot.until ? lastShot : null;
   ls.hidden = !x;
@@ -1480,6 +1512,7 @@ function paintShotLive() {
   $("#lsGoal").textContent = (goal ? (m !== mode ? t("noScaleGoal").replace("{n}", fmt(goal)) : `${t("goal")} ${fmt(goal)} ${m === "weight" ? "g" : "s"}`) : t("stopHand")) + (brewing && x.f != null ? ` · ${num(x.f, 1)} g/s` : "")
     + (!brewing && m === "weight" && goal && x.sw != null && x.w != null ? ` · ${t("atStop")} ${num(x.sw, 1)} g · ${signed(Math.round((x.w - goal) * 10) / 10)} g` : "")
     + (!brewing && piSeconds() && x.t > piSeconds() ? ` · ${t("piOf").replace("{s}", fmt(piSeconds()))}` : "");
+  drawLiveCurve($("#lsCurve"));
 }
 // During a shot (and for a moment after it) the machine tab shows what the round display shows:
 // the ring fills with the time, or with the weight when the scale stops the shot (lib/RoundDisplay drawBrew)
@@ -1493,6 +1526,7 @@ function paintDial() {
   const m = shotMode(x), goalT = P["brew.by_time.target_time"]?.value, goalW = P["brew.by_weight.target_weight"]?.value;
   const remind = !brewing && live.held && x.doneAt && Date.now() - x.doneAt >= 60000; // as the display: switch left on for a minute
   drawDial($("#dial"), {time: x.t, weight: x.w, done: !brewing, byWeight: m === "weight" && x.w != null && goalW > 0, goalT: m === "time" ? goalT : 0, goalW, remind});
+  drawLiveCurve($("#dialCurve"));
 }
 function drawDial(c, d) {
   const g = canvas2d(c);

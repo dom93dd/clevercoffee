@@ -1766,6 +1766,41 @@ test("Tropfschale: Schätzung in Wartung, Hinweis bei 80 %, Geleert setzt zurüc
   await ctx.close();
 });
 
+test("Live-Kurve im Bezug: wächst mit, Referenz dahinter, bleibt nach dem Stopp stehen", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 28.0, g: 36.0, at: now - 3600, d: 18.0, m: "12", fd: 7.0});
+  await setp("brew.mode=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0");
+  const {page, ctx, errors} = await open(browser, BASE);
+  await page.evaluate(async () => { // the shot in the list becomes the reference: drawn dashed behind the live curve
+    const r = await fetch(`/shot/reference?i=0&at=${shots[0].at}&s=${shots[0].s}`, {method: "POST"}); await loadReference(); return r.ok;
+  });
+  const ink = sel => page.evaluate(sel => { // drawn pixels on a canvas
+    const c = document.querySelector(sel); if (!c || !c.width) return 0;
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0;
+    for (let i = 3; i < d.length; i += 4) n += d[i] > 0; return n;
+  }, sel);
+  for (let k = 1; k <= 8; k++) {
+    await mock(BASE, "/__live", {state: 20, brewTime: k, scale: 2, weight: Math.max(0, (k - 3) * 2.2), flow: k > 3 ? 2.2 : 0, currentTemp: 93 - k * 0.3});
+    await sleep(700);
+  }
+  await page.waitForFunction(() => liveCurve?.pts.length >= 6);
+  assert.ok(await ink("#dialCurve") > 500, "the overview draws it under the ring");
+  const d = await page.evaluate(() => liveCurveData());
+  assert.equal(d.dt, 1000); assert.equal(d.stop, -1, "still running");
+  assert.ok(d.w.at(-1) >= 100, JSON.stringify(d.w));
+  await mock(BASE, "/__live", {state: 10, brewTime: 8.4, scale: 2, weight: 11.0, cup: 11.6, held: true, currentTemp: 90.8});
+  await page.waitForFunction(() => liveCurve?.stop != null);
+  await sleep(1300);
+  assert.equal(await page.locator("#dialCard").isVisible(), true, "the result stays while the switch is on");
+  await tab(page, "Bezug");
+  await view(page).locator("#lsCurve").waitFor();
+  await page.evaluate(() => paintLive());
+  assert.ok(await ink("#lsCurve") > 500, "and in the brew tab's live card");
+  await page.screenshot({path: OUT + "brew-live-curve.png", fullPage: true});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Letzte Bezüge: leer", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   await view(page).locator("#shotList .empty", {hasText: "Noch keine Bezüge"}).waitFor();
