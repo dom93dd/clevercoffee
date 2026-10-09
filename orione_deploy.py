@@ -45,6 +45,10 @@ def get(host, path, timeout=6, raw=False):
             if e.code != 503 or attempt == 5:
                 raise
             time.sleep(2 + attempt * 2)
+        except (urllib.error.URLError, OSError):  # reset by the gate's emergency brake, a timeout over a weak link
+            if attempt == 5:
+                raise
+            time.sleep(2 + attempt * 2)
 
 
 def try_get(host, path, timeout=4, raw=False):
