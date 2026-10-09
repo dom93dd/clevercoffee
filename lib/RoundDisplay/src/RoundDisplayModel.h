@@ -85,6 +85,7 @@ namespace rd {
             bool steamByThermostat = false;  // steam screen: the original steam thermostat heats, the firmware only watches
             bool steamCooling = false;       // after steam: too hot for espresso until it has cooled down
             float flushTime = 0;
+            float flushTargetTime = 0; // a flush that ends by itself after this many seconds: one revolution of the ring (Orione: the rinse after a shot, 10 s)
             float hotWaterTime = 0;
 
             // Scale

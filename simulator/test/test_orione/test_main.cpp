@@ -1462,6 +1462,21 @@ void test_tank_sensor_counts_after_three_seconds_the_same_way() {
     TEST_ASSERT_FALSE(e.update(false, 100));    // started empty: empty at once
 }
 
+void test_tank_sensor_takes_empty_fast_while_the_pump_runs() {
+    orione::Debounce d(3000);
+    constexpr uint32_t kPumping = 400;
+    TEST_ASSERT_TRUE(d.update(true, 0));
+    TEST_ASSERT_TRUE(d.update(false, 1000, kPumping));
+    TEST_ASSERT_TRUE(d.update(false, 1399, kPumping));
+    TEST_ASSERT_FALSE(d.update(false, 1400, kPumping)); // 0.4 s empty while pumping: empty
+    TEST_ASSERT_FALSE(d.update(true, 2000));            // refilled: still the slow 3 s
+    TEST_ASSERT_FALSE(d.update(true, 4999));
+    TEST_ASSERT_TRUE(d.update(true, 5000));
+    TEST_ASSERT_TRUE(d.update(false, 6000));            // idle: slow, flickering does not count
+    TEST_ASSERT_TRUE(d.update(false, 6300));
+    TEST_ASSERT_FALSE(d.update(false, 6400, kPumping)); // the pump starts: counts from 6.0 s
+}
+
 void test_stats_count_the_drip_tray_and_take_format_2_over() {
     orione::MachineStats a;
     a.drip(300);
@@ -1730,6 +1745,7 @@ int main() {
     RUN_TEST(test_flush_by_hand_with_one_pulse_for_the_rinse);
     RUN_TEST(test_beans_keep_their_roast_date_and_take_format_1_over);
     RUN_TEST(test_tank_sensor_counts_after_three_seconds_the_same_way);
+    RUN_TEST(test_tank_sensor_takes_empty_fast_while_the_pump_runs);
     RUN_TEST(test_stats_count_the_drip_tray_and_take_format_2_over);
     RUN_TEST(test_flush_waits_as_long_as_set_after_ready);
     RUN_TEST(test_water_estimates);

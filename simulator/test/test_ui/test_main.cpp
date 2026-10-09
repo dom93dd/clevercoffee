@@ -103,6 +103,18 @@ void test_brew_timer_keeps_brew_screen_after_the_shot() {
     TEST_ASSERT_EQUAL(S(Screen::Ready), screenOf(ui));
 }
 
+void test_empty_tank_wins_over_a_shot_it_stopped() {
+    RoundUi ui;
+    Model m = normal();
+    m.brewTimerVisible = true; // the shot the empty tank stopped, switch still on
+    m.mode = Mode::WaterTankEmpty;
+    ui.update(m, 0);
+    TEST_ASSERT_EQUAL(S(Screen::WaterTankEmpty), screenOf(ui));
+    m.mode = Mode::Normal; // refilled: the shot's result for the rest of its hold time
+    ui.update(m, 100);
+    TEST_ASSERT_EQUAL(S(Screen::Brew), screenOf(ui));
+}
+
 void test_message_shows_until_cleared() {
     RoundUi ui;
     ui.showMessage(Message{"VERSION", "4.0.3", nullptr});
@@ -736,6 +748,7 @@ int main() {
     RUN_TEST(test_modes_select_their_screens);
     RUN_TEST(test_alarms_win_over_brew_timer_and_messages);
     RUN_TEST(test_brew_timer_keeps_brew_screen_after_the_shot);
+    RUN_TEST(test_empty_tank_wins_over_a_shot_it_stopped);
     RUN_TEST(test_message_shows_until_cleared);
     RUN_TEST(test_heating_until_close_to_the_setpoint);
     RUN_TEST(test_dip_after_a_shot_stays_on_the_ready_gauge);

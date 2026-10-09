@@ -365,13 +365,19 @@ namespace orione {
     /**
      * A switch input that must stay the other way for holdMs before it counts: the water level sensor through the
      * plastic of tank and tray flickered full/empty every 1-10 s (08.10.2026), which cut the warm-up flush short.
-     * The first reading counts at once (no delay at the start).
+     * The first reading counts at once (no delay at the start). update() with its own hold: the water level sensor
+     * takes "empty" after 0.4 s while the pump runs (Dominik, 09.10.2026: 3 s let it run the tank dry during a shot).
      */
     class Debounce {
         public:
             explicit Debounce(const uint32_t holdMs) : holdMs_(holdMs) {}
 
             bool update(const bool in, const uint32_t nowMs) {
+                return update(in, nowMs, holdMs_);
+            }
+
+            /** @param holdMs for this call: a change pending already counts from when it began */
+            bool update(const bool in, const uint32_t nowMs, const uint32_t holdMs) {
                 if (!started_) {
                     started_ = true;
                     state_ = in;
@@ -388,7 +394,7 @@ namespace orione {
                     since_ = nowMs;
                 }
 
-                if (nowMs - since_ >= holdMs_) {
+                if (nowMs - since_ >= holdMs) {
                     state_ = in;
                     pending_ = false;
                 }

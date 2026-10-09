@@ -353,6 +353,12 @@ namespace sim {
                  m.settle();
                  m.setFlush(6.2f);
              }},
+            {"rinse-after-shot", "Spülen nach dem Bezug (endet nach 10 s)",
+             [](FakeMachine& m, rd::RoundUi&) {
+                 m.settle();
+                 m.setFlush(6.0f);
+                 m.flushTargetTime = 10.0f;
+             }},
             {"hotwater", "Heißwasser",
              [](FakeMachine& m, rd::RoundUi&) {
                  m.settle();

@@ -618,6 +618,15 @@ void handleMachineState() {
                 machineState = kPidNormal;
             }
 
+#ifdef CC_ORIONE
+            // the tank ran empty during the shot (or the rinse): stop the pump before it draws air, brewSafetyStop()
+            // switches it off (Dominik, 09.10.2026: it ran on until the shot ended and drew the tank dry)
+            if (!waterTankFull && config.get<bool>("hardware.sensors.watertank.enabled")) {
+                LOG(WARNING, "Water tank empty during the shot: stopped");
+                machineState = kWaterTankEmpty;
+            }
+#endif
+
             if (machineState != kBrew) {
                 MQTTReCnctCount = 0; // allow MQTT to try to reconnect if exiting brew mode
             }
@@ -772,6 +781,18 @@ void handleMachineState() {
             break;
 
         case kWaterTankEmpty:
+#ifdef CC_ORIONE
+            // a shot the empty tank stopped: finish it (relays off, logged, back to idle), and follow the brew switch
+            // here too, or a shot left with the switch on kept the display on the shot until the tank was refilled
+            // (Dominik, 09.10.2026: "dann hing der bezugsbildschirm ... selbst als ich s3 umgelegt hatte"). Never
+            // starts a shot: brew() only runs while one is still being finished.
+            if (currBrewState != kBrewIdle) {
+                brew();
+            }
+            else {
+                checkBrewSwitch();
+            }
+#endif
             if (waterTankFull) {
                 machineState = kPidNormal;
 
@@ -2083,9 +2104,13 @@ void checkWaterTank() {
     const bool reading = waterTankSensor->isPressed();
 #endif
 #ifdef CC_ORIONE
-    // the sensor flickered through tank and tray (08.10.2026): a change counts after 3 s the same way (OrioneCare.h)
+    // the sensor flickered through tank and tray (08.10.2026): a change counts after 3 s the same way (OrioneCare.h);
+    // "empty" while the pump draws from the tank after 0.4 s (two readings): 3 s let it run dry during a shot
+    // (Dominik, 09.10.2026: "reagiert zu langsam und hat bereits leer gezogen")
     static orione::Debounce tank(3000);
-    const bool isWaterDetected = tank.update(reading, millis());
+    const bool pumping = checkBrewActive() || machineState == kManualFlush || machineState == kBackflush || machineState == kHotWater || descale::flowing ||
+                         warmup_flush::flowing;
+    const bool isWaterDetected = tank.update(reading, millis(), !reading && pumping ? 400 : 3000);
 #else
     const bool isWaterDetected = reading;
 #endif

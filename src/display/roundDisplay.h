@@ -136,6 +136,9 @@ inline rd::Model roundDisplayModel() {
     m.lastBrewTime = roundBrewTimer.lastShotSeconds();
     m.brewSwitchReminder = roundBrewTimer.remind(millis());
     m.flushTime = static_cast<float>(currBrewTime / 1000);
+#ifdef CC_ORIONE
+    m.flushTargetTime = rinseRunning() ? orione::RinseAfterShot::kMaxMs / 1000.0f : 0.0f; // the ring once round in 10 s
+#endif
     m.hotWaterTime = static_cast<float>(currPumpOnTime / 1000);
 
     m.scaleEnabled = scale != nullptr && config.get<bool>("hardware.sensors.scale.enabled");

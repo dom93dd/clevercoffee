@@ -1428,7 +1428,8 @@ test("Übersicht: letzter Bezug mit Bewertung und Zählern, Statuszeile; Tipp ö
   const now = Math.floor(Date.now() / 1000);
   await setp("standby.enabled=1&schedule.enabled=1&schedule.on=390");
   await mock(BASE, "/__shot", {s: 24.0, g: 35.0, at: now - 3600, d: 18.0, m: "13"});
-  await mock(BASE, "/__shot", {s: 25.3, g: 36.4, at: now - 600, d: 18.0, m: "12", tw: 36.0, sw: 34.6});
+  const today = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.4, at: Math.max(now - 600, today + 1), d: 18.0, m: "12", tw: 36.0, sw: 34.6}); // today, also right after midnight
   const {page, ctx, errors} = await open(browser, BASE);
   const card = view(page).locator("#lastCard");
   await card.locator(".lastnums").waitFor();
@@ -1687,9 +1688,10 @@ test("Einstellungen: Standby und Zeitplan in einer Karte, Waagen-Timer und Feinw
 test("Wartung: Bezüge exportieren (JSON und CSV), letzter Backflush mit Datum", async ({browser}) => {
   const now = Math.floor(Date.now() / 1000);
   await mock(BASE, "/__shot", {s: 25.3, g: 36.4, at: now - 600, d: 18.0, m: "12", b: "Röstwerk \"Hell\""});
-  await mock(BASE, "/__care", {backflushAt: now - 86400 - 3600});
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(12, 0, 0, 0); // also right after midnight
+  await mock(BASE, "/__care", {backflushAt: Math.floor(yesterday / 1000)});
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
-  await page.locator("#bfSince", {hasText: /^Letzter Backflush vor 0 Bezügen · gestern \d\d:\d\d$/}).waitFor();
+  await page.locator("#bfSince", {hasText: /^Letzter Backflush vor 0 Bezügen · gestern 12:00$/}).waitFor();
   const files = [];
   page.on("download", d => files.push(d));
   await view(page).locator("button", {hasText: "Bezüge exportieren"}).click();

@@ -199,7 +199,7 @@ namespace rd {
             void drawBrew(Painter& p) const;
             void drawBrewLabel(Painter& p, bool done) const;
             void drawBrewWeightRing(Painter& p, bool done) const;
-            void drawStopwatch(Painter& p, const char* label, float seconds) const;
+            void drawStopwatch(Painter& p, const char* label, float seconds, float scale = 0.0f) const;
             void drawBackflush(Painter& p) const;
             void drawDescale(Painter& p) const;
             void drawWaterTankEmpty(Painter& p) const;

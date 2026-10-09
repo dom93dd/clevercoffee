@@ -35,6 +35,7 @@ class FakeMachine {
         uint8_t cleaningPhase = 0;       // Orione: cleaning with detergent (rd::Model::cleaningPhase)
         int16_t clockMinutes = 7 * 60 + 42; // local time for the standby screen (-1: no clock)
         bool standbyWarm = false;           // standby keeps the block warm
+        float flushTargetTime = 0;          // the rinse after a shot: ends after 10 s
         uint8_t descalePhase = 0, descaleRound = 0, descalePass = 0; // the descaling program (OrioneDescale.h)
         int16_t descaleSecondsLeft = -1;
         bool descalePumping = false;
@@ -65,6 +66,7 @@ class FakeMachine {
             pidEnabled_ = true;
             standby_ = false;
             standbyWarm = false;
+            flushTargetTime = 0;
             descalePhase = descaleRound = descalePass = 0;
             descaleSecondsLeft = -1;
             descalePumping = false;
@@ -292,6 +294,7 @@ class FakeMachine {
             m.brewTargetTime = targetBrewTime;
             m.lastBrewTime = lastShot_;
             m.flushTime = flushTime_;
+            m.flushTargetTime = flushTargetTime;
             m.hotWaterTime = hotWaterTime_;
 
             m.scaleEnabled = scale;

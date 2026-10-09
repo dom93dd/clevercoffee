@@ -466,6 +466,10 @@ namespace rd {
             return Screen::Descale; // the program holds the machine in the flush state
         }
 
+        if (m.mode == Mode::WaterTankEmpty) {
+            return Screen::WaterTankEmpty; // over a shot it stopped: refill first (Orione, 09.10.2026)
+        }
+
         if (m.brewTimerVisible) {
             return Screen::Brew;
         }
@@ -543,6 +547,7 @@ namespace rd {
         h = hashAdd(h, q(m.brewTargetTime, 0.1f));
         h = hashAdd(h, q(m.lastBrewTime, 0.1f));
         h = hashAdd(h, q(m.flushTime, 0.1f));
+        h = hashAdd(h, q(m.flushTargetTime, 0.1f));
         h = hashAdd(h, q(m.hotWaterTime, 0.1f));
         h = hashAdd(h, m.scaleEnabled | m.scaleFault << 1 | m.bleScale << 2 | m.bleScaleConnected << 3);
         h = hashAdd(h, q(m.brewWeight, 0.1f));
@@ -638,7 +643,7 @@ namespace rd {
                 drawBrew(p);
                 break;
             case Screen::Flush:
-                drawStopwatch(p, strings(view_.language).flush, view_.flushTime);
+                drawStopwatch(p, strings(view_.language).flush, view_.flushTime, view_.flushTargetTime);
                 break;
             case Screen::HotWater:
                 drawStopwatch(p, strings(view_.language).hotWater, view_.hotWaterTime);
@@ -1610,14 +1615,20 @@ namespace rd {
         p.text(fonts::text(), buf, left + dots + 14.0f, y, kTextFaint, Align::Left);
     }
 
-    void RoundUi::drawStopwatch(Painter& p, const char* label, const float seconds) const {
+    void RoundUi::drawStopwatch(Painter& p, const char* label, const float seconds, const float scale) const {
         p.setLayer(Layer::Frame); // ring, ticks and markers
-        const float fill = std::fmod(std::max(0.0f, seconds), kStopwatchScale) / kStopwatchScale;
+        // with an end (scale > 0) the ring fills once up to it, as the rinse after a shot that stops after 10 s
+        // (Dominik, 09.10.2026: "wenn 10sec max gespült wird, soll der ring auch einmal durchgehen"); without one it
+        // is a stopwatch going round every kStopwatchScale seconds
+        const bool end = scale > 0.0f;
+        const float lap = end ? scale : kStopwatchScale;
+        const float fill = end ? std::min(std::max(0.0f, seconds) / lap, 1.0f) : std::fmod(std::max(0.0f, seconds), lap) / lap;
+        const int ticks = static_cast<int>(lap / (lap <= 12.0f ? 2.0f : 5.0f)); // every 2 s on a short ring, else every 5 s
 
         p.circle(kCx, kCy, kRingRadius, kRingWidth, kTrack);
 
-        for (int k = 1; k < 6; ++k) {
-            p.tick(kCx, kCy, 60.0f * static_cast<float>(k), 95.0f, 100.0f, 1.6f, kTickMinor);
+        for (int k = 1; k < ticks; ++k) {
+            p.tick(kCx, kCy, 360.0f * static_cast<float>(k) / static_cast<float>(ticks), 95.0f, 100.0f, 1.6f, kTickMinor);
         }
 
         p.tick(kCx, kCy, 0.0f, 90.0f, 100.0f, 2.6f, kTickMajor);
@@ -1773,21 +1784,26 @@ namespace rd {
         formatNumber(num, sizeof(num), m.temperature, 0, m.language);
         snprintf(buf, sizeof(buf), m.standbyWarm ? "warm %s°" : "%s°", num); // the same word in German and English
 
-        if (m.clockMinutes >= 0 && m.clockMinutes < 24 * 60) {
+        // the whole block (label, clock, temperature, hint) centred on the screen (Dominik, 10.10.2026: "nicht
+        // zentriert genug"; it sat 19 px low, without the clock 27 px)
+        const bool clockShown = m.clockMinutes >= 0 && m.clockMinutes < 24 * 60;
+        const float up = clockShown ? 19.0f : 27.0f;
+
+        if (clockShown) {
             // the time of day, as GaggiMate users asked for (#508, #618); the temperature small under it
             char clock[8];
             snprintf(clock, sizeof(clock), "%02d:%02d", m.clockMinutes / 60, m.clockMinutes % 60);
-            p.text(fonts::label(), s.standby, kCx, 92.0f, kTextFaint);
-            p.text(fonts::mid(), clock, kCx, 136.0f, kTextDim);
-            p.text(fonts::textSmall(), buf, kCx, 168.0f, kTextFaint);
+            p.text(fonts::label(), s.standby, kCx, 92.0f - up, kTextFaint);
+            p.text(fonts::mid(), clock, kCx, 136.0f - up, kTextDim);
+            p.text(fonts::textSmall(), buf, kCx, 168.0f - up, kTextFaint);
         }
         else {
-            p.text(fonts::label(), s.standby, kCx, 108.0f, kTextFaint);
-            p.text(fonts::mid(), buf, kCx, 150.0f, kTextFaint);
+            p.text(fonts::label(), s.standby, kCx, 108.0f - up, kTextFaint);
+            p.text(fonts::mid(), buf, kCx, 150.0f - up, kTextFaint);
         }
 
         if (m.switchWakes) {
-            p.text(fonts::hint(), s.switchWakes, kCx, kRowBY, kTextFaint);
+            p.text(fonts::hint(), s.switchWakes, kCx, kRowBY - up, kTextFaint);
         }
     }
 
