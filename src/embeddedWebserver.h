@@ -119,6 +119,7 @@ namespace live_events {
             int battery;   // the scale's battery in percent, < 0 unknown
             int warmup;    // warm-up flush: orione::WarmupFlush::Phase
             int pulse;     // its pulse, 0 when not running
+            int pulses;    // its pulses: 3 warm-up flush, 1 the rinse after a shot
             double cup;    // while the drops after a shot are counted: in the cup since the start, < 0 otherwise
             bool held;     // the shot stopped by itself and the brew switch is still on
             bool sw;       // the brew switch is on (or not back off yet)
@@ -155,7 +156,7 @@ namespace live_events {
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && std::isfinite(v.weight) ? R"(,"weight":%.1f)" : R"(,"weight":null)", v.weight);
                 n += snprintf(json + n, sizeof(json) - n, v.flow >= 0 ? R"(,"flow":%.2f)" : R"(,"flow":null)", v.flow);
                 n += snprintf(json + n, sizeof(json) - n, v.scale == 2 && v.battery >= 0 ? R"(,"battery":%d)" : R"(,"battery":null)", v.battery);
-                n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d)", v.warmup, v.pulse);
+                n += snprintf(json + n, sizeof(json) - n, R"(,"warmup":%d,"pulse":%d,"pulses":%d)", v.warmup, v.pulse, v.pulses);
                 n += snprintf(json + n, sizeof(json) - n, v.cup >= 0 ? R"(,"cup":%.1f)" : R"(,"cup":null)", v.cup);
                 snprintf(json + n, sizeof(json) - n, R"(,"held":%s,"sw":%s,"steam":%d,"pi":%d,"fp":%s,"bfd":%s,"clean":%d})", v.held ? "true" : "false", v.sw ? "true" : "false",
                          v.steam, v.pi, v.fp ? "true" : "false", v.bfd ? "true" : "false", v.clean);
@@ -715,7 +716,8 @@ inline void serverSetup() {
             return request->send(409, "text/plain", "no water level sensor");
         }
 
-        warmup_flush::requestFromWeb(!request->hasParam("stop"));
+        // ?pulses=1: the rinse after a shot (one pulse) from the page's "Bitte spülen"
+        warmup_flush::requestFromWeb(!request->hasParam("stop"), request->hasParam("pulses") ? static_cast<int>(request->getParam("pulses")->value().toInt()) : orione::WarmupFlush::kPulses);
         request->send(202, "text/plain", "ok");
     });
 
@@ -1123,7 +1125,7 @@ inline void sendTempEvent(const double currentTemp, const double targetTemp, con
                                                                                                  : 1;
     live_events::publish({currentTemp, targetTemp, heaterPower, static_cast<int>(machineState), round(currBrewTime / 100.0) / 10.0, scaleState,
                           checkBrewActive() ? currBrewWeight : currReadingWeight, shot_history::liveFlow(scaleState == 2), scaleBatteryPercent(),
-                          warmup_flush::livePhase(), warmup_flush::flush.pulse(),
+                          warmup_flush::livePhase(), warmup_flush::flush.pulse(), warmup_flush::flush.pulses(),
                           scaleState == 2 && shot_history::shotLog.settling() ? std::max(0.0, static_cast<double>(currReadingWeight - preBrewWeight)) : -1.0,
                           brewSwitchHeldAfterBrew(), currBrewSwitchState != kBrewSwitchIdle, static_cast<int>(orione_machine::steam.phase()),
                           currBrewState == kPreinfusion ? 1 : currBrewState == kPreinfusionPause ? 2 : 0, shot_history::flushPending,

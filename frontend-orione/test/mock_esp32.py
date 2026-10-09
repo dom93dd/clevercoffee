@@ -50,7 +50,7 @@ BASE = {
     "brew.by_weight.lag": dict(type=2, value=1.0, min=0, max=3),
     "brew.heat_boost": dict(type=2, value=60.0, min=0, max=100),
     "brew.by_weight.learn": dict(type=1, value=1, min=0, max=1),
-    "brew.presets": dict(type=4, value="25,36;30,45;45,80", min=0, max=48),
+    "brew.presets": dict(type=4, value="25,2;30,2.5;45,4.5", min=0, max=48),  # seconds,ratio (src/defaults.h)
     "brew.dose": dict(type=2, value=18.0, min=5, max=30),
     "brew.grind": dict(type=4, value="12", min=0, max=9),
     "brew.grinder": dict(type=4, value="", min=0, max=40),
@@ -199,7 +199,7 @@ class State:
     def care_json(self):
         limit = self.p["descale.litres"]["value"]
         standby = 23 if self.p["standby.enabled"]["value"] else -1
-        return {**self.care, "descaleL": limit, "due": limit > 0 and self.care["water"] >= limit * 1000, "standby": standby, "rssi": self.care.get("rssi", -71)}
+        return {**self.care, "descaleL": limit, "due": limit > 0 and self.care["water"] >= limit * 1000, "standby": standby, "rssi": self.care.get("rssi", -71), "backflushAt": self.care.get("backflushAt", 0)}
 
     @staticmethod
     def curve(shot):
@@ -338,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = 10 if pid else 60
                     data = {"currentTemp": round(S.temp, 2), "targetTemp": target, "heaterPower": 100 if pid and S.temp < target - 1 else 20 if pid else 0,
                             "state": state, "brewTime": 0, "scale": S.scale_state(), "weight": 0.0 if S.scale_state() == 2 else None, "flow": None,
-                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False,
+                            "battery": 76 if S.scale_state() == 2 else None, "warmup": 0, "pulse": 0, "pulses": 3, "cup": None, "held": False, "sw": False, "steam": 0, "pi": 0, "fp": False, "bfd": False,
                             "clean": S.clean}
                     data.update(S.live)
                 self.wfile.write(f"event: new_temps\ndata: {json.dumps(data)}\n\n".encode())

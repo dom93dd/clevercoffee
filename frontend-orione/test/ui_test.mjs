@@ -102,7 +102,7 @@ test("Start: Live-Werte, Soll, keine Fehler, eine Anfrage zur Zeit", async ({bro
   await p.page.waitForFunction(() => !document.querySelector("#tNow").textContent.startsWith("–"));
   assert.match(await p.page.locator("#state").textContent(), /Heizt auf|Bereit/);
   assert.equal(await row(p.page, "Stoppen").count(), 0, "the next shot is set up on the brew tab only");
-  assert.equal(await row(p.page, "Temperaturregelung").count(), 1);
+  assert.equal(await row(p.page, "Heizen").count(), 1);
   assert.equal(await view(p.page).locator(".step input").first().inputValue(), "95,0 °C");
   assert.equal(await p.page.locator("#tSet").isHidden(), true, "the setpoint shows in the stepper right below");
   assert.equal(await p.page.locator("text=Version").count(), 0, "version only in the care tab");
@@ -175,7 +175,7 @@ test("Reiter: Wechsel ohne neue Anfragen, Scrollposition bleibt", async ({browse
   }
   assert.equal(gets, 0, "all tabs were fetched in the background after the start");
   await tab(page, "Einstellungen");
-  await view(page).locator("summary", {hasText: "Regler"}).click(); // longer page
+  await view(page).locator("summary", {hasText: "Fortgeschritten"}).click(); // longer page
   const at = await page.evaluate(() => { scrollTo(0, 300); return scrollY; });
   assert.ok(at > 100, "settings page scrollable: " + at);
   await tab(page, "Maschine");
@@ -192,12 +192,12 @@ test("Reiter: Wechsel ohne neue Anfragen, Scrollposition bleibt", async ({browse
 
 test("Waage aus: Neustart-Hinweis, neu starten, Seite lädt danach neu", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#settings"});
-  assert.equal(await row(page, "Timer der Waage mitlaufen lassen").count(), 1);
+  assert.equal(await view(page).locator(".scalepair").count(), 1);
   await row(page, "Bluetooth-Waage").locator(".sw").click();
   await page.locator("#rebootBar:not([hidden])", {hasText: "Wirkt nach einem Neustart"}).waitFor();
   await settle(page);
   assert.equal((await values(BASE))["hardware.sensors.scale.enabled"], 0);
-  assert.equal(await row(page, "Timer der Waage mitlaufen lassen").count(), 0);
+  assert.equal(await view(page).locator(".scalepair").count(), 0, "scale choice only with the scale on");
   await tab(page, "Bezug");
   assert.equal(await row(page, "Stoppen").locator("button").count(), 2);
   assert.match(await row(page, "Stoppen").textContent(), /erst Waage einschalten/);
@@ -369,7 +369,7 @@ test("Letzte Bezüge: Zeit, Gewicht, wann; neuer Bezug erscheint von selbst", as
 test("Schnellwahl: Tipp setzt Stopp-Art und Ziele (mit Waage nach Gewicht)", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#brew"});
   const chips = view(page).locator(".chips button");
-  assert.deepEqual(await chips.allTextContents(), ["Espresso36 g", "Doppio45 g", "Lungo80 g"]);
+  assert.deepEqual(await chips.allTextContents(), ["Espresso1:2,0 · 36 g", "Doppio1:2,5 · 45 g", "Lungo1:4,5 · 81 g"], "a ratio, in grams at the dose");
   assert.equal(await view(page).locator(".chips button.on").count(), 0, "by hand: no preset active");
   await chips.nth(1).click();
   await row(page, "Zielgewicht").waitFor();
@@ -377,7 +377,7 @@ test("Schnellwahl: Tipp setzt Stopp-Art und Ziele (mit Waage nach Gewicht)", asy
   const v = await values(BASE);
   assert.equal(v["brew.mode"], 1); assert.equal(v["brew.by_weight.enabled"], 1); assert.equal(v["brew.by_time.enabled"], 0);
   assert.equal(v["brew.by_weight.target_weight"], 45); assert.equal(v["brew.by_time.target_time"], 30);
-  assert.equal(await view(page).locator(".chips button.on").textContent(), "Doppio45 g");
+  assert.equal(await view(page).locator(".chips button.on").textContent(), "Doppio1:2,5 · 45 g");
   assert.equal(await row(page, "Zielgewicht").locator("input").inputValue(), "45,0 g");
   await page.screenshot({path: OUT + "brew-presets.png", fullPage: true});
   await ctx.close();
@@ -389,22 +389,23 @@ test("Schnellwahl: ein im Reiter Bezug geändertes Ziel übernimmt der gewählte
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
   await view(page).locator(".chips button.on", {hasText: "Espresso"}).waitFor(); // 36 g: Espresso
   await row(page, "Zielgewicht").locator("button", {hasText: "−"}).click();
-  await view(page).locator(".chips button.on", {hasText: "Espresso35,5 g"}).waitFor();
+  await view(page).locator(".chips button.on", {hasText: "Espresso1:2,0 · 35,5 g"}).waitFor(); // the chip keeps the ratio of the new target
   await settle(page);
   let v = await values(BASE);
   assert.equal(v["brew.by_weight.target_weight"], 35.5);
-  assert.equal(v["brew.presets"], "25,35.5;30,45;45,80");
+  assert.equal(v["brew.presets"], "25,1.97;30,2.5;45,4.5");
+  await view(page).locator("summary", {hasText: "Feineinstellung"}).click();
   await row(page, "Ohne Waage nach").locator("button", {hasText: "+"}).click(); // the time goes along as well
   await settle(page);
-  assert.equal((await values(BASE))["brew.presets"], "25.5,35.5;30,45;45,80");
+  assert.equal((await values(BASE))["brew.presets"], "25.5,1.97;30,2.5;45,4.5");
   await view(page).locator(".chips button", {hasText: "Doppio"}).click(); // another chip: takes its values, changes none
-  await view(page).locator(".chips button.on", {hasText: "Doppio45 g"}).waitFor();
+  await view(page).locator(".chips button.on", {hasText: "Doppio1:2,5 · 45 g"}).waitFor();
   await settle(page);
   v = await values(BASE);
-  assert.equal(v["brew.presets"], "25.5,35.5;30,45;45,80");
+  assert.equal(v["brew.presets"], "25.5,1.97;30,2.5;45,4.5");
   assert.equal(v["brew.by_weight.target_weight"], 45); assert.equal(v["brew.by_time.target_time"], 30);
   await tab(page, "Einstellungen"); // the quick choice there shows it too
-  assert.deepEqual(await row(page, "Espresso").locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,5 s", "35,5 g"]);
+  assert.deepEqual(await row(page, "Espresso").locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,5 s", "1:2,0"]);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -427,17 +428,17 @@ test("Schnellwahl ohne Waage: nach Zeit", async ({browser}) => {
 test("Schnellwahl: Werte ändern und behalten", async ({browser}) => {
   const {page, ctx} = await open(browser, BASE, {hash: "#settings"});
   const espresso = row(page, "Espresso");
-  assert.deepEqual(await espresso.locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,0 s", "36,0 g"]);
+  assert.deepEqual(await espresso.locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,0 s", "1:2,0"]);
   await espresso.locator(".step").nth(1).locator("button", {hasText: "+"}).click();
   await settle(page);
-  assert.equal((await values(BASE))["brew.presets"], "25,36.5;30,45;45,80");
+  assert.equal((await values(BASE))["brew.presets"], "25,2.1;30,2.5;45,4.5");
   await page.screenshot({path: OUT + "settings-presets.png", fullPage: true});
   await tab(page, "Bezug");
-  assert.equal(await view(page).locator(".chips button").first().textContent(), "Espresso36,5 g");
+  assert.equal(await view(page).locator(".chips button").first().textContent(), "Espresso1:2,1 · 38 g");
   await page.reload();
   await settle(page);
   await tab(page, "Einstellungen");
-  assert.deepEqual(await row(page, "Espresso").locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,0 s", "36,5 g"]);
+  assert.deepEqual(await row(page, "Espresso").locator("input").evaluateAll(xs => xs.map(x => x.value)), ["25,0 s", "1:2,1"]);
   await ctx.close();
 });
 
@@ -548,6 +549,7 @@ test("Bedienbarkeit: Schalter mit Zustand, ganze Zeile tippbar, 44-px-Tasten, 16
   await settle(page);
   assert.equal((await values(BASE))["standby.enabled"], 1);
   assert.equal(await row(page, "Standby").locator(".sw").getAttribute("aria-checked"), "true");
+  await view(page).locator("summary", {hasText: "Fortgeschritten"}).click(); // the offset is a fine setting now
   const b = await row(page, "Offset").locator(".step button").first().boundingBox();
   assert.ok(b.width >= 44 && b.height >= 44, `stepper button ${b.width}x${b.height}`);
   assert.equal(await row(page, "Offset").locator(".step button").first().getAttribute("aria-label"), "weniger");
@@ -571,7 +573,10 @@ test("Rezept: Dosis, Mahlgrad und Verhältnis im nächsten Bezug", async ({brows
   await view(page).locator(".chips button").nth(1).click(); // Doppio, by weight: 45 g
   await page.locator("#ratio", {hasText: "Verhältnis 1:2,5"}).waitFor();
   await view(page).locator(".recipe .step input").fill("15"); await view(page).locator(".recipe .step input").press("Enter");
-  await page.locator("#ratio", {hasText: "1:3,0"}).waitFor();
+  await page.locator("#ratio", {hasText: "Verhältnis 1:2,5"}).waitFor(); // the chosen ratio stays, the target follows the dose
+  await settle(page);
+  assert.equal((await values(BASE))["brew.by_weight.target_weight"], 37.5);
+  assert.equal(await row(page, "Zielgewicht").locator("input").inputValue(), "37,5 g");
   await page.screenshot({path: OUT + "brew-recipe.png", fullPage: true});
   await ctx.close();
 });
@@ -805,7 +810,12 @@ test("Pre-Infusion (Test): einschalten, Zeiten und Ventil in den Einstellungen",
   assert.equal(await row(page, "Pause").locator("input").inputValue(), "4,0 s");
   await card.screenshot({path: OUT + "settings-preinfusion.png"});
   await tab(page, "Bezug");
-  assert.equal(await view(page).locator(".pinote").textContent(), "Pre-Infusion an: 2,5 s Pumpstoß, 4,0 s Pause");
+  assert.equal(await view(page).locator(".pinote").textContent(), "2,5 s Pumpstoß, 4,0 s Pause");
+  const pr = view(page).locator(".row", {has: page.locator(".pinote")}); // switched per shot on the brew tab
+  assert.equal(await pr.locator(".sw").getAttribute("aria-checked"), "true");
+  await pr.locator(".sw").click();
+  await settle(page);
+  assert.equal((await values(BASE))["brew.pre_infusion.enabled"], 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -892,7 +902,8 @@ test("Spülen nach dem Bezug: Hinweis, bis gespült ist; nicht während des Bezu
   assert.equal(await note.isVisible(), false, "no shot yet");
   await mock(BASE, "/__live", {state: 10, fp: true});
   await note.waitFor();
-  assert.equal(await note.textContent(), "Bitte spülen: Siebträger raus, Bezugsschalter 2–3 s an.");
+  assert.equal(await note.locator("span").textContent(), "Bitte spülen: Siebträger raus, Bezugsschalter 2–3 s an.");
+  assert.equal(await note.locator(".btn").isVisible(), false, "the rinse button needs the water level sensor");
   await tab(page, "Bezug");
   await view(page).locator(".note.rinse").waitFor();
   await mock(BASE, "/__live", {state: 20, brewTime: 1.2, fp: true}); // the rinse itself runs: not now
@@ -1122,7 +1133,9 @@ test("Nach Gewicht: Nachlauf und Abweichung vom Ziel, Nachlaufzeit gelernt", asy
   assert.match(await info.textContent(), /Ziel 36,0 g · Pumpe aus bei 34,6 g \(1,8 g = 1,00 s × 1,8 g\/s\) · Nachlauf 1,8 g · \+0,4 g über Ziel$/);
   await view(page).locator("#shotList .curve:not([hidden]) canvas").waitFor();
   await page.screenshot({path: OUT + "brew-weight-drops.png", fullPage: true});
-  // the shot card: stop by weight shows the drop time, and what it means in grams at the last shot's flow
+  // the shot card: stop by weight shows the drop time (folded: the machine learns it), and what it means in grams at the last shot's flow
+  assert.equal(await row(page, "Nachlaufzeit").isVisible(), false, "folded");
+  await view(page).locator("summary", {hasText: "Feineinstellung"}).click();
   assert.equal(await row(page, "Nachlaufzeit").locator("input").inputValue(), "1,00 s", "stop by weight: the drop time");
   assert.equal(await page.locator("#lagNow").textContent(), "Letzter Bezug: 1,8 g/s, also 1,8 g vor dem Ziel");
   await row(page, "Nachlaufzeit").locator("button", {hasText: "+"}).click();
@@ -1260,6 +1273,7 @@ test("Nach Gewicht ohne Waage: Stopp nach Zeit, angezeigt und einstellbar; Oberg
   await setp("brew.mode=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0");
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
   assert.match(await row(page, "Stoppen").locator(".lbl p").last().textContent(), /^Jeder Bezug endet spätestens nach 60 s\.$/);
+  await view(page).locator("summary", {hasText: "Feineinstellung"}).click();
   const fb = row(page, "Ohne Waage nach"); // the label says it all, no hint under it
   await fb.locator("button", {hasText: "+"}).click();
   await settle(page);
@@ -1368,7 +1382,7 @@ test("Wartung: Laufzeit und Grund des letzten Starts", async ({browser}) => {
 
 test("Regler: Heizen beim Bezug einstellbar", async ({browser}) => {
   const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
-  await view(page).locator("summary", {hasText: "Regler"}).click();
+  await view(page).locator("summary", {hasText: "Fortgeschritten"}).click();
   const r = row(page, "Heizen beim Bezug");
   assert.equal(await r.locator("input").inputValue(), "60 %");
   assert.match(await r.locator(".lbl p").textContent(), /solange die Pumpe läuft/);
@@ -1423,7 +1437,7 @@ test("Übersicht: letzter Bezug mit Bewertung und Zählern, Statuszeile; Tipp ö
   const pills = await view(page).locator("#pills span").allTextContents();
   assert.ok(pills.includes("Waage · 76 %"), pills.join(" | "));
   assert.ok(pills.some(x => /^Ein (heute|morgen) 06:30$/.test(x)), pills.join(" | "));
-  assert.ok(pills.includes("Standby in 23 min"), pills.join(" | "));
+  assert.equal(await view(page).locator("#pidState").textContent(), "an · Standby in 23 min");
   assert.ok(pills.includes("WLAN −71 dBm"), pills.join(" | "));
   await card.locator(".taste button", {hasText: "passt"}).click();
   await card.locator(".taste button.on", {hasText: "passt"}).waitFor();
@@ -1577,6 +1591,101 @@ test("Temperaturverlauf im Bezug: in Temperatur einstellbar, Claude weiß davon"
   assert.equal(await r.locator("input").inputValue(), "−2,0 K".replace("−", "-"));
   const ctxText = await page.evaluate(() => coffeeContext());
   assert.ok(ctxText.includes("Temperaturverlauf: Das Soll ändert sich während des Bezugs gleichmäßig um -2,0 K bis zum Ende."), ctxText);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Schnellwahl: alte Werte in Gramm werden als Verhältnis gelesen, Laden ändert nichts", async ({browser}) => {
+  await setp("brew.presets=25,33;30,45;45,80&brew.dose=16.5&brew.mode=1"); await setp("brew.by_weight.enabled=1&brew.by_time.enabled=0&brew.by_weight.target_weight=33");
+  const before = (await posts(BASE)).length; // the test's own settings
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#brew"});
+  assert.deepEqual(await view(page).locator(".chips button").allTextContents(), ["Espresso1:2,0 · 33 g", "Doppio1:2,7 · 45 g", "Lungo1:4,9 · 80 g"]);
+  assert.equal(await view(page).locator(".chips button.on").textContent(), "Espresso1:2,0 · 33 g");
+  assert.deepEqual((await posts(BASE)).slice(before), [], "loading the page must not rewrite the presets");
+  await view(page).locator(".recipe .step input").fill("18"); await view(page).locator(".recipe .step input").press("Enter"); // more coffee: the cup follows
+  await view(page).locator(".chips button.on", {hasText: "Espresso1:2,0 · 36 g"}).waitFor();
+  await settle(page);
+  assert.equal((await values(BASE))["brew.by_weight.target_weight"], 36);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Spülen nach dem Bezug: Knopf spült einmal, nur mit Wasserstandssensor und bereit", async ({browser}) => {
+  await setp("hardware.sensors.watertank.enabled=1");
+  await mock(BASE, "/__live", {state: 10, fp: true, sw: true});
+  const {page, ctx, errors} = await open(browser, BASE);
+  const btn = view(page).locator(".note.rinse .btn");
+  await btn.waitFor();
+  assert.equal(await btn.isDisabled(), true, "the brew switch is still on");
+  await mock(BASE, "/__live", {state: 10, fp: true, sw: false});
+  await page.waitForFunction(() => !document.querySelector("#main > div:not([hidden]) .note.rinse .btn").disabled);
+  await btn.click();
+  await settle(page);
+  assert.ok((await posts(BASE)).some(x => x.path === "/flush" && x.query === "start=1&pulses=1"), JSON.stringify(await posts(BASE)));
+  await mock(BASE, "/__live", {state: 25, fp: true, warmup: 2, pulse: 1, pulses: 1});
+  await btn.filter({hasText: "Spült …"}).waitFor();
+  assert.equal(await page.locator("#state").textContent(), "Spülen", "one pulse: no 1/3");
+  await mock(BASE, "/__live", {state: 10, fp: false});
+  await view(page).locator(".note.rinse").waitFor({state: "hidden"});
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Wassertank leer: Tropfen statt nur Farbe; Kühlt ab neutral", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  await mock(BASE, "/__live", {state: 70});
+  await page.locator("#alarm.info svg.ico").waitFor();
+  assert.match(await page.locator("#alarm").textContent(), /^Wassertank leerBitte nachfüllen/);
+  assert.equal(await page.locator("#chip i").getAttribute("class"), "drop");
+  await page.screenshot({path: OUT + "status-tank-empty.png"});
+  await mock(BASE, "/__live", {state: 10, currentTemp: 99.0, targetTemp: 95.0});
+  await page.locator("#state", {hasText: "Kühlt ab"}).waitFor();
+  assert.equal(await page.locator("#chip i").evaluate(e => e.style.background), "var(--calm)");
+  assert.equal(await page.locator("#chip i").getAttribute("class"), "");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Einstellungen: Standby und Zeitplan in einer Karte, Waagen-Timer und Feinwerte nicht im Weg", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#settings"});
+  const cards = await page.locator("#main > div:not([hidden]) section.card[data-card]").evaluateAll(cs => cs.map(c => c.dataset.card));
+  assert.deepEqual(cards, ["sPresets", "sCoffee", "sPreinf", "sTemp", "sPower", "sScale", "sClaude", "sTank", "sDisplay", "sPid", "sSystem"]);
+  const power = view(page).locator('[data-card="sPower"]');
+  assert.equal(await power.locator("h2").textContent(), "Ein & Aus");
+  assert.deepEqual(await power.locator(".lbl > div").allTextContents(), ["Standby", "Automatisch einschalten"]);
+  assert.equal(await row(page, "Timer der Waage mitlaufen lassen").count(), 0);
+  assert.equal(await row(page, "Offset").isVisible(), false, "folded under Fortgeschritten");
+  assert.equal(await row(page, "FERTIG danach noch").count(), 1);
+  assert.match(await row(page, "PonM").locator(".lbl p").textContent(), /weniger Überschwingen/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Wartung: Bezüge exportieren (JSON und CSV), letzter Backflush mit Datum", async ({browser}) => {
+  const now = Math.floor(Date.now() / 1000);
+  await mock(BASE, "/__shot", {s: 25.3, g: 36.4, at: now - 600, d: 18.0, m: "12", b: "Röstwerk \"Hell\""});
+  await mock(BASE, "/__care", {backflushAt: now - 86400 - 3600});
+  const {page, ctx, errors} = await open(browser, BASE, {hash: "#care"});
+  await page.locator("#bfSince", {hasText: /^Letzter Backflush vor 0 Bezügen · gestern \d\d:\d\d$/}).waitFor();
+  const files = [];
+  page.on("download", d => files.push(d));
+  await view(page).locator("button", {hasText: "Bezüge exportieren"}).click();
+  for (let i = 0; i < 50 && files.length < 2; i++) await sleep(100);
+  assert.deepEqual(files.map(f => f.suggestedFilename().replace(/\d{4}-\d\d-\d\d/, "D")).sort(), ["orione-shots-D.csv", "orione-shots-D.json"]);
+  const json = JSON.parse(await (await import("node:fs/promises")).readFile(await files.find(f => f.suggestedFilename().endsWith(".json")).path(), "utf8"));
+  assert.equal(json.shots.length, 1); assert.ok(json.shots[0].curve?.t?.length > 10, "with its curve");
+  const csv = await (await import("node:fs/promises")).readFile(await files.find(f => f.suggestedFilename().endsWith(".csv")).path(), "utf8");
+  assert.match(csv, /^at;s;g;d;m;b;ratio;r;t0;fd;tw;sw;lg;pi;ch\n/);
+  assert.match(csv, /;25,3;36,4;18,0;"12";"Röstwerk ""Hell""";2,02;/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Übersicht ohne Bezug: Zähler und was fällig ist", async ({browser}) => {
+  const {page, ctx, errors} = await open(browser, BASE);
+  const card = view(page).locator("#lastCard");
+  await card.locator(".shotinfo", {hasText: "3 heute · 12 diese Woche · Backflush in 50 · Entkalken in ≈ 28 l"}).waitFor();
+  assert.equal(await card.locator("h2").textContent(), "Heute");
   assert.deepEqual(errors, []);
   await ctx.close();
 });

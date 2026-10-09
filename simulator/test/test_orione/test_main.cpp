@@ -1141,6 +1141,62 @@ void test_pointer_set_keeps_a_few_without_heap() {
     TEST_ASSERT_EQUAL(1, set.size());
 }
 
+void test_stats_keep_the_backflush_date_and_take_format_1_over() {
+    orione::MachineStats a;
+    a.shot(18.0f, 54, 20000);
+    a.backflushed(1791500000);
+    a.backflushed(0); // no clock: the date stays
+    TEST_ASSERT_EQUAL_UINT32(1791500000, a.backflushAt());
+    const auto s = a.stored();
+    orione::MachineStats b;
+    TEST_ASSERT_TRUE(b.restore(&s, sizeof(s)));
+    TEST_ASSERT_EQUAL_UINT32(1791500000, b.backflushAt());
+    // format 1 (before the date): the counters come along, no date
+    orione::MachineStats::StoredV1 v1{1, 245, 44100, 12300, 1791000000, 20000, 2857, 3, 12};
+    orione::MachineStats c;
+    TEST_ASSERT_TRUE(orione::MachineStats::readable(sizeof(v1)));
+    TEST_ASSERT_TRUE(c.restore(&v1, sizeof(v1)));
+    TEST_ASSERT_EQUAL_UINT32(245, c.total());
+    TEST_ASSERT_EQUAL_UINT32(12300, c.waterMl());
+    TEST_ASSERT_EQUAL_UINT32(1791000000, c.descaledAt());
+    TEST_ASSERT_EQUAL_UINT16(3, c.today(20000));
+    TEST_ASSERT_EQUAL_UINT32(0, c.backflushAt());
+    v1.version = 7; // unknown
+    TEST_ASSERT_FALSE(c.restore(&v1, sizeof(v1)));
+    TEST_ASSERT_FALSE(orione::MachineStats::readable(5));
+}
+
+void test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes() {
+    using R = orione::RinseAfterShot;
+    TEST_ASSERT_TRUE(R::expected(true, 100000, 90000));
+    TEST_ASSERT_TRUE(R::expected(true, 90000 + R::kWindowMs, 90000));
+    TEST_ASSERT_FALSE(R::expected(true, 90001 + R::kWindowMs, 90000)); // later: the next shot is prepared
+    TEST_ASSERT_FALSE(R::expected(false, 100000, 90000));               // rinsed already
+    TEST_ASSERT_TRUE(R::expected(true, 5000, 0xFFFFF000u));             // millis() ran over
+}
+
+void test_flush_by_hand_with_one_pulse_for_the_rinse() {
+    orione::WarmupFlush f;
+    const orione::WarmupFlush::Inputs ok{true, false, true, true, false};
+    f.update(0, 93.0, 93.0, ok); // warm start: nothing pending
+    f.requestStart(1);
+    TEST_ASSERT_TRUE(f.update(1000, 93.0, 93.0, ok));
+    TEST_ASSERT_EQUAL(1, f.pulses());
+    TEST_ASSERT_EQUAL(1, f.pulse());
+    TEST_ASSERT_TRUE(f.update(1000 + orione::WarmupFlush::kPulseMs - 1, 93.0, 93.0, ok));
+    TEST_ASSERT_FALSE(f.update(1000 + orione::WarmupFlush::kPulseMs, 93.0, 93.0, ok));
+    TEST_ASSERT_EQUAL(orione::WarmupFlush::kDone, f.phase()); // one pulse, no pause after it
+    f.requestStart(); // by hand again: the warm-up flush's three
+    TEST_ASSERT_TRUE(f.update(60000, 93.0, 93.0, ok));
+    TEST_ASSERT_EQUAL(3, f.pulses());
+    f.requestStart(9); // clamped
+    orione::WarmupFlush g;
+    g.update(0, 93.0, 93.0, ok);
+    g.requestStart(0);
+    g.update(1, 93.0, 93.0, ok);
+    TEST_ASSERT_EQUAL(1, g.pulses());
+}
+
 void test_water_estimates() {
     TEST_ASSERT_EQUAL_UINT32(50, orione::Water::shotMl(33.4f, 16.5f, 28.0f)); // cup + what the puck keeps
     TEST_ASSERT_EQUAL_UINT32(56, orione::Water::shotMl(-1.0f, 16.5f, 28.0f)); // no scale: the time
@@ -1340,6 +1396,9 @@ int main() {
     RUN_TEST(test_schedule_fires_once_at_its_minute_on_its_days);
     RUN_TEST(test_standby_wakes_only_on_a_switch_turned_on_during_it);
     RUN_TEST(test_pointer_set_keeps_a_few_without_heap);
+    RUN_TEST(test_stats_keep_the_backflush_date_and_take_format_1_over);
+    RUN_TEST(test_rinse_after_a_shot_skips_the_preinfusion_for_two_minutes);
+    RUN_TEST(test_flush_by_hand_with_one_pulse_for_the_rinse);
     RUN_TEST(test_water_estimates);
     RUN_TEST(test_stats_count_days_weeks_and_descaling);
     RUN_TEST(test_cleaning_with_detergent_then_rinse);

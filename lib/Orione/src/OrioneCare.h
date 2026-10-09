@@ -101,6 +101,20 @@ namespace orione {
     };
 
     /**
+     * Rinse after a shot without pre-infusion (Dominik, 09.10.2026; the Breville Dual Boiler and Lelit's LCC have a
+     * flush without pre-infusion for this): while the page and the display ask to rinse, at most kWindowMs after the
+     * shot, the brew switch runs the pump straight away. A second shot within that time without rinsing runs without
+     * pre-infusion too.
+     */
+    struct RinseAfterShot {
+            static constexpr uint32_t kWindowMs = 120000;
+
+            static bool expected(const bool rinsePending, const uint32_t nowMs, const uint32_t shotEndMs) {
+                return rinsePending && nowMs - shotEndMs <= kWindowMs;
+            }
+    };
+
+    /**
      * How much water went through the thermoblock, for the descaling reminder. An estimate: a shot is what reached the
      * cup plus what the puck kept (about its dose again), a rinse runs at about 8 ml/s through the open group (cottec,
      * Kaffee-Netz t165325: ~10 ml/s or more for an empty shot, less through the Orione's group), a backflush cycle
@@ -163,6 +177,17 @@ namespace orione {
                 descaledAt_ = whenUtc;
             }
 
+            /** All backflush cycles ran (0: clock not set, the date stays as it was) */
+            void backflushed(const uint32_t whenUtc) {
+                if (whenUtc != 0) {
+                    backflushAt_ = whenUtc;
+                }
+            }
+
+            uint32_t backflushAt() const {
+                return backflushAt_;
+            }
+
             uint32_t total() const {
                 return total_;
             }
@@ -202,20 +227,46 @@ namespace orione {
                     int32_t weekNo;
                     uint16_t today;
                     uint16_t week;
+                    uint32_t backflushAt; // 2
             };
 
+            /** Format 1 (08.10.2026, before the backflush date): read once, saved as 2 */
+            struct StoredV1 {
+                    uint8_t version;
+                    uint32_t total;
+                    uint32_t doseDeci;
+                    uint32_t waterMl;
+                    uint32_t descaledAt;
+                    int32_t day;
+                    int32_t weekNo;
+                    uint16_t today;
+                    uint16_t week;
+            };
+
+            static constexpr size_t kMaxStoredSize = sizeof(Stored);
+
+            static bool readable(const size_t length) {
+                return length == sizeof(Stored) || length == sizeof(StoredV1);
+            }
+
             Stored stored() const {
-                return Stored{kVersion, total_, doseDeci_, waterMl_, descaledAt_, day_, weekNo_, today_, week_};
+                return Stored{kVersion, total_, doseDeci_, waterMl_, descaledAt_, day_, weekNo_, today_, week_, backflushAt_};
             }
 
             bool restore(const void* data, const size_t length) {
                 Stored s{};
 
-                if (data == nullptr || length != sizeof(s)) {
+                if (data != nullptr && length == sizeof(StoredV1) && static_cast<const uint8_t*>(data)[0] == 1) {
+                    StoredV1 o{};
+                    std::memcpy(&o, data, sizeof(o));
+                    s = Stored{kVersion, o.total, o.doseDeci, o.waterMl, o.descaledAt, o.day, o.weekNo, o.today, o.week, 0};
+                }
+                else if (data == nullptr || length != sizeof(s)) {
                     return false;
                 }
-
-                std::memcpy(&s, data, sizeof(s));
+                else {
+                    std::memcpy(&s, data, sizeof(s));
+                }
 
                 if (s.version != kVersion) {
                     return false;
@@ -229,6 +280,7 @@ namespace orione {
                 weekNo_ = s.weekNo;
                 today_ = s.today;
                 week_ = s.week;
+                backflushAt_ = s.backflushAt;
                 return true;
             }
 
@@ -245,7 +297,7 @@ namespace orione {
                 }
             }
 
-            static constexpr uint8_t kVersion = 1;
+            static constexpr uint8_t kVersion = 2; // 2: date of the last backflush
 
             uint32_t total_ = 0;
             uint32_t doseDeci_ = 0;
@@ -255,6 +307,7 @@ namespace orione {
             int32_t weekNo_ = -1;
             uint16_t today_ = 0;
             uint16_t week_ = 0;
+            uint32_t backflushAt_ = 0;
     };
 
     /**

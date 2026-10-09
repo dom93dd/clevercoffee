@@ -62,10 +62,11 @@ namespace care {
         Preferences prefs;
 
         if (prefs.begin(kNamespace, true)) {
-            orione::MachineStats::Stored s{};
+            alignas(orione::MachineStats::Stored) uint8_t saved[orione::MachineStats::kMaxStoredSize];
+            const size_t length = prefs.getBytesLength(kKey);
 
-            if (prefs.getBytesLength(kKey) == sizeof(s) && prefs.getBytes(kKey, &s, sizeof(s)) == sizeof(s)) {
-                stats.restore(&s, sizeof(s));
+            if (orione::MachineStats::readable(length) && prefs.getBytes(kKey, saved, length) == length) {
+                stats.restore(saved, length); // an older format is saved anew with the next change
             }
 
             prefs.end();
@@ -107,9 +108,12 @@ namespace care {
         changed();
     }
 
+    /** All backflush cycles ran: their water, and the date for the page */
     inline void backflushed(const int cycles, const float fillSeconds) {
+        const time_t now = time(nullptr);
         portENTER_CRITICAL(&lock);
         stats.water(orione::Water::backflushMl(cycles, fillSeconds));
+        stats.backflushed(now > 1700000000 ? static_cast<uint32_t>(now) : 0);
         portEXIT_CRITICAL(&lock);
         changed();
     }
@@ -130,16 +134,16 @@ namespace care {
 
     /**
      * {"today":n,"week":n,"total":n,"coffee":g,"water":ml,"descaledAt":UTC or 0,"descaleL":limit,"due":bool,"standby":minutes until
-     * standby or -1,"rssi":dBm}
+     * standby or -1,"rssi":dBm,"backflushAt":UTC of the last complete backflush or 0}
      */
     inline void writeJson(Print& out, const float descaleLitres, const int standbyMinutes, const int rssi) {
         const int32_t day = localDay();
         portENTER_CRITICAL(&lock);
         const orione::MachineStats s = stats;
         portEXIT_CRITICAL(&lock);
-        out.printf(R"({"today":%u,"week":%u,"total":%u,"coffee":%.1f,"water":%u,"descaledAt":%u,"descaleL":%.0f,"due":%s,"standby":%d,"rssi":%d})", s.today(day), s.week(day),
+        out.printf(R"({"today":%u,"week":%u,"total":%u,"coffee":%.1f,"water":%u,"descaledAt":%u,"descaleL":%.0f,"due":%s,"standby":%d,"rssi":%d,"backflushAt":%u})", s.today(day), s.week(day),
                    static_cast<unsigned>(s.total()), static_cast<double>(s.doseGrams()), static_cast<unsigned>(s.waterMl()), static_cast<unsigned>(s.descaledAt()),
-                   static_cast<double>(descaleLitres), s.descaleDue(descaleLitres) ? "true" : "false", standbyMinutes, rssi);
+                   static_cast<double>(descaleLitres), s.descaleDue(descaleLitres) ? "true" : "false", standbyMinutes, rssi, static_cast<unsigned>(s.backflushAt()));
     }
 
 } // namespace care

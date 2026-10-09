@@ -22,7 +22,7 @@
 <style>
 /* "Barlow SC": the round display's font (Barlow Semi Condensed, SIL OFL), loaded by loadFonts() */
 :root{--font:"Barlow SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--bg:#0b0b0c;--card:#161618;--line:#26262a;--text:#f2f2f4;--mute:#8e8e94;--faint:#56565c;
---heat:#ff9226;--ready:#34d399;--brew:#f0b45c;--cool:#7dbeff;--err:#ef4444;--r:18px;
+--heat:#ff9226;--ready:#34d399;--brew:#f0b45c;--cool:#7dbeff;--calm:#94a3b8;--err:#ef4444;--r:18px;
 /* iPhone home screen app: the page runs under the status bar and next to the notch (viewport-fit=cover) */
 --st:env(safe-area-inset-top,0px);--sl:env(safe-area-inset-left,0px);--sr:env(safe-area-inset-right,0px);
 --sb:env(safe-area-inset-bottom,0px)} /* fitScreen() may lower it in the home screen app */
@@ -189,6 +189,16 @@ body.reboot main{padding-bottom:82px} /* room for the restart bar above the tabs
 .days button.on{color:var(--text);box-shadow:inset 0 0 0 2px var(--heat)}
 input[type=time].txt{min-width:112px;text-align:center}
 .note.clean{background:rgba(125,190,255,.14);color:#bfdcff}
+.chip i.drop{border-radius:0 50% 50% 50%;transform:rotate(45deg)}
+.alarm .ico{width:18px;height:18px;vertical-align:-3px;margin-right:6px}
+.note.rinse{display:flex;align-items:center;gap:12px}
+.note.rinse span{flex:1}
+.note.rinse .btn{flex:none;padding:9px 12px;font-size:14px}
+details.fine{border-top:1px solid var(--line);padding:12px 0 0;margin-top:4px}
+details.fine summary{padding:4px 0}
+details.fine[open] summary{margin-bottom:4px}
+.howto{margin:8px 0 4px;padding-left:20px;font-size:14px;color:var(--mute)}
+.howto li{margin:4px 0}
 [hidden]{display:none!important}
 @media (min-width:720px){.rebootbar{bottom:16px}body.reboot .toast{bottom:84px}body{padding-bottom:24px}body.reboot{padding-bottom:90px}body.reboot main{padding-bottom:16px}nav{position:static;order:1;width:100%;max-width:640px;margin:8px auto 0;background:none;border:0;padding:0;backdrop-filter:none}nav button{flex-direction:row;gap:8px;font-size:14px;padding:10px 12px}.toast{bottom:24px}}
 </style>
@@ -214,17 +224,17 @@ input[type=time].txt{min-width:112px;text-align:center}
 const T = {
   de: {
     status: "Maschine", brew: "Bezug", settings: "Einstellungen", care: "Wartung",
-    setpoint: "Soll", heater: "Heizung", pid: "Temperaturregelung", pidHint: "Aus: die Maschine heizt nicht",
+    setpoint: "Soll", heater: "Heizung", pid: "Heizen",
     history: "Letzte 20 Minuten", tempLine: "Temperatur", setLine: "Soll", heatLine: "Heizung",
     tare: "Waage tarieren", bfActive: "Backflush-Modus aktiv: der Bezugsschalter startet die Reinigung.",
     start: "Start", ready: "Bereit", heating: "Heizt auf", cooling: "Kühlt ab", brewing: "Bezug", flush: "Spülen",
     steam: "Dampf", water: "Heißwasser", backflush: "Backflush", pidOff: "Regelung aus", tank: "Wassertank leer",
     standby: "Standby", overtemp: "Übertemperatur", sensor: "Sensorfehler", offline: "Keine Verbindung",
     sBrew: "Bezug", sScale: "Waage", sTemp: "Temperatur", sStandby: "Standby", sTank: "Wassertank",
-    sDisplay: "Display", sPid: "Regler (für Fortgeschrittene)", sSystem: "System", sBf: "Backflush", sFlush: "Spülen",
+    sDisplay: "Display", sPid: "Fortgeschritten", sSystem: "System", sBf: "Backflush", sFlush: "Spülen",
     flushWhat: "Drei Spülstöße à 3 s (20 s Pause) wärmen Schlauch, Gruppe und Siebträger vor. Leeren Siebträger eingespannt lassen, Tasse unterstellen.",
     "brew.warmup_flush": "Nach dem Kaltstart automatisch", "brew.warmup_flushHint": "sobald die Temperatur 2 min stabil am Soll ist",
-    flushNow: "Jetzt spülen", flushStop: "Spülen abbrechen", flushPulse: "Spülstoß {n} von 3", flushPause: "Pause, gleich Spülstoß {n} von 3",
+    flushNow: "Jetzt spülen", flushStop: "Spülen abbrechen", flushPulse: "Spülstoß {n} von {m}", flushPause: "Pause, gleich Spülstoß {n} von {m}", rinsing: "Spült …",
     flushPending: "Spült automatisch, sobald die Temperatur 2 min stabil am Soll ist.", flushBusy: "Geht, sobald die Maschine bereit ist.",
     flushNeedsSensor: "Nur mit Wasserstandssensor (Schutz vor Trockenlauf). Einschalten unter Einstellungen → Wassertank.",
     flushNote: "Spült gleich automatisch (3 × kurz). Leeren Siebträger drinlassen, Tasse unterstellen.",
@@ -247,7 +257,7 @@ const T = {
     suggestion: "Vorschlag zum letzten Bezug", suggestionOf: "Vorschlag", analysis: "Auswertung", analyze: "Ausführlich auswerten",
     sPreinf: "Pre-Infusion (Test)", "brew.pre_infusion.enabled": "Pre-Infusion", "brew.pre_infusion.enabledHint": "Pumpstoß, Pause, dann der Bezug; zählt zur Bezugszeit",
     "brew.pre_infusion.time": "Pumpstoß", "brew.pre_infusion.timeHint": "Pumpe und Ventil an", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "Ventil offen, es tröpfelt nach",
-    piShot: "Pre-Infusion {b} s + {p} s Pause", piOpen: "Ventil offen", piClosed: "Ventil zu", piOn: "Pre-Infusion an: {b} s Pumpstoß, {p} s Pause", livePi: "Pre-Infusion", livePause: "Pause",
+    piShot: "Pre-Infusion {b} s + {p} s Pause", piOpen: "Ventil offen", piClosed: "Ventil zu", piOn: "{b} s Pumpstoß, {p} s Pause", livePi: "Pre-Infusion", livePause: "Pause",
     "brew.grind_scale": "Skala der Mühle", "brew.grind_scaleHint": "für Claudes Vorschläge",
     finer: "feiner", coarser: "gröber", aiApply: "Übernehmen", aiApplied: "Übernommen", aiChanges: "Für den nächsten Bezug", aiAppliedToast: "Vorschlag übernommen", "brew.setpoint": "Brühtemperatur",
     bfSince: "Letzter Backflush vor {n} Bezügen", bfDue: "Backflush fällig: {n} Bezüge seit dem letzten. Blindsieb einsetzen, in Wartung starten.",
@@ -270,7 +280,7 @@ const T = {
     target: "Ziel", atStop: "Pumpe aus bei", drip: "Nachlauf", overTarget: "über Ziel", underTarget: "unter Ziel", switchBack: "Bezugsschalter wieder auf AUS stellen",
     "brew.by_weight.auto_tare": "Automatisch tarieren", "brew.by_weight.auto_tareHint": "beim Start des Bezugs",
     "display.blescale_brew_timer": "Timer der Waage mitlaufen lassen",
-    "display.post_brew_timer_duration": "Bezugszeit stehen lassen", "display.post_brew_timer_durationHint": "nach dem Bezug auf dem Display",
+    "display.post_brew_timer_duration": "FERTIG danach noch", "display.post_brew_timer_durationHint": "nachdem der Bezugsschalter aus ist",
     "brew.temp_offset": "Offset", "brew.temp_offsetHint": "Unterschied zwischen Fühler und Brühgruppe",
     "display.blinking.delta": "Bereit ab", "display.blinking.deltaHint": "Abweichung vom Soll, ab der „Bereit“ gilt",
     "standby.enabled": "Standby", "standby.enabledHint": "Heizung aus, wenn die Maschine länger nicht benutzt wird",
@@ -280,7 +290,7 @@ const T = {
     "brew.heat_boost": "Heizen beim Bezug", "brew.heat_boostHint": "Mindestleistung, solange die Pumpe läuft (0 = aus)",
     steamCool: "Abkühlen nach Dampf", steamHot: "Nach dem Dampf zu heiß für Espresso", steamHotHint: "Ein Spülbezug ohne Siebträger kühlt den Block schneller ab.",
     started: "Läuft seit", lastStart: "letzter Start", showLog: "Protokoll anzeigen", fwPending: "neue Firmware wird geprüft", fwFailed: "Das letzte Update ist nicht gestartet, die vorige Firmware läuft.", bootReason: {power: "Strom an", reset: "Reset/USB", software: "Neustart (Seite/Update)", heap: "Speicher-Notbremse", crash: "Absturz", watchdog: "Watchdog (hing fest)", brownout: "Unterspannung", unknown: "unbekannt"},
-    "pid.ema_factor": "EMA-Glättung", "pid.use_ponm": "PonM",
+    "pid.ema_factor": "EMA-Glättung", "pid.use_ponm": "PonM", "pid.use_ponmHint": "Proportional auf Messwert: weniger Überschwingen beim Aufheizen",
     "system.hostname": "Gerätename", "system.ota_password": "Update-Passwort", "system.log_level": "Protokoll",
     "BACKFLUSH_ON": "Backflush-Modus", "BACKFLUSH_ONHint": "Blindsieb einsetzen, dann Bezugsschalter",
     "backflush.cycles": "Zyklen", "backflush.fill_time": "Pumpen", "backflush.flush_time": "Pause",
@@ -299,21 +309,26 @@ const T = {
     bfIn: "Backflush in {n}", descaleIn: "Entkalken in ≈ {l} l",
     cleanStart: "Reinigung mit Reiniger", clean1: "Reinigung: Reiniger ins Blindsieb, dann Bezugsschalter an.", clean2: "Blindsieb ausspülen, Bezugsschalter aus und wieder an: Klarspülen.", clean3: "Klarspülen mit Wasser.",
     chNote: "Durchfluss sprang – Kanalbildung?", refSet: "Als Referenz", refClear: "Referenz entfernen", refChip: "Referenz", refSaved: "Als Referenz gespeichert", refCleared: "Referenz entfernt",
-    lastShot: "Letzter Bezug", tomorrow: "morgen", schedNext: "Ein {d} {t}", standbyIn: "Standby in {n} min", scale: "Waage", scaleGone: "Waage getrennt", wifi: "WLAN"
+    lastShot: "Letzter Bezug", todayCard: "Heute", tomorrow: "morgen", sPower: "Ein & Aus", fine: "Feineinstellung",
+    heatOn: "an", heatOnStandby: "an · Standby in {n} min", heatStandby: "Standby · Bezugsschalter weckt", heatOff: "aus: die Maschine heizt nicht",
+    exportShots: "Bezüge exportieren", descaleHow: "So geht's",
+    descale1: "Entkalker nach Packungsangabe in den Tank.", descale2: "Ohne Siebträger, Gefäß unter die Gruppe: Bezugsschalter immer wieder kurz an, dazwischen einwirken lassen, bis der halbe Tank durch ist.",
+    descale3: "Rest durchlaufen lassen, Tank gründlich ausspülen.", descale4: "Zwei Tankfüllungen klares Wasser durch die Gruppe, dann „Entkalkt“ tippen.",
+    descaleSrc: "Quick Mill beschreibt das Entkalken im Handbuch nicht; so machen es Quick-Mill-Nutzer im Kaffee-Netz.", schedNext: "Ein {d} {t}", standbyIn: "Standby in {n} min", scale: "Waage", scaleGone: "Waage getrennt", wifi: "WLAN"
   },
   en: {
     status: "Machine", brew: "Brew", settings: "Settings", care: "Care",
-    setpoint: "Target", heater: "Heater", pid: "Temperature control", pidHint: "Off: the machine does not heat",
+    setpoint: "Target", heater: "Heater", pid: "Heating",
     history: "Last 20 minutes", tempLine: "Temperature", setLine: "Target", heatLine: "Heater",
     tare: "Tare scale", bfActive: "Backflush mode on: the brew switch starts the cleaning.",
     start: "Starting", ready: "Ready", heating: "Heating", cooling: "Cooling", brewing: "Brewing", flush: "Flushing",
     steam: "Steam", water: "Hot water", backflush: "Backflush", pidOff: "Control off", tank: "Water tank empty",
     standby: "Standby", overtemp: "Overtemperature", sensor: "Sensor error", offline: "No connection",
     sBrew: "Brew", sScale: "Scale", sTemp: "Temperature", sStandby: "Standby", sTank: "Water tank",
-    sDisplay: "Display", sPid: "Controller (advanced)", sSystem: "System", sBf: "Backflush", sFlush: "Flush",
+    sDisplay: "Display", sPid: "Advanced", sSystem: "System", sBf: "Backflush", sFlush: "Flush",
     flushWhat: "Three 3 s flushes (20 s apart) warm up hose, group and portafilter. Leave the empty portafilter in, put a cup under it.",
     "brew.warmup_flush": "Automatically after a cold start", "brew.warmup_flushHint": "once the temperature has been steady at the setpoint for 2 min",
-    flushNow: "Flush now", flushStop: "Stop flushing", flushPulse: "Flush {n} of 3", flushPause: "Pause, flush {n} of 3 next",
+    flushNow: "Flush now", flushStop: "Stop flushing", flushPulse: "Flush {n} of {m}", flushPause: "Pause, flush {n} of {m} next", rinsing: "Rinsing …",
     flushPending: "Flushes by itself once the temperature has been steady at the setpoint for 2 min.", flushBusy: "Possible once the machine is ready.",
     flushNeedsSensor: "Only with a water level sensor (keeps the pump from running dry). Switch it on under Settings → Water tank.",
     flushNote: "Flushes by itself shortly (3 × briefly). Leave the empty portafilter in, put a cup under it.",
@@ -336,7 +351,7 @@ const T = {
     suggestion: "Suggestion on the last shot", suggestionOf: "Suggestion", analysis: "Analysis", analyze: "Analyse in depth",
     sPreinf: "Pre-infusion (test)", "brew.pre_infusion.enabled": "Pre-infusion", "brew.pre_infusion.enabledHint": "burst, pause, then the shot; counts as brew time",
     "brew.pre_infusion.time": "Burst", "brew.pre_infusion.timeHint": "pump and valve on", "brew.pre_infusion.pause": "Pause", "brew.pre_infusion.pauseHint": "valve open, a slow trickle",
-    piShot: "Pre-infusion {b} s + {p} s pause", piOpen: "valve open", piClosed: "valve closed", piOn: "Pre-infusion on: {b} s burst, {p} s pause", livePi: "Pre-infusion", livePause: "Pause",
+    piShot: "Pre-infusion {b} s + {p} s pause", piOpen: "valve open", piClosed: "valve closed", piOn: "{b} s burst, {p} s pause", livePi: "Pre-infusion", livePause: "Pause",
     "brew.grind_scale": "Grinder scale", "brew.grind_scaleHint": "for Claude's suggestions",
     finer: "finer", coarser: "coarser", aiApply: "Apply", aiApplied: "Applied", aiChanges: "For the next shot", aiAppliedToast: "Suggestion applied", "brew.setpoint": "Brew temperature",
     bfSince: "Last backflush {n} shots ago", bfDue: "Backflush due: {n} shots since the last one. Insert the blind basket, start it in Care.",
@@ -359,7 +374,7 @@ const T = {
     target: "Target", atStop: "pump off at", drip: "drops", overTarget: "over target", underTarget: "under target", switchBack: "Switch the brew switch back off",
     "brew.by_weight.auto_tare": "Tare automatically", "brew.by_weight.auto_tareHint": "when the shot starts",
     "display.blescale_brew_timer": "Run the scale's timer",
-    "display.post_brew_timer_duration": "Keep brew time shown", "display.post_brew_timer_durationHint": "on the display after the shot",
+    "display.post_brew_timer_duration": "Keep DONE for", "display.post_brew_timer_durationHint": "after the brew switch is off",
     "brew.temp_offset": "Offset", "brew.temp_offsetHint": "Difference between sensor and group",
     "display.blinking.delta": "Ready within", "display.blinking.deltaHint": "Distance from target that counts as ready",
     "standby.enabled": "Standby", "standby.enabledHint": "Heater off when the machine is not used for a while",
@@ -369,7 +384,7 @@ const T = {
     "brew.heat_boost": "Heating during a shot", "brew.heat_boostHint": "Minimum power while the pump runs (0 = off)",
     steamCool: "Cooling after steam", steamHot: "Too hot for espresso after steam", steamHotHint: "A flush without the portafilter cools the block faster.",
     started: "Running for", lastStart: "last start", showLog: "Show log", fwPending: "new firmware on trial", fwFailed: "The last update did not start, the previous firmware runs.", bootReason: {power: "power on", reset: "reset/USB", software: "restart (page/update)", heap: "heap safety net", crash: "crash", watchdog: "watchdog (hung)", brownout: "brownout", unknown: "unknown"},
-    "pid.ema_factor": "EMA smoothing", "pid.use_ponm": "PonM",
+    "pid.ema_factor": "EMA smoothing", "pid.use_ponm": "PonM", "pid.use_ponmHint": "Proportional on measurement: less overshoot when heating up",
     "system.hostname": "Device name", "system.ota_password": "Update password", "system.log_level": "Log level",
     "BACKFLUSH_ON": "Backflush mode", "BACKFLUSH_ONHint": "Insert the blind basket, then the brew switch",
     "backflush.cycles": "Cycles", "backflush.fill_time": "Pump", "backflush.flush_time": "Pause",
@@ -388,7 +403,12 @@ const T = {
     bfIn: "backflush in {n}", descaleIn: "descaling in ≈ {l} l",
     cleanStart: "Clean with detergent", clean1: "Cleaning: detergent into the blind basket, then the brew switch on.", clean2: "Rinse the blind basket, brew switch off and on again: clear water.", clean3: "Rinsing with clear water.",
     chNote: "Flow jumped – channeling?", refSet: "Set as reference", refClear: "Remove reference", refChip: "Reference", refSaved: "Saved as reference", refCleared: "Reference removed",
-    lastShot: "Last shot", tomorrow: "tomorrow", schedNext: "On {d} {t}", standbyIn: "Standby in {n} min", scale: "Scale", scaleGone: "Scale disconnected", wifi: "WiFi"
+    lastShot: "Last shot", todayCard: "Today", tomorrow: "tomorrow", sPower: "On & off", fine: "Fine tuning",
+    heatOn: "on", heatOnStandby: "on · standby in {n} min", heatStandby: "Standby · the brew switch wakes it", heatOff: "off: the machine does not heat",
+    exportShots: "Export shots", descaleHow: "How to",
+    descale1: "Descaler into the tank as its pack says.", descale2: "No portafilter, a bowl under the group: brew switch on briefly again and again, let it work in between, until half the tank is through.",
+    descale3: "Let the rest run through, rinse the tank well.", descale4: "Two tanks of clear water through the group, then tap “Descaled”.",
+    descaleSrc: "Quick Mill's manual does not describe descaling; this is how Quick Mill owners do it (Kaffee-Netz).", schedNext: "On {d} {t}", standbyIn: "Standby in {n} min", scale: "Scale", scaleGone: "Scale disconnected", wifi: "WiFi"
   }
 };
 let lang = "de";
@@ -404,6 +424,7 @@ const STEP = {"brew.heat_boost": 5, "brew.setpoint": .5, "brew.temp_offset": .1,
   "brew.by_weight.target_weight": .5, "brew.by_weight.lag": .05, "display.post_brew_timer_duration": .5, "standby.time": 5, "backflush.cycles": 1,
   "backflush.fill_time": .5, "backflush.flush_time": .5, "pid.regular.kp": 1, "pid.regular.tn": 1, "pid.regular.tv": .5,
   "pid.regular.i_max": 1, "pid.ema_factor": .05, "brew.dose": .1, "backflush.remind_after": 5};
+const PREFIX = {}; // before the number, e.g. "1:" for a ratio
 UNIT["brew.temp_end"] = "K"; STEP["brew.temp_end"] = .5; UNIT["descale.litres"] = "l"; STEP["descale.litres"] = 5;
 UNIT["brew.dose"] = "g"; UNIT["brew.pre_infusion.time"] = UNIT["brew.pre_infusion.pause"] = "s"; STEP["brew.pre_infusion.time"] = STEP["brew.pre_infusion.pause"] = .5;
 const TABS = [
@@ -411,17 +432,17 @@ const TABS = [
   {id: "brew", icon: "i-brew", shot: true, cards: []},
   {id: "settings", icon: "i-set", cards: [
     // most used first: what changes a shot, then the machine, the rarely touched ones folded
+    // the coffee first, then on/off, the devices, the rarely touched ones folded (review 09.10.2026)
     ["sPresets", ["brew.presets"]], // presetCard()
     ["sCoffee", ["brew.grinder", "brew.grind_scale", "brew.beans"]],
-    ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
-    ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn", "display.blescale_brew_timer"]],
     ["sPreinf", ["brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"]],
-    ["sTemp", ["brew.temp_offset", "brew.temp_end", "display.blinking.delta"]],
-    ["sStandby", ["standby.enabled", "standby.time"]],
-    ["sSchedule", ["schedule.enabled", "schedule.on", "schedule.off", "schedule.days"]], // scheduleCard()
-    ["sDisplay", ["display.language", "display.post_brew_timer_duration"]],
+    ["sTemp", ["brew.temp_end"]],
+    ["sPower", ["standby.enabled", "standby.time", "schedule.enabled", "schedule.on", "schedule.off", "schedule.days"]], // powerCard()
+    ["sScale", ["hardware.sensors.scale.enabled", "brew.by_weight.auto_tare", "brew.by_weight.learn"]],
+    ["sClaude", []], // claudeCard(): the key lives in this browser, not on the machine
     ["sTank", ["hardware.sensors.watertank.enabled", "hardware.sensors.watertank.mode"]],
-    ["sPid", ["brew.heat_boost", "pid.regular.kp", "pid.regular.tn", "pid.regular.tv", "pid.regular.i_max", "pid.ema_factor", "pid.use_ponm"], true],
+    ["sDisplay", ["display.language", "display.post_brew_timer_duration"]],
+    ["sPid", ["brew.temp_offset", "display.blinking.delta", "brew.heat_boost", "pid.regular.kp", "pid.regular.tn", "pid.regular.tv", "pid.regular.i_max", "pid.ema_factor", "pid.use_ponm"], true],
     ["sSystem", ["system.hostname", "system.ota_password", "system.log_level"], true]]},
   {id: "care", icon: "i-care", cards: [
     ["sFlush", ["brew.warmup_flush", "hardware.sensors.watertank.enabled"]], // flushCard()
@@ -432,7 +453,7 @@ const TABS = [
 
 // rows shown only while their switch is on
 const SHOWN_IF = {"brew.pre_infusion.time": "brew.pre_infusion.enabled", "brew.pre_infusion.pause": "brew.pre_infusion.enabled", "standby.time": "standby.enabled", "hardware.sensors.watertank.mode": "hardware.sensors.watertank.enabled",
-  "brew.by_weight.auto_tare": "brew.by_weight.enabled", "display.blescale_brew_timer": "hardware.sensors.scale.enabled",
+  "brew.by_weight.auto_tare": "brew.by_weight.enabled",
   "schedule.on": "schedule.enabled", "schedule.off": "schedule.enabled", "schedule.days": "schedule.enabled"};
 const SHOT = ["brew.mode", "brew.by_time.enabled", "brew.by_time.target_time", "brew.by_weight.enabled", "brew.by_weight.target_weight", "brew.by_weight.lag", "hardware.sensors.scale.enabled", "brew.presets", "TARE_ON", "brew.dose", "brew.grind", "brew.beans", "brew.setpoint", "brew.pre_infusion.enabled", "brew.pre_infusion.time", "brew.pre_infusion.pause"];
 // what a bean keeps (src/beanProfiles.h): switching beans sets these
@@ -475,6 +496,9 @@ async function load(names) {
 async function save(id, value) {
   if (id.startsWith("preset.")) return savePreset(id, value);
   const knownBean = id === "brew.beans" && !!beans?.beans.some(b => sameBean(b.n, value));
+  const keep = id === "brew.dose" && stopMode() === "weight" ? presets().find(presetActive) : null; // its ratio, before the dose changes
+  // presets still in grams (before 09.10.2026) are read at the current dose: kept as ratios of the dose they were made for
+  const legacy = id === "brew.dose" && String(P["brew.presets"]?.value ?? "").split(";").some(x => Number(x.split(",")[1]) > 10) ? presetString(presets()) : null;
   try {
     const r = await call("/parameters", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: encodeURIComponent(id) + "=" + encodeURIComponent(value)});
@@ -482,6 +506,12 @@ async function save(id, value) {
     P[id].value = P[id].type === 4 ? value : Number(value);
     for (const x of TABS) if (x.id !== tab) dirty.add(x.id);
     if (P[id].reboot) { String(value) === startVal[id] ? pendingRestart.delete(id) : pendingRestart.add(id); needRestart(); } else toast(t("saved"));
+    if (legacy) await save("brew.presets", legacy);
+    if (keep && P["brew.by_weight.target_weight"] && Math.abs(P["brew.by_weight.target_weight"].value - goalOf(keep.r)) > .01) { // the ratio stays, the target follows the dose
+      const g = goalOf(keep.r);
+      if (await save("brew.by_weight.target_weight", g.toFixed(1))) document.querySelectorAll('.step[data-id="brew.by_weight.target_weight"]').forEach(b => b.setValue(g));
+      const ch = $("#chips"); if (ch) fillChips(ch);
+    }
     if (id === "brew.dose" || id === "brew.by_weight.target_weight") paintRatio();
     if (id === "brew.by_weight.lag") paintLag();
     if (id === "brew.beans" && beans) await beansSwitched(String(value), knownBean);
@@ -534,7 +564,7 @@ function switchCtl(id, onChange) {
 function stepCtl(id, store = save) {
   const p = P[id], st = STEP[id] ?? 1, d = decimals(id), box = el("div", "step"), inp = el("input");
   inp.inputMode = "decimal";
-  const show = v => inp.value = num(v, d) + (UNIT[id] ? " " + UNIT[id] : "");
+  const show = v => inp.value = (PREFIX[id] ?? "") + num(v, d) + (UNIT[id] ? " " + UNIT[id] : "");
   let pending, val = p.value;
   const set = (v, typed) => { // +/- go in steps; a typed value stays as precise as the field shows it
     const q = typed ? 10 ** -d : st;
@@ -611,7 +641,7 @@ function card(title, ids, closed) {
 }
 
 // ---------- status tab: live temperature, chart ----------
-const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pi: 0, fp: false, bfd: false, clean: 0, ok: false};
+const live = {temp: null, target: null, heat: 0, state: null, brewTime: 0, weight: null, scale: 0, flow: null, battery: null, warmup: 0, pulse: 0, pulses: 3, pi: 0, fp: false, bfd: false, clean: 0, ok: false};
 let lastShot = null; // {t, w, until}: the result stays in the live card for a while
 const hist = [];       // [time ms, temp, target, heat]
 function statusView(m) {
@@ -627,13 +657,14 @@ function statusView(m) {
   const dn = el("div", "note"); dn.id = "descaleNote"; dn.hidden = true; m.append(dn); // paintCare()
   const bn = el("div", "note"); bn.id = "bfNote"; bn.hidden = true; m.append(bn); // filled by paintBf()
   const fn = el("div", "note", t("flushNote")); fn.id = "flushNote"; fn.hidden = true; m.append(fn); // paintFlush()
-  const rn = el("div", "note", t("rinseNote")); rn.className = "note rinse"; rn.hidden = true; m.append(rn); // paintFlush()
+  m.append(rinseNote()); // paintFlush()
   const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = true; m.append(bd); // paintFlush()
   const lc = el("section", "card"); lc.id = "lastCard"; lc.hidden = true; m.append(lc); // paintLastShot()
   if (P["pid.enabled"]) {
     const c = el("section", "card"), r = el("div", "row");
     const sw = switchCtl("pid.enabled"); sw.id = "pidSw";
-    r.append(lbl("pid"), sw); rowToggles(r, sw); // lbl() adds the hint
+    r.append(lbl("pid"), sw); rowToggles(r, sw);
+    const hp = el("p"); hp.id = "pidState"; r.firstChild.append(hp); // paintPills(): on, standby countdown, standby, off
     c.append(r); m.append(c);
   }
   const dc = el("section", "card dialcard", "<canvas id='dial'></canvas>"); dc.id = "dialCard"; dc.hidden = true; m.insertBefore(dc, h); // the display's shot screen
@@ -657,44 +688,50 @@ async function setStop(mode) {
   if (P["brew.by_weight.enabled"]) await save("brew.by_weight.enabled", mode === "weight" ? 1 : 0);
   return true;
 }
-// ---------- quick choice (brew.presets "s,g;s,g;s,g", read and written only by this page) ----------
-const PRESETS = [["Espresso", 25, 36], ["Doppio", 30, 45], ["Lungo", 45, 80]];
-PRESETS.forEach((_, i) => { STEP[`preset.${i}.s`] = STEP[`preset.${i}.g`] = .5; UNIT[`preset.${i}.s`] = "s"; UNIT[`preset.${i}.g`] = "g"; });
+// ---------- quick choice (brew.presets "s,r;s,r;s,r": seconds and the ratio dose:cup, read and written only by this page) ----------
+// A ratio, not grams, so the target follows the dose of the beans (review 09.10.2026). Older strings held grams (over
+// 10): read as grams at the current dose; saved as ratios with the next change (loading the page changes nothing)
+const PRESETS = [["Espresso", 25, 2], ["Doppio", 30, 2.5], ["Lungo", 45, 4.5]];
+PRESETS.forEach((_, i) => { STEP[`preset.${i}.s`] = .5; STEP[`preset.${i}.r`] = .1; UNIT[`preset.${i}.s`] = "s"; PREFIX[`preset.${i}.r`] = "1:"; });
+const doseNow = () => P["brew.dose"]?.value > 0 ? P["brew.dose"].value : 18;
+const goalOf = r => Math.round(doseNow() * r * 2) / 2; // grams, in the 0.5 g steps of the target
+const ratioOf = g => Math.round(g / doseNow() * 100) / 100;
 function presets() {
   const v = String(P["brew.presets"]?.value ?? "").split(";");
-  return PRESETS.map(([name, s, g], i) => {
-    const [ps, pg] = (v[i] || "").split(",").map(Number);
-    return {name, s: ps > 0 ? ps : s, g: pg > 0 ? pg : g};
+  return PRESETS.map(([name, s, r], i) => {
+    const [ps, px] = (v[i] || "").split(",").map(Number);
+    return {name, s: ps > 0 ? ps : s, r: px > 10 ? ratioOf(px) : px > 0 ? px : r};
   });
 }
+const presetString = list => list.map(p => p.s + "," + p.r).join(";");
 async function savePreset(id, value) { // an editor stepper changed one value: the whole string is saved
   const [, i, k] = id.split("."), list = presets();
   list[i][k] = Number(value);
-  const ok = await save("brew.presets", list.map(p => p.s + "," + p.g).join(";"));
+  const ok = await save("brew.presets", presetString(list));
   if (ok) P[id].value = Number(value);
   return ok;
 }
 const fmt = v => num(v, v % 1 ? 1 : 0);
 function presetActive(p) {
-  const m = stopMode(), near = (id, v) => Math.abs((P[id]?.value ?? -1) - v) < .01;
-  return m === "time" ? near("brew.by_time.target_time", p.s) : m === "weight" ? near("brew.by_weight.target_weight", p.g) : false;
+  const m = stopMode(), near = (id, v, tol) => Math.abs((P[id]?.value ?? -1) - v) < tol;
+  return m === "time" ? near("brew.by_time.target_time", p.s, .01) : m === "weight" ? near("brew.by_weight.target_weight", goalOf(p.r), .26) : false;
 }
 function fillChips(chips) {
   const cur = stopMode(), byWeight = cur === "weight" || (cur === "hand" && P["hardware.sensors.scale.enabled"]?.value);
   chips.replaceChildren(...presets().map((p, i) => {
-    const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? fmt(p.g) + " g" : fmt(p.s) + " s"}</small>`);
+    const b = el("button", presetActive(p) ? "on" : "", `${p.name}<small>${byWeight ? "1:" + num(p.r, 1) + " · " + fmt(goalOf(p.r)) + " g" : fmt(p.s) + " s"}</small>`);
     b.onclick = () => applyPreset(i);
     return b;
   }));
 }
 // a target changed in the brew tab: the quick choice that was chosen takes it along (Dominik, 08.10.2026: "wenn man
-// das zielgewicht unter Bezug verändert, dann wird das nicht für die schnellauswahl übernommen")
+// das zielgewicht unter Bezug verändert, dann wird das nicht für die schnellauswahl übernommen"), as a ratio
 async function saveTarget(id, value) {
-  const list = presets(), i = list.findIndex(presetActive), k = id === "brew.by_weight.target_weight" ? "g" : "s";
+  const list = presets(), i = list.findIndex(presetActive);
   if (!await save(id, value)) return false;
-  if (i >= 0 && Math.abs(list[i][k] - Number(value)) > .01) {
-    list[i][k] = Number(value);
-    await save("brew.presets", list.map(p => p.s + "," + p.g).join(";"));
+  if (i >= 0) {
+    const k = id === "brew.by_weight.target_weight" ? "r" : "s", v = k === "r" ? ratioOf(Number(value)) : Number(value);
+    if (Math.abs(list[i][k] - v) > .001) { list[i][k] = v; await save("brew.presets", presetString(list)); }
   }
   const ch = $("#chips");
   if (ch) fillChips(ch);
@@ -705,7 +742,7 @@ async function applyPreset(i) {
   const p = presets()[i];
   if (stopMode() === "hand" && !await setStop(P["hardware.sensors.scale.enabled"]?.value ? "weight" : "time")) return;
   if (stopMode() === "hand" && !await setStop("time")) return; // weight not offered: scale off since the last start
-  for (const [id, v] of [["brew.by_time.target_time", p.s], ["brew.by_weight.target_weight", p.g]])
+  for (const [id, v] of [["brew.by_time.target_time", p.s], ["brew.by_weight.target_weight", goalOf(p.r)]])
     if (P[id] && Math.abs(P[id].value - v) > .01 && !await save(id, v.toFixed(1))) return;
   refresh();
 }
@@ -715,8 +752,8 @@ function presetCard() {
   c.append(el("h2", null, t("sPresets")));
   presets().forEach((p, i) => {
     const r = el("div", "row"), l = el("div", "lbl"), box = el("div", "pair");
-    for (const k of scale ? ["s", "g"] : ["s"]) {
-      P[`preset.${i}.${k}`] = {name: `preset.${i}.${k}`, type: 2, value: p[k], min: 5, max: k === "s" ? 120 : 200, reboot: false};
+    for (const k of scale ? ["s", "r"] : ["s"]) {
+      P[`preset.${i}.${k}`] = {name: `preset.${i}.${k}`, type: 2, value: p[k], min: k === "s" ? 5 : 1, max: k === "s" ? 120 : 10, reboot: false};
       box.append(stepCtl(`preset.${i}.${k}`));
     }
     l.append(el("div", null, p.name));
@@ -729,7 +766,7 @@ function shotCard() {
   c.append(el("h2", null, t("sShot")));
   const ls = el("div", "liveshot", `<div class="lab" id="lsLab"></div><div class="nums"><b id="lsTime"></b><span id="lsWeight"></span></div><div class="bar" id="lsBarBox"><b id="lsBar"></b></div><div class="goal" id="lsGoal"></div><div class="goal hint" id="lsHint" hidden></div>`);
   ls.id = "liveShot"; ls.hidden = true; c.append(ls);
-  const rn = el("div", "note rinse", t("rinseNote")); rn.hidden = true; c.append(rn); // paintFlush()
+  c.append(rinseNote()); // paintFlush()
   const cur = stopMode(), r = el("div", "row"), seg = el("div", "seg");
   if (P["brew.presets"]) {
     const chips = el("div", "chips"); chips.id = "chips";
@@ -748,7 +785,11 @@ function shotCard() {
     b.onclick = async () => { if (mo !== stopMode() && await setStop(mo)) refresh(); };
     seg.append(b);
   }
-  if (P["brew.pre_infusion.enabled"]?.value) c.append(el("p", "shotinfo pinote", piText()));
+  if (P["brew.pre_infusion.enabled"]) { // a try per shot: switched here, its times in the settings
+    const pr = el("div", "row"), pl = el("div", "lbl"), sw = switchCtl("brew.pre_infusion.enabled");
+    pl.append(el("div", null, t("sPreinf")), el("p", "pinote", piText()));
+    pr.append(pl, sw); rowToggles(pr, sw); c.append(pr);
+  }
   const l = el("div", "lbl"); l.append(el("div", null, t("stop")));
   if (modes.length < 3) l.append(el("p", null, t("stopHint")));
   l.append(el("p", null, t("stopMax").replace("{n}", fmt(longestShot())))); // brewMaxMs() in src/brewHandler.h
@@ -758,15 +799,20 @@ function shotCard() {
   if (id && P[id]) {
     const v = el("div", "row"); v.append(lbl(id), stepCtl(id, saveTarget)); c.append(v);
     if (cur === "weight") { const q = el("p"); q.id = "ratio"; v.firstChild.append(q); setTimeout(paintRatio); }
+    // what the machine learns by itself or only needs without the scale: folded (review 09.10.2026)
+    const fine = el("details", "fine");
+    fine.open = fineOpen; fine.ontoggle = () => { fineOpen = fine.open; };
+    fine.append(el("summary", null, t("fine")));
     if (cur === "weight" && P["brew.by_weight.lag"]) {
       const s = el("div", "row"), q = el("p"); q.id = "lagNow";
-      s.append(lbl("brew.by_weight.lag"), stepCtl("brew.by_weight.lag")); s.firstChild.append(q); c.append(s); setTimeout(paintLag);
+      s.append(lbl("brew.by_weight.lag"), stepCtl("brew.by_weight.lag")); s.firstChild.append(q); fine.append(s); setTimeout(paintLag);
     }
     if (cur === "weight" && P["brew.by_time.target_time"]) { // the firmware stops at the target time when the scale is missing
       const f = el("div", "row"), fl = el("div", "lbl");
       fl.append(el("div", null, t("fallbackTime")));
-      f.append(fl, stepCtl("brew.by_time.target_time", saveTarget)); c.append(f);
+      f.append(fl, stepCtl("brew.by_time.target_time", saveTarget)); fine.append(f);
     }
+    if (fine.children.length > 1) c.append(fine);
   }
   if (P["TARE_ON"]) { // only with the scale
     const b = el("button", "btn", t("tare"));
@@ -818,6 +864,7 @@ function paintLag() {
   q.textContent = t(last ? "lagLast" : "lagAt").replace("{f}", num(f, 1)).replace("{g}", num(Math.min(6, lag * f), 1)); // at most 6 g: BrewLag::kMaxLeadGrams
 }
 const piText = () => t("piOn").replace("{b}", num(P["brew.pre_infusion.time"]?.value ?? 0, 1)).replace("{p}", num(P["brew.pre_infusion.pause"]?.value ?? 0, 1));
+let fineOpen = false; // the brew tab's fine settings, open while the page is
 function paintRatio() {
   const r = $("#ratio"), d = P["brew.dose"]?.value, g = P["brew.by_weight.target_weight"]?.value;
   if (r) r.textContent = d && g ? `${t("ratio")} 1:${num(g / d, 1)}` : "";
@@ -825,7 +872,7 @@ function paintRatio() {
 function paintBf() { // shots since the last backflush; a note on the machine tab once the reminder is due
   const every = P["backflush.remind_after"]?.value ?? 0, note = $("#bfNote"), since = $("#bfSince");
   if (note) { note.hidden = !(every > 0 && bfCount >= every); note.textContent = t("bfDue").replace("{n}", bfCount); }
-  if (since) since.textContent = t("bfSince").replace("{n}", bfCount);
+  if (since) since.textContent = t("bfSince").replace("{n}", bfCount) + (care?.backflushAt ? " · " + whenText(care.backflushAt) : "");
 }
 function whenText(at) {
   if (!at) return "";
@@ -1333,20 +1380,21 @@ function stateText() {
   const map = {0: ["start", "var(--faint)"], 20: [null, "var(--brew)"], 25: ["flush", "var(--brew)"], 30: ["steam", "var(--heat)"], 40: ["water", "var(--cool)"],
     50: ["backflush", "var(--cool)"], 60: ["pidOff", "var(--faint)"], 70: ["tank", "var(--cool)"], 80: ["standby", "var(--faint)"], 100: ["overtemp", "var(--err)"], 110: ["sensor", "var(--err)"]};
   if (s === 20) return [t("brewing") + " " + num(live.brewTime, 1) + " s", "var(--brew)"];
-  if (s === 25 && flushRunning()) return [t("flush") + " " + live.pulse + "/3", "var(--brew)"];
+  if (s === 25 && flushRunning()) return [t("flush") + (live.pulses > 1 ? " " + live.pulse + "/" + live.pulses : ""), "var(--brew)"];
   if (s in map) return [t(map[s][0]), map[s][1]];
   // steam from the original switch, seen from the temperature (src/orioneMachine.h): 1 steam, 2 cooling down after it
   if (live.steam === 1) return [t("steam"), "var(--heat)"];
-  if (live.steam === 2) return [t("steamCool"), "var(--cool)"];
+  if (live.steam === 2) return [t("steamCool"), "var(--calm)"];
   if (live.temp == null) return ["…", "var(--faint)"];
   if (d <= band) return [t("ready"), "var(--ready)"];
-  return live.temp < live.target ? [t("heating"), "var(--heat)"] : [t("cooling"), "var(--cool)"];
+  return live.temp < live.target ? [t("heating"), "var(--heat)"] : [t("cooling"), "var(--calm)"]; // cooling: only waiting, neutral (water stays blue)
 }
+const DROP = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.2 4.2 6 7.6 6 11a6 6 0 0 1-12 0c0-3.4 2.8-6.8 6-11z" fill="currentColor"/></svg>';
 function paintAlarm() {
   const a = $("#alarm"), k = live.ok ? {100: ["alarmOver", "err"], 110: ["alarmSensor", "err"], 70: ["alarmTank", "info"]}[live.state] ?? (live.state === 10 && live.steam === 2 ? ["steamHot", "info"] : null) : null;
   if (!a) return;
   a.hidden = !k;
-  if (k) { a.className = "alarm " + k[1]; a.innerHTML = `${t(k[0])}<p>${t(k[0] + "Hint")}</p>`; }
+  if (k) { a.className = "alarm " + k[1]; a.innerHTML = (k[0] === "alarmTank" ? DROP : "") + `${t(k[0])}<p>${t(k[0] + "Hint")}</p>`; }
 }
 function paintShotLive() {
   const ls = $("#liveShot"), st = $("#scaleSt");
@@ -1439,7 +1487,7 @@ function drawDial(c, d) {
 }
 function paintLive() {
   const [txt, col] = stateText();
-  $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip").style.color = col === "var(--faint)" ? "" : col;
+  $("#state").textContent = txt; $("#chip i").style.background = col; $("#chip i").className = live.ok && live.state === 70 ? "drop" : ""; // the tank: a drop, not only a colour $("#chip").style.color = col === "var(--faint)" ? "" : col;
   const title = txt + " · Orione"; // also in the tab and app switcher
   if (document.title !== title) document.title = title;
   paintAlarm(); paintShotLive(); paintDial(); paintFlush(); paintPills();
@@ -1495,7 +1543,7 @@ function connectLive() {
     // a complete backflush switches backflush mode off (from 50 straight back to ready); on from anywhere
     const bfNow = d.state !== live.state ? (d.state === 50 ? 1 : live.state === 50 && d.state === 10 ? 0 : undefined) : undefined;
     if (bfNow != null && P["BACKFLUSH_ON"] && P["BACKFLUSH_ON"].value !== bfNow) { P["BACKFLUSH_ON"].value = bfNow; setTimeout(refresh); }
-    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, ok: true});
+    Object.assign(live, {temp: d.currentTemp, target: d.targetTemp, heat: d.heaterPower, state: d.state ?? null, brewTime: d.brewTime ?? 0, weight: d.weight ?? null, scale: d.scale ?? 0, flow: d.flow ?? null, battery: d.battery ?? null, warmup: d.warmup ?? 0, pulse: d.pulse ?? 0, pulses: d.pulses ?? 3, cup: d.cup ?? null, held: !!d.held, sw: !!d.sw, steam: d.steam ?? 0, pi: d.pi ?? 0, fp: !!d.fp, bfd: !!d.bfd, clean: d.clean ?? 0, ok: true});
     hist.push([Date.now(), d.currentTemp, d.targetTemp, d.heaterPower]);
     while (hist.length > 1300) hist.shift();
     paintLive();
@@ -1534,12 +1582,30 @@ function flushCard() {
   setTimeout(paintFlush);
   return c;
 }
+// "Bitte spülen" after a shot, with a button for one rinse pulse without pre-infusion (Dominik, 09.10.2026: "Beides";
+// the Breville Dual Boiler and Lelit's LCC flush the group without pre-infusion too). Only with the water level sensor.
+function rinseNote() {
+  const n = el("div", "note rinse"), b = el("button", "btn", t("flushNow"));
+  n.append(el("span", null, t("rinseNote")), b); n.hidden = true;
+  b.onclick = async () => {
+    b.disabled = true;
+    const r = await post("/flush?start=1&pulses=1").catch(() => null);
+    if (!r?.ok) { toast(t("failed")); b.disabled = false; }
+  };
+  return n;
+}
 function paintFlush() {
   const b = $("#flushBtn"), st = $("#flushSt"), note = $("#flushNote"), run = live.ok && flushRunning();
   if (note) note.hidden = !(live.ok && live.warmup === 1);
   // a shot since the last rinse (shot_history::flushPending): not while brewing or the result is still shown
   const rinse = live.ok && live.fp && live.state !== 20 && !(lastShot?.until && Date.now() < lastShot.until);
-  document.querySelectorAll(".note.rinse").forEach(e => { e.hidden = !rinse || live.bfd; });
+  const rinsing = run && live.pulses === 1, canRinse = live.ok && live.state === 10 && !live.sw; // the firmware starts only from "ready", switch off
+  document.querySelectorAll(".note.rinse").forEach(e => {
+    e.hidden = !rinse || live.bfd;
+    const rb = e.querySelector(".btn");
+    rb.hidden = !P["hardware.sensors.watertank.enabled"]?.value;
+    rb.textContent = t(rinsing ? "rinsing" : "flushNow"); rb.disabled = rinsing || !canRinse;
+  });
   document.querySelectorAll(".note.bfdone").forEach(e => { e.hidden = !(live.ok && live.bfd); }); // backflush over, switch still on
   const ck = live.ok ? ["", "clean1", "clean2", "clean3"][live.clean] || "" : ""; // cleaning with detergent (src/orioneMachine.h)
   document.querySelectorAll(".note.clean").forEach(e => { e.hidden = !ck; if (ck) e.textContent = t(ck); });
@@ -1549,7 +1615,7 @@ function paintFlush() {
   if (!b || !P["hardware.sensors.watertank.enabled"]?.value) return;
   b.textContent = t(run ? "flushStop" : "flushNow");
   b.disabled = !run && !(live.ok && live.state === 10 && !live.sw); // the firmware starts only from "ready" (kPidNormal), switch off
-  st.textContent = run ? t(live.warmup === 2 ? "flushPulse" : "flushPause").replace("{n}", live.warmup === 2 ? live.pulse : live.pulse + 1)
+  st.textContent = run ? t(live.warmup === 2 ? "flushPulse" : "flushPause").replace("{n}", live.warmup === 2 ? live.pulse : live.pulse + 1).replace("{m}", live.pulses)
     : live.ok && live.sw ? t("flushSwitch") : live.ok && live.warmup === 1 ? t("flushPending") : b.disabled && live.ok ? t("flushBusy") : "";
 }
 // Bluetooth scale (src/hardware/scales/BluetoothScale.h): only the scale chosen here is connected.
@@ -1722,7 +1788,7 @@ function paintCare() {
   }
   const dn = $("#descaleNote");
   if (dn) { dn.hidden = !care?.due; if (care?.due) dn.textContent = t("descaleDue").replace("{l}", litres(care.water)); }
-  paintLastShot(); paintPills();
+  paintLastShot(); paintPills(); paintBf();
 }
 function countCard() {
   const c = el("section", "card"), s = el("div", "stats");
@@ -1743,15 +1809,26 @@ function descaleCard() {
     await loadCare();
   };
   w.append(b); c.append(w);
+  const how = el("details", "fine"), ol = el("ol", "howto");
+  how.append(el("summary", null, t("descaleHow")));
+  for (const k of ["descale1", "descale2", "descale3", "descale4"]) ol.append(el("li", null, t(k)));
+  how.append(ol, el("p", "shotinfo", t("descaleSrc"))); c.append(how);
   setTimeout(paintCare);
   return c;
 }
 // heating schedule (src/main.cpp scheduleLoop): minutes of the day, local time; off 1440 = none; days bit 0 = Monday
 const hm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
-function scheduleCard() {
-  if (!P["schedule.enabled"]) return null;
-  const c = el("section", "card"), r = el("div", "row"), sw = switchCtl("schedule.enabled");
-  c.append(el("h2", null, t("sSchedule")));
+function powerCard() {
+  const c = el("section", "card");
+  c.append(el("h2", null, t("sPower")));
+  for (const id of ["standby.enabled", "standby.time"]) {
+    if (!P[id] || (SHOWN_IF[id] && !P[SHOWN_IF[id]]?.value)) continue;
+    const r = el("div", "row"), ctl = control(id);
+    r.append(lbl(id), ctl); c.append(r);
+    if (ctl.classList.contains("sw")) rowToggles(r, ctl);
+  }
+  if (!P["schedule.enabled"]) return c.children.length > 1 ? c : null;
+  const r = el("div", "row"), sw = switchCtl("schedule.enabled");
   r.append(lbl("schedule.enabled"), sw); rowToggles(r, sw); c.append(r);
   if (!P["schedule.enabled"].value) return c;
   for (const id of ["schedule.on", "schedule.off"]) {
@@ -1805,18 +1882,31 @@ function paintPills() {
     const days = Math.round((new Date(on.toDateString()) - new Date(new Date().toDateString())) / 864e5);
     pill(t("schedNext").replace("{d}", days === 0 ? t("today") : days === 1 ? t("tomorrow") : on.toLocaleDateString(loc(), {weekday: "short"})).replace("{t}", hm(P["schedule.on"].value)), "var(--heat)");
   }
-  if (care?.standby >= 0 && live.state !== 80) pill(t("standbyIn").replace("{n}", care.standby), "var(--faint)");
   if (care?.rssi < 0) pill(`${t("wifi")} −${-care.rssi} dBm`, care.rssi >= -67 ? "var(--ready)" : care.rssi >= -75 ? "var(--heat)" : "var(--err)");
+  const ps = $("#pidState");
+  if (ps) ps.textContent = live.ok && live.state === 80 ? t("heatStandby") : !P["pid.enabled"]?.value ? t("heatOff") : care?.standby >= 0 ? t("heatOnStandby").replace("{n}", care.standby) : t("heatOn");
   const html = out.join("");
   if (html !== pillsText || box.hidden === !html) { pillsText = html; box.innerHTML = html; box.hidden = !html; }
 }
 // the newest shot on the overview: its numbers, the taste, Claude's word (folded) and the counters; a tap opens it
+function careLine() {
+  const every = P["backflush.remind_after"]?.value ?? 0, line = [];
+  if (care) line.push(t("cTodayN").replace("{n}", care.today), t("cWeekN").replace("{n}", care.week));
+  if (every > 0 && shots) line.push(t("bfIn").replace("{n}", Math.max(0, every - bfCount)));
+  if (care?.descaleL > 0) line.push(t("descaleIn").replace("{l}", litres(Math.max(0, care.descaleL * 1000 - care.water))));
+  return line.join(" · ");
+}
 function paintLastShot() {
   const c = $("#lastCard"), x = shots?.[0];
   if (!c) return;
-  c.hidden = !x;
   c.replaceChildren();
-  if (!x) return;
+  if (!x) { // no shot yet: the counters and what is due (Dominik, 09.10.2026: "dasss nix neues dazugekommen ist")
+    const line = careLine();
+    c.hidden = !line;
+    if (line) c.append(el("h2", null, t("todayCard")), el("p", "shotinfo", line));
+    return;
+  }
+  c.hidden = false;
   const h = el("button", "lasthead"), n = el("div", "lastnums"), dev = deviation(x);
   h.append(el("h2", null, t("lastShot")), el("small", null, whenText(x.at)), el("i", null, "›"));
   h.onclick = () => showShot(x);
@@ -1829,11 +1919,8 @@ function paintLastShot() {
   c.append(tasteRow(x, 0));
   const a = aiBox(x, true, true);
   if (a) c.append(a);
-  const every = P["backflush.remind_after"]?.value ?? 0, line = [];
-  if (care) line.push(t("cTodayN").replace("{n}", care.today), t("cWeekN").replace("{n}", care.week));
-  if (every > 0) line.push(t("bfIn").replace("{n}", Math.max(0, every - bfCount)));
-  if (care?.descaleL > 0) line.push(t("descaleIn").replace("{l}", litres(Math.max(0, care.descaleL * 1000 - care.water))));
-  if (line.length) c.append(el("p", "shotinfo", line.join(" · ")));
+  const line = careLine();
+  if (line) c.append(el("p", "shotinfo", line));
 }
 let jumpToShot = false;
 async function showShot(x) { // the brew tab with this shot open
@@ -1855,7 +1942,9 @@ function careExtras(m) {
     if (!r.ok) { toast(t("failed")); return; }
     await restartAndReload(t("uploaded")); // the firmware takes the uploaded values over only at the next start
   };
-  w.append(dl, up, file); b.append(w); m.append(b);
+  const ex = el("button", "btn", t("exportShots"));
+  ex.onclick = () => exportShots();
+  w.append(dl, up, file, ex); b.append(w); m.append(b);
   const d = el("section", "card"); d.innerHTML = `<h2>${t("sDevice")}</h2>`;
   const w2 = el("div", "btns");
   const act = (label, url, really, cls) => { const x = el("button", "btn" + (cls ? " " + cls : ""), label); x.onclick = async () => { if (really && !confirm(really)) return; if (url === "/restart") return restartAndReload(); await post(url); toast(t("restarting")); }; return x; };
@@ -1875,6 +1964,24 @@ function careExtras(m) {
   if (!version) call("/version").then(r => r.text()).then(x => { version = x.trim(); v.textContent = `${t("version")} ${version} · ${location.host}`; }).catch(() => {});
 }
 let version = "";
+// the shots (with their curves), beans and counters as JSON, the shots also as CSV for a spreadsheet; the machine keeps
+// the last five, so export now and then (review 09.10.2026)
+async function exportShots() {
+  await loadShots();
+  if (!shots) { toast(t("failed")); return; }
+  const out = {exported: new Date().toISOString(), shots: [], beans: beans?.beans ?? [], reference, care};
+  for (const [i, x] of shots.entries()) { const c = await curveOf(x, i); out.shots.push({...x, curve: c === "none" ? null : c}); }
+  const stamp = new Date().toISOString().slice(0, 10), download = (name, type, body) => {
+    const a = el("a"); a.href = URL.createObjectURL(new Blob([body], {type})); a.download = name; document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  };
+  const de = lang === "de", n = (v, d = 1) => v == null ? "" : de ? Number(v).toFixed(d).replace(".", ",") : Number(v).toFixed(d), q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const head = ["at", "s", "g", "d", "m", "b", "ratio", "r", "t0", "fd", "tw", "sw", "lg", "pi", "ch"];
+  const rows = shots.map(x => [x.at ? new Date(x.at * 1000).toISOString() : "", n(x.s), n(x.g), n(x.d), q(x.m), q(x.b), x.d && x.g != null ? n(x.g / x.d, 2) : "", ["", "sour", "good", "bitter"][x.r] ?? "",
+    n(x.t0), n(x.fd), n(x.tw), n(x.sw), n(x.lg, 2), x.pi ? q(x.pi.join("/")) : "", x.ch ? 1 : 0].join(de ? ";" : ","));
+  download(`orione-shots-${stamp}.json`, "application/json", JSON.stringify(out, null, 1));
+  download(`orione-shots-${stamp}.csv`, "text/csv", [head.join(de ? ";" : ",")].concat(rows).join("\n"));
+}
 
 // iPhone home screen app: keep the home indicator free, but only once. Where iOS gives the app a viewport
 // that stops above it (shorter than the screen while the page starts under the status bar), the inset is
@@ -1919,7 +2026,7 @@ const needOf = def => (def.names || def.cards.flatMap(c => c[1]).concat(Object.v
 function build(def, m) {
   if (def.id === "status") return statusView(m);
   if (def.shot) m.append(shotCard(), shotsCard());
-  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sSchedule" ? scheduleCard() : title === "sDescale" ? descaleCard() : title === "sCount" ? countCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
+  for (const [title, ids, closed] of def.cards) { const c = title === "sPresets" ? presetCard() : title === "sClaude" ? claudeCard() : title === "sFlush" ? flushCard() : title === "sPower" ? powerCard() : title === "sDescale" ? descaleCard() : title === "sCount" ? countCard() : title === "sScale" ? scaleCard(title, ids) : title === "sCoffee" ? coffeeCard(title, ids) : card(title, ids, closed); if (c) { c.dataset.card = title; m.append(c); } }
   if (def.id === "care") {
     const since = el("p", "shotinfo"); since.id = "bfSince"; m.querySelector('[data-card="sBf"]')?.append(since);
     const bd = el("div", "note bfdone", t("bfDoneNote")); bd.hidden = !(live.ok && live.bfd); m.querySelector('[data-card="sBf"] h2')?.after(bd);

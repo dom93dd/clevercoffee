@@ -172,6 +172,12 @@ namespace shot_history {
     // a shot since the last rinse: the display and the page say "Bitte spülen" (as GaggiMate's "flush pending") until
     // the brew switch runs the group briefly (a brew under ShotLog::kFlushSeconds), a warm-up flush or a backflush
     inline volatile bool flushPending = false;
+    inline uint32_t shotEndMs = 0; // when the last shot was logged
+
+    /** The next run of the brew switch is most likely the rinse after a shot: no pre-infusion (OrioneCare.h) */
+    inline bool rinseExpected() {
+        return orione::RinseAfterShot::expected(flushPending, millis(), shotEndMs);
+    }
 
     inline void flushed() {
         if (flushPending) {
@@ -206,7 +212,8 @@ namespace shot_history {
 
     inline void learnFromShot(); // below
 
-    inline void brewStarted(const double celsius) {
+    /** @param preinfusion this run starts with the pre-infusion (not the rinse after a shot) */
+    inline void brewStarted(const double celsius, const bool preinfusion) {
         if (shotLog.settleNow()) {
             save(); // the previous shot was still counting drops
             learnFromShot();
@@ -214,7 +221,7 @@ namespace shot_history {
 
         startCelsius = static_cast<float>(celsius);
         noteStop(0.0f, 0.0f);
-        const bool pi = config.get<bool>("brew.pre_infusion.enabled");
+        const bool pi = preinfusion;
         piBurst = pi ? static_cast<float>(config.get<double>("brew.pre_infusion.time")) : 0.0f;
         piPause = pi ? static_cast<float>(config.get<double>("brew.pre_infusion.pause")) : 0.0f;
         piValveOpen = pi; // always since 08.10.2026; shots before may have had it closed
@@ -286,6 +293,7 @@ namespace shot_history {
 
             LOGF(INFO, "Shot logged: %.1f s, %.1f g%s", seconds, grams, channeling >= 0 ? ", flow jumped (channeling?)" : "");
             flushPending = true;
+            shotEndMs = millis();
             care::shot(config.get<float>("brew.dose"), grams, static_cast<float>(seconds));
         }
         else {

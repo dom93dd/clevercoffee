@@ -39,6 +39,7 @@ inline bool brewEndedSwitchOn = false;   // the switch waits for release because
 inline bool brewWeightFallback = false;  // this shot: by weight, but without the scale, so the target time ends it
 inline bool backflushCompleted = false;  // all cycles ran: backflush mode goes off (kBackflushFinished)
 inline bool backflushSwitchReminder = false; // Orione: all cycles ran and the brew switch is still on: display and page say so
+inline bool rinseRun = false;                // Orione: this run of the brew switch is the rinse after a shot (no pre-infusion)
 constexpr double kBrewMaxSeconds = 60.0;  // no shot runs longer (unless the target time is longer)
 #endif
 
@@ -296,7 +297,11 @@ inline bool brew() {
     const int brewMode = config.get<int>("brew.mode");
     const bool brewByTimeEnabled = brewMode != 0 && config.get<bool>("brew.by_time.enabled");
     const bool brewByWeightEnabled = brewMode != 0 && config.get<bool>("brew.by_weight.enabled");
+#ifdef CC_ORIONE
+    bool preinfusionEnabled = config.get<bool>("brew.pre_infusion.enabled") && !rinseRun; // the rinse after a shot: none
+#else
     const bool preinfusionEnabled = config.get<bool>("brew.pre_infusion.enabled");
+#endif
 
     // check if brewswitch was turned off after a brew; Brew only runs once even brewswitch is still pressed
     if (currBrewSwitchState == kBrewSwitchIdle) {
@@ -335,7 +340,14 @@ inline bool brew() {
                 }
 #endif
 #ifdef CC_ORIONE
-                shot_history::brewStarted(temperature);
+                rinseRun = shot_history::rinseExpected();
+                preinfusionEnabled = config.get<bool>("brew.pre_infusion.enabled") && !rinseRun;
+
+                if (rinseRun && config.get<bool>("brew.pre_infusion.enabled")) {
+                    LOG(INFO, "Rinse after the shot: no pre-infusion");
+                }
+
+                shot_history::brewStarted(temperature, preinfusionEnabled);
 #endif
 
                 if (!preinfusionEnabled) {

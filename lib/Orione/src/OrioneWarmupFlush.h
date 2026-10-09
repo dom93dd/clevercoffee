@@ -63,7 +63,7 @@ namespace orione {
                     startWanted_ = false;
 
                     if (!running() && in.sensor && in.tankOk && in.ready && !in.userActive) {
-                        begin(nowMs);
+                        begin(nowMs, wantedPulses_);
                     }
                 }
 
@@ -89,7 +89,7 @@ namespace orione {
                         runMax_ = std::fmax(runMax_, celsius);
 
                         if (nowMs - settledSince_ >= kSettledMs) {
-                            begin(nowMs);
+                            begin(nowMs, kPulses);
                             return true;
                         }
 
@@ -109,7 +109,7 @@ namespace orione {
                             }
 
                             phaseStart_ = nowMs;
-                            phase_ = pulse_ < kPulses ? kPause : kDone;
+                            phase_ = pulse_ < pulses_ ? kPause : kDone;
                             return false;
                         }
 
@@ -128,9 +128,13 @@ namespace orione {
                 }
             }
 
-            /** Start by hand (the next update() checks the conditions); also replaces a pending automatic one */
-            void requestStart() {
+            /**
+             * Start by hand (the next update() checks the conditions); also replaces a pending automatic one
+             * @param pulses 1 for a rinse after a shot (Dominik, 09.10.2026), kPulses for the warm-up flush
+             */
+            void requestStart(const int pulses = kPulses) {
                 startWanted_ = true;
+                wantedPulses_ = pulses < 1 ? 1 : pulses > kPulses ? kPulses : pulses;
             }
 
             /** Stop a running flush by hand */
@@ -146,9 +150,14 @@ namespace orione {
                 return phase_ == kPulse || phase_ == kPause;
             }
 
-            /** 1 to kPulses while running, 0 otherwise */
+            /** 1 to pulses() while running, 0 otherwise */
             int pulse() const {
                 return running() ? pulse_ : 0;
+            }
+
+            /** pulses of the running flush */
+            int pulses() const {
+                return pulses_;
             }
 
             /** since the first pulse began, for the display */
@@ -157,9 +166,10 @@ namespace orione {
             }
 
         private:
-            void begin(const uint32_t nowMs) {
+            void begin(const uint32_t nowMs, const int pulses) {
                 phase_ = kPulse;
                 pulse_ = 1;
+                pulses_ = pulses;
                 phaseStart_ = nowMs;
                 startMs_ = nowMs;
                 settledSince_ = 0;
@@ -171,6 +181,8 @@ namespace orione {
             bool startWanted_ = false;
             bool stopWanted_ = false;
             int pulse_ = 0;
+            int pulses_ = kPulses;
+            int wantedPulses_ = kPulses;
             uint32_t settledSince_ = 0;
             double runMin_ = 0.0;
             double runMax_ = 0.0;

@@ -18,7 +18,7 @@
 #define HOSTNAME                 "silvia"          // default hostname
 #endif
 #ifdef CC_ORIONE
-#define BREW_PRESETS             "25,36;30,45;45,80" // quick choice Espresso/Doppio/Lungo of the web page: seconds,grams
+#define BREW_PRESETS             "25,2;30,2.5;45,4.5" // quick choice Espresso/Doppio/Lungo of the web page: seconds,ratio (grams over 10 before 09.10.2026)
 #define BREW_PRESETS_MAX_LENGTH  48
 #define BREW_DOSE                18.0              // ground coffee for the next shot (g), logged with it
 #define BREW_DOSE_MIN            5.0

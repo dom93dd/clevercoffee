@@ -493,7 +493,11 @@ class Config {
             _configDefs.emplace("backflush.flush_time", ConfigDef::forDouble(BACKFLUSH_FLUSH_TIME, BACKFLUSH_FLUSH_TIME_MIN, BACKFLUSH_FLUSH_TIME_MAX));
 
             // Standby
+#ifdef CC_ORIONE
+            _configDefs.emplace("standby.enabled", ConfigDef::forBool(true)); // with the schedule: heater off when nobody uses it (09.10.2026)
+#else
             _configDefs.emplace("standby.enabled", ConfigDef::forBool(false));
+#endif
             _configDefs.emplace("standby.time", ConfigDef::forDouble(STANDBY_MODE_TIME, STANDBY_MODE_TIME_MIN, STANDBY_MODE_TIME_MAX));
 
             // MQTT

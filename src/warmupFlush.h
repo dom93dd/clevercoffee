@@ -18,7 +18,7 @@ namespace warmup_flush {
     inline unsigned long flowSince = 0;
 
     inline portMUX_TYPE requestLock = portMUX_INITIALIZER_UNLOCKED;
-    inline int8_t request = 0; // set by the web server task: 1 start, -1 stop
+    inline int8_t request = 0; // set by the web server task: pulses to start (1..3), -1 stop
 
     inline bool sensorEnabled() {
         return config.get<bool>("hardware.sensors.watertank.enabled");
@@ -31,10 +31,10 @@ namespace warmup_flush {
         return phase == orione::WarmupFlush::kWaiting && !automatic ? orione::WarmupFlush::kNone : phase;
     }
 
-    /** web server task: start or stop by hand, applied by the next loop() */
-    inline void requestFromWeb(const bool start) {
+    /** web server task: start (pulses: 1 rinse, 3 warm-up flush) or stop by hand, applied by the next loop() */
+    inline void requestFromWeb(const bool start, const int pulses = orione::WarmupFlush::kPulses) {
         portENTER_CRITICAL(&requestLock);
-        request = start ? 1 : -1;
+        request = start ? static_cast<int8_t>(pulses) : -1;
         portEXIT_CRITICAL(&requestLock);
     }
 
@@ -46,7 +46,7 @@ namespace warmup_flush {
         portEXIT_CRITICAL(&requestLock);
 
         if (wanted > 0) {
-            flush.requestStart();
+            flush.requestStart(wanted);
         }
         else if (wanted < 0) {
             flush.requestStop();
