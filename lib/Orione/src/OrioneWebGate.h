@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <cstring>
+
 #include <cstddef>
 #include <cstdint>
 
@@ -94,5 +96,18 @@ namespace orione {
         private:
             uint32_t since_ = 0;
     };
+
+    /**
+     * A route's path against a request's URL as ESPAsyncWebServer matches a plain path (its "backward compatible"
+     * matcher): the path itself or the path followed by "/..." (src/embeddedWebserver.h RouteTable).
+     */
+    inline bool pathMatches(const char* url, const char* path) {
+        if (url == nullptr || path == nullptr) {
+            return false;
+        }
+
+        const size_t n = std::strlen(path);
+        return std::strncmp(url, path, n) == 0 && (url[n] == '\0' || url[n] == '/');
+    }
 
 } // namespace orione

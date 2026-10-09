@@ -1361,6 +1361,17 @@ void test_descale_program_asks_for_more_solution_and_stops_on_its_own() {
     TEST_ASSERT_TRUE(t - restStart <= (D::kPassMaxMs / D::kBurstMs + 1) * (D::kBurstMs + D::kBurstRestMs)); // 15 min of pumping
 }
 
+void test_route_paths_match_as_the_web_server_does() {
+    TEST_ASSERT_TRUE(orione::pathMatches("/shots", "/shots"));
+    TEST_ASSERT_TRUE(orione::pathMatches("/shot/rate", "/shot")); // the path followed by "/..."
+    TEST_ASSERT_FALSE(orione::pathMatches("/shots", "/shot"));     // not just any prefix
+    TEST_ASSERT_FALSE(orione::pathMatches("/sho", "/shot"));
+    TEST_ASSERT_FALSE(orione::pathMatches("/parameters.html", "/parameters"));
+    TEST_ASSERT_TRUE(orione::pathMatches("/care/descaled", "/care/descaled"));
+    TEST_ASSERT_FALSE(orione::pathMatches("/care", "/care/descaled"));
+    TEST_ASSERT_FALSE(orione::pathMatches(nullptr, "/x"));
+}
+
 void test_rinse_stops_after_ten_seconds() {
     using R = orione::RinseAfterShot;
     TEST_ASSERT_FALSE(R::over(0));
@@ -1713,6 +1724,7 @@ int main() {
     RUN_TEST(test_standby_warm_off_by_setting_and_by_the_schedule);
     RUN_TEST(test_descale_program_runs_cold_rounds_then_rinses_twice);
     RUN_TEST(test_descale_program_asks_for_more_solution_and_stops_on_its_own);
+    RUN_TEST(test_route_paths_match_as_the_web_server_does);
     RUN_TEST(test_rinse_stops_after_ten_seconds);
     RUN_TEST(test_shot_stopped_by_hand_is_marked_and_kept);
     RUN_TEST(test_flush_by_hand_with_one_pulse_for_the_rinse);

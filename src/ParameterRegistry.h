@@ -74,8 +74,9 @@ class ParameterRegistry {
 
         bool _ready;
 
+        // looked up by a linear search (getParameterById()): a map with copied keys cost ~90 bytes of heap per
+        // parameter, ~9 KB in all, for a handful of lookups per web request (09.10.2026, heap too low in the machine)
         std::vector<std::shared_ptr<Parameter>> _parameters;
-        std::map<std::string, std::shared_ptr<Parameter>> _parameterMap;
         Config* _config;
         bool _pendingChanges;
         unsigned long _lastChangeTime;
@@ -83,7 +84,16 @@ class ParameterRegistry {
 
         void addParam(const std::shared_ptr<Parameter>& param) {
             _parameters.push_back(param);
-            _parameterMap[param->getId()] = param;
+        }
+
+        static bool hasText(const char* text) {
+            return text != nullptr && text[0] != '\0';
+        }
+
+        // The accessors capture only the config path (and the global variable): small enough for std::function's
+        // own storage, no heap per parameter. The config comes from the singleton.
+        static Config& config() {
+            return *_singleton._config;
         }
 
     public:
@@ -181,12 +191,12 @@ class ParameterRegistry {
             bool requiresReboot = false) {
 
             const auto param = std::make_shared<Parameter>(
-                configPath, displayName, kCString, section, position, [this, configPath]() -> String { return _config->get<String>(configPath); },
-                [this, configPath, globalVar](const String& val) {
-                    _config->set<String>(configPath, val);
+                configPath, displayName, kCString, section, position, [configPath]() -> String { return config().get<String>(configPath); },
+                [configPath, globalVar](const String& val) {
+                    config().set<String>(configPath, val);
                     if (globalVar) *globalVar = val;
                 },
-                maxLength, !String(helpText).isEmpty(), helpText, showCondition, globalVar);
+                maxLength, hasText(helpText), helpText, showCondition, globalVar);
 
             param->setRequiresReboot(requiresReboot);
             addParam(param);
@@ -204,12 +214,12 @@ class ParameterRegistry {
             bool requiresReboot = false) {
 
             const auto param = std::make_shared<Parameter>(
-                configPath, displayName, kUInt8, section, position, [this, configPath]() -> bool { return _config->get<bool>(configPath); },
-                [this, configPath, globalVar](const bool val) {
-                    _config->set<bool>(configPath, val);
+                configPath, displayName, kUInt8, section, position, [configPath]() -> bool { return config().get<bool>(configPath); },
+                [configPath, globalVar](const bool val) {
+                    config().set<bool>(configPath, val);
                     if (globalVar) *globalVar = val;
                 },
-                !String(helpText).isEmpty(), helpText, showCondition, globalVar);
+                hasText(helpText), helpText, showCondition, globalVar);
 
             param->setRequiresReboot(requiresReboot);
             addParam(param);
@@ -231,13 +241,13 @@ class ParameterRegistry {
             bool requiresReboot = false) {
 
             auto param = std::make_shared<Parameter>(
-                configPath, displayName, type, section, position, [this, configPath]() -> double { return static_cast<double>(_config->get<T>(configPath)); },
-                [this, configPath, globalVar](const double val) {
+                configPath, displayName, type, section, position, [configPath]() -> double { return static_cast<double>(config().get<T>(configPath)); },
+                [configPath, globalVar](const double val) {
                     T typedVal = static_cast<T>(val);
-                    _config->set<T>(configPath, typedVal);
+                    config().set<T>(configPath, typedVal);
                     if (globalVar) *globalVar = typedVal;
                 },
-                minValue, maxValue, !String(helpText).isEmpty(), helpText, showCondition, globalVar);
+                minValue, maxValue, hasText(helpText), helpText, showCondition, globalVar);
 
             param->setRequiresReboot(requiresReboot);
             addParam(param);
@@ -257,13 +267,13 @@ class ParameterRegistry {
             bool requiresReboot = false) {
 
             const auto param = std::make_shared<Parameter>(
-                configPath, displayName, kEnum, section, position, [this, configPath]() -> double { return _config->get<int>(configPath); },
-                [this, configPath, globalVar](const double val) {
+                configPath, displayName, kEnum, section, position, [configPath]() -> double { return config().get<int>(configPath); },
+                [configPath, globalVar](const double val) {
                     const int intVal = static_cast<int>(val);
-                    _config->set<int>(configPath, intVal);
+                    config().set<int>(configPath, intVal);
                     if (globalVar) *globalVar = intVal;
                 },
-                options, optionCount, !String(helpText).isEmpty(), helpText, showCondition, globalVar);
+                options, optionCount, hasText(helpText), helpText, showCondition, globalVar);
 
             param->setRequiresReboot(requiresReboot);
             addParam(param);

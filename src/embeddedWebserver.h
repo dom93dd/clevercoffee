@@ -34,6 +34,87 @@
 #endif
 
 inline AsyncWebServer server(80);
+
+#ifdef CC_ORIONE
+/**
+ * One web handler for all fixed routes instead of one AsyncCallbackWebHandler each: those cost ~170 bytes of heap per
+ * route (the handler, its copied path, four std::function, a list node), ~7 KB for the 43 routes; here a route is one
+ * entry in an array (path from flash, the method, the function). Matching as the library does for a plain path: the
+ * path itself or the path followed by "/...", the first route that fits (registration order). 09.10.2026: the heap
+ * in the machine was too low (Dominik: "dann lass uns doch irgendwo her speicher holen").
+ */
+class RouteTable : public AsyncWebHandler {
+    public:
+        void add(const char* path, const WebRequestMethodComposite method, ArRequestHandlerFunction fn) {
+            routes_.push_back({path, method, std::move(fn)});
+        }
+
+        void shrink() {
+            routes_.shrink_to_fit();
+        }
+
+        bool canHandle(AsyncWebServerRequest* request) const override {
+            return find(request) != nullptr;
+        }
+
+        void handleRequest(AsyncWebServerRequest* request) override {
+            if (const Route* r = find(request)) {
+                r->fn(request);
+            }
+        }
+
+        bool isRequestHandlerTrivial() const override {
+            return false; // POST bodies (form fields) are read, as for the library's handler with a function
+        }
+
+    private:
+        struct Route {
+                const char* path;
+                WebRequestMethodComposite method;
+                ArRequestHandlerFunction fn;
+        };
+
+        const Route* find(AsyncWebServerRequest* request) const {
+            if (!request->isHTTP()) {
+                return nullptr;
+            }
+
+            const char* url = request->url().c_str();
+
+            for (const auto& r : routes_) {
+                if (!(r.method & request->method())) {
+                    continue;
+                }
+
+                if (orione::pathMatches(url, r.path)) {
+                    return &r;
+                }
+            }
+
+            return nullptr;
+        }
+
+        std::vector<Route> routes_;
+};
+
+inline RouteTable* routes = new RouteTable(); // owned by the server once added (serverSetup())
+
+inline void route(const char* path, const WebRequestMethodComposite method, ArRequestHandlerFunction fn) {
+    routes->add(path, method, std::move(fn));
+}
+
+inline void route(const char* path, ArRequestHandlerFunction fn) {
+    routes->add(path, HTTP_ANY, std::move(fn));
+}
+#else
+inline void route(const char* path, const WebRequestMethodComposite method, ArRequestHandlerFunction fn) {
+    server.on(path, method, std::move(fn));
+}
+
+inline void route(const char* path, ArRequestHandlerFunction fn) {
+    server.on(path, HTTP_ANY, std::move(fn));
+}
+#endif
 inline AsyncEventSource events("/events");
 
 inline double curTemp = 0.0;
@@ -271,7 +352,7 @@ inline void paramToJson(const String& name, const std::shared_ptr<Parameter>& pa
 
 inline void serverSetup() {
 #ifndef CC_ORIONE // no firmware steam mode / no HX711 calibration on the Orione
-    server.on("/toggleSteam", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/toggleSteam", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -285,7 +366,7 @@ inline void serverSetup() {
     });
 #endif
 
-    server.on("/togglePid", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/togglePid", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -303,7 +384,7 @@ inline void serverSetup() {
         request->redirect("/");
     });
 
-    server.on("/toggleBackflush", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/toggleBackflush", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -321,7 +402,7 @@ inline void serverSetup() {
     });
 
     if (config.get<bool>("hardware.sensors.scale.enabled")) {
-        server.on("/toggleTareScale", HTTP_POST, [](AsyncWebServerRequest* request) {
+        route("/toggleTareScale", HTTP_POST, [](AsyncWebServerRequest* request) {
             if (!authenticate(request)) {
                 return request->requestAuthentication();
             }
@@ -334,7 +415,7 @@ inline void serverSetup() {
         });
 
 #ifndef CC_ORIONE // no firmware steam mode / no HX711 calibration on the Orione
-        server.on("/toggleScaleCalibration", HTTP_POST, [](AsyncWebServerRequest* request) {
+        route("/toggleScaleCalibration", HTTP_POST, [](AsyncWebServerRequest* request) {
             if (!authenticate(request)) {
                 return request->requestAuthentication();
             }
@@ -348,7 +429,7 @@ inline void serverSetup() {
 #endif
     }
 
-    server.on("/parameters", WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/parameters", WEB_GATED([](AsyncWebServerRequest* request) {
         if (!request->client() || !request->client()->connected()) {
             return;
         }
@@ -530,7 +611,7 @@ inline void serverSetup() {
         }
     }));
 
-    server.on("/parameterHelp", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/parameterHelp", HTTP_GET, [](AsyncWebServerRequest* request) {
         JsonDocument doc;
         auto* p = request->getParam(0);
 
@@ -558,7 +639,7 @@ inline void serverSetup() {
 
     // Replaces the %VAR_SHOW_VERSION% template placeholder. With it gone, the pages
     // need no template processor and can be served static and pre-compressed.
-    server.on("/version", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/version", HTTP_GET, [](AsyncWebServerRequest* request) {
         request->send(200, "text/plain", sysVersion);
     });
 
@@ -567,7 +648,7 @@ inline void serverSetup() {
     // trial after an update over WiFi (firmwareGuard.h), and its memory: the heap now,
     // its lowest point since the start and largest block, for each task the stack it has never used (bytes), and the
     // NVS entries (32 bytes each) used and free: shots, curves, beans and WiFi share 20 KB
-    server.on("/boot", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/boot", HTTP_GET, [](AsyncWebServerRequest* request) {
         const auto unused = [](const char* name) -> long {
             TaskHandle_t t = xTaskGetHandle(name);
             return t != nullptr ? static_cast<long>(uxTaskGetStackHighWaterMark(t)) : -1L;
@@ -588,8 +669,22 @@ inline void serverSetup() {
         request->send(200, "application/json", json);
     });
 
+    // free heap after each step of the start (heapStages.h): "name free block ms" per line, then now
+    route("/heap", HTTP_GET, [](AsyncWebServerRequest* request) {
+        AsyncResponseStream* response = request->beginResponseStream("text/plain");
+
+        for (int i = 0; i < heap_stages::count; ++i) {
+            const auto& st = heap_stages::stages[i];
+            response->printf("%-15s %6u %6u %7u\n", st.name, static_cast<unsigned>(st.free), static_cast<unsigned>(st.block), static_cast<unsigned>(st.ms));
+        }
+
+        response->printf("%-15s %6u %6u %7u\n", "now", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)), static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+                         static_cast<unsigned>(millis()));
+        request->send(response);
+    });
+
     // the last ~4 KB of log lines, also from before a restart or crash (src/orioneLog.h); times are UTC
-    server.on("/log", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/log", HTTP_GET, [](AsyncWebServerRequest* request) {
         auto span = std::make_shared<std::pair<uint32_t, uint32_t>>();
         orione_log::span(span->first, span->second);
         AsyncWebServerResponse* response = request->beginChunkedResponse("text/plain; charset=utf-8", [span](uint8_t* buffer, const size_t maxLen, const size_t index) -> size_t {
@@ -600,7 +695,7 @@ inline void serverSetup() {
     });
 #endif
 
-    server.on("/temperatures", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/temperatures", HTTP_GET, [](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         response->print('{');
         response->print("\"currentTemp\":");
@@ -615,19 +710,19 @@ inline void serverSetup() {
 
 #ifdef CC_FAKE_TEMP_SENSOR
     // bench build only: virtual brew switch (src/benchSwitch.h)
-    server.on("/bench/brew", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/bench/brew", HTTP_POST, [](AsyncWebServerRequest* request) {
         const long s = request->hasParam("s") ? request->getParam("s")->value().toInt() : 25;
         bench::holdBrewSwitch(static_cast<uint32_t>(constrain(s, 0L, 120L)));
         request->send(200, "text/plain", s > 0 ? "brew switch on" : "brew switch off");
     });
 
-    server.on("/bench/tank", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/bench/tank", HTTP_POST, [](AsyncWebServerRequest* request) {
         bench::tankEmpty = request->hasParam("empty") && request->getParam("empty")->value() == "1";
         request->send(200, "text/plain", bench::tankEmpty ? "tank empty" : "tank full");
     });
 
 #ifdef CC_FAKE_SCALE
-    server.on("/bench/scale", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/bench/scale", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (request->hasParam("off")) {
             bench::scaleOff = request->getParam("off")->value() == "1";
         }
@@ -644,7 +739,7 @@ inline void serverSetup() {
     });
 #endif
 
-    server.on("/bench/wifi-outage", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/bench/wifi-outage", HTTP_POST, [](AsyncWebServerRequest* request) {
         const long s = request->hasParam("s") ? request->getParam("s")->value().toInt() : 180;
         bench::wifiOutageUntilMs = millis() + static_cast<uint32_t>(constrain(s, 10L, 1800L)) * 1000;
         bench::wifiOutageStart = true;
@@ -655,7 +750,7 @@ inline void serverSetup() {
 #ifdef CC_ORIONE
     // Bluetooth scale chosen on the web page (Einstellungen → Waage). state: 0 off, 1 chosen but not
     // connected, 2 connected, 3 none chosen. Names come from any scale around: ArduinoJson escapes them.
-    server.on("/scale", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/scale", HTTP_GET, [](AsyncWebServerRequest* request) {
         auto* ble = isBluetoothScale && scale != nullptr ? static_cast<BluetoothScale*>(scale) : nullptr;
         JsonDocument doc;
         doc["state"] = !ble || !config.get<bool>("hardware.sensors.scale.enabled") ? 0 : ble->isConnected() ? 2 : ble->hasTarget() ? 1 : 3;
@@ -683,7 +778,7 @@ inline void serverSetup() {
         request->send(response);
     });
 
-    server.on("/scale/discover", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/scale/discover", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!isBluetoothScale || scale == nullptr) {
             return request->send(409, "text/plain", "scale off");
         }
@@ -692,7 +787,7 @@ inline void serverSetup() {
     });
 
     // ?address=aa:bb:cc:dd:ee:ff&name=...: remembered (setting) and connected from now on
-    server.on("/scale/select", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/scale/select", HTTP_POST, [](AsyncWebServerRequest* request) {
         char address[18];
         orione::ScaleList::normalize(request->hasParam("address") ? request->getParam("address")->value().c_str() : "", address);
         if (!isBluetoothScale || scale == nullptr || address[0] == '\0') {
@@ -711,7 +806,7 @@ inline void serverSetup() {
         request->send(202, "text/plain", "ok");
     });
 
-    server.on("/scale/forget", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/scale/forget", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!isBluetoothScale || scale == nullptr) {
             return request->send(409, "text/plain", "scale off");
         }
@@ -724,7 +819,7 @@ inline void serverSetup() {
 
     // standby by hand from the page's header (Dominik, 09.10.2026), ?wake=1 wakes the machine; applied by loop()
     // (standbyRequestLoop() in main.cpp). Not during a shot, a flush, a backflush or an alarm.
-    server.on("/standby", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/standby", HTTP_POST, [](AsyncWebServerRequest* request) {
         const bool wake = request->hasParam("wake");
         const MachineState s = machineState;
 
@@ -737,7 +832,7 @@ inline void serverSetup() {
     });
 
     // descaling program (descaleProgram.h, Wartung → Entkalken): ?start=1, ?next=1 ("Weiter"), ?stop=1; applied by loop()
-    server.on("/descale", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/descale", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!descale::sensorEnabled()) {
             return request->send(409, "text/plain", "no water level sensor");
         }
@@ -764,7 +859,7 @@ inline void serverSetup() {
     });
 
     // warm-up flush by hand (Wartung): ?start=1 or ?stop=1, applied by loop(); only with a water level sensor
-    server.on("/flush", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/flush", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!warmup_flush::sensorEnabled()) {
             return request->send(409, "text/plain", "no water level sensor");
         }
@@ -774,13 +869,13 @@ inline void serverSetup() {
         request->send(202, "text/plain", "ok");
     });
 
-    server.on("/shots", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/shots", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         shot_history::writeJson(*response);
         request->send(response);
     }));
 
-    server.on("/shot/rate", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/shot/rate", HTTP_POST, [](AsyncWebServerRequest* request) {
         const long i = request->hasParam("i") ? request->getParam("i")->value().toInt() : -1;
         const long t = request->hasParam("t") ? request->getParam("t")->value().toInt() : -1;
 
@@ -794,7 +889,7 @@ inline void serverSetup() {
     });
 
     // delete shot i (a test at the bench, a flush that counted); at and s say which one the page means
-    server.on("/shot/delete", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/shot/delete", HTTP_POST, [](AsyncWebServerRequest* request) {
         const long i = request->hasParam("i") ? request->getParam("i")->value().toInt() : -1;
         const uint32_t at = request->hasParam("at") ? static_cast<uint32_t>(request->getParam("at")->value().toInt()) : 0;
         const float s = request->hasParam("s") ? request->getParam("s")->value().toFloat() : -1.0f;
@@ -809,7 +904,7 @@ inline void serverSetup() {
     });
 
     // the beans kept with their recipes (beanProfiles.h); switching is saving brew.beans
-    server.on("/beans/delete", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/beans/delete", HTTP_POST, [](AsyncWebServerRequest* request) {
         const String name = request->hasParam("n") ? request->getParam("n")->value() : String();
 
         if (!bean_profiles::remove(name.c_str())) {
@@ -821,7 +916,7 @@ inline void serverSetup() {
     });
 
     // the roast date of a bean: ?n=name&d=YYYY-MM-DD, d empty: none
-    server.on("/beans/roast", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/beans/roast", HTTP_POST, [](AsyncWebServerRequest* request) {
         const String name = request->hasParam("n") ? request->getParam("n")->value() : String();
         const String date = request->hasParam("d") ? request->getParam("d")->value() : String();
         int y = 0, m = 0, d = 0;
@@ -845,14 +940,14 @@ inline void serverSetup() {
         request->send(200, "text/plain", "OK");
     });
 
-    server.on("/beans", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/beans", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         bean_profiles::writeJson(*response);
         request->send(response);
     }));
 
     // shot i becomes the reference under the curves (?i=&at=&s= as for delete), ?clear=1 removes it
-    server.on("/shot/reference", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/shot/reference", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (request->hasParam("clear")) {
             shot_history::requestReference(shot_history::kRefClear, 0, 0);
             return request->send(200, "text/plain", "OK");
@@ -870,14 +965,14 @@ inline void serverSetup() {
         request->send(200, "text/plain", "OK");
     });
 
-    server.on("/reference", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/reference", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         shot_history::writeReferenceJson(*response);
         request->send(response);
     }));
 
     // counters and the water since the last descaling (machineCare.h)
-    server.on("/care", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/care", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         AsyncResponseStream* response = request->beginResponseStream("application/json");
         const int standby = standbyModeOn && machineState != kStandby ? static_cast<int>((standbyModeRemainingTimeMillis + 59999) / 60000) : -1;
         care::writeJson(*response, config.get<float>("descale.litres"), standby, static_cast<int>(WiFi.RSSI()), config.get<float>("drip.capacity"),
@@ -885,17 +980,17 @@ inline void serverSetup() {
         request->send(response);
     }));
 
-    server.on("/care/drip-emptied", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/care/drip-emptied", HTTP_POST, [](AsyncWebServerRequest* request) {
         care::dripEmptied();
         request->send(200, "text/plain", "OK");
     });
 
-    server.on("/care/descaled", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/care/descaled", HTTP_POST, [](AsyncWebServerRequest* request) {
         care::descaled(shot_history::nowUtc());
         request->send(200, "text/plain", "OK");
     });
 
-    server.on("/shot", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/shot", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         const int i = request->hasParam("i") ? request->getParam("i")->value().toInt() : 0;
         AsyncResponseStream* response = request->beginResponseStream("application/json");
 
@@ -909,7 +1004,7 @@ inline void serverSetup() {
     }));
 
 #endif
-    server.on("/timeseries", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/timeseries", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         // Chunked, so a response never needs more memory than the server's send buffer
         struct TsState {
                 int start = 0;
@@ -966,7 +1061,7 @@ inline void serverSetup() {
         request->send(response);
     }));
 
-    server.on("/wifireset", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/wifireset", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -982,7 +1077,7 @@ inline void serverSetup() {
         wiFiReset();
     });
 
-    server.on("/download/config", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
+    route("/download/config", HTTP_GET, WEB_GATED([](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -1067,7 +1162,7 @@ inline void serverSetup() {
             }
         });
 
-    server.on("/restart", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/restart", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -1082,7 +1177,7 @@ inline void serverSetup() {
         ESP.restart();
     });
 
-    server.on("/factoryreset", HTTP_POST, [](AsyncWebServerRequest* request) {
+    route("/factoryreset", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!authenticate(request)) {
             return request->requestAuthentication();
         }
@@ -1145,13 +1240,13 @@ inline void serverSetup() {
 
     // The four pages became tabs of one page, addressed by hash. Redirect the old URLs
     // so existing bookmarks still land on the right tab.
-    server.on("/parameters.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+    route("/parameters.html", HTTP_GET, [](AsyncWebServerRequest* request) {
         const AsyncWebParameter* filter = request->getParam("filter");
         request->redirect(filter && filter->value() == "hardware" ? "/#hardware" : "/#settings");
     });
 
-    server.on("/system.html", HTTP_GET, [](AsyncWebServerRequest* request) { request->redirect("/#system"); });
-    server.on("/about.html", HTTP_GET, [](AsyncWebServerRequest* request) { request->redirect("/#about"); });
+    route("/system.html", HTTP_GET, [](AsyncWebServerRequest* request) { request->redirect("/#system"); });
+    route("/about.html", HTTP_GET, [](AsyncWebServerRequest* request) { request->redirect("/#about"); });
 
     // serve static files
     LittleFS.begin();
@@ -1159,6 +1254,8 @@ inline void serverSetup() {
     // The Orione page, fonts, manifest and icons are compiled into the firmware (src/flashAssets.h); LittleFS
     // only holds config.json. The page is no-cache: the browser asks every time and gets a 304 while unchanged.
     server.addHandler(new web_gate::GatedHandler(new FlashAssetHandler()));
+    routes->shrink();
+    server.addHandler(routes);
 #else
     server.serveStatic("/css", LittleFS, "/css/", "max-age=604800"); // cache for one week
     server.serveStatic("/js", LittleFS, "/js/", "max-age=604800");

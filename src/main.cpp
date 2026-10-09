@@ -250,6 +250,8 @@ boolean waterTankFull = true;
 Timer loopWaterTank(&checkWaterTank, 200); // Check water tank level every 200 ms
 
 #ifdef CC_ORIONE
+#include "heapStages.h"
+#define ORIONE_HEAP_MARK(name) heap_stages::mark(name)
 #include "firmwareGuard.h"
 #include "orioneLog.h"
 #include "panicLog.h"
@@ -1090,10 +1092,15 @@ void testTimer(void) {
 
 extern const char sysVersion[] = STR(AUTO_VERSION);
 
+#ifndef ORIONE_HEAP_MARK
+#define ORIONE_HEAP_MARK(name)
+#endif
+
 void setup() {
     // Start serial console
     Serial.begin(115200);
     ROUND_TIMING_DO(round_timing::heapMark("start"));
+    ORIONE_HEAP_MARK("start");
 
     // Initialize the logger
     Logger::init(23);
@@ -1114,6 +1121,7 @@ void setup() {
         LOG(ERROR, "Failed to load config from filesystem!");
     }
     ROUND_TIMING_DO(round_timing::heapMark("config"));
+    ORIONE_HEAP_MARK("config");
     ROUND_TIMING_DO(Serial.printf("TIMING fixed: relays heater %d valve %d pump %d (1 = high), brew switch %d type %d mode %d, scale type %d, offline %d, pid delay %.1f, auth %d\n",
                                   config.get<int>("hardware.relays.heater.trigger_type"), config.get<int>("hardware.relays.valve.trigger_type"),
                                   config.get<int>("hardware.relays.pump.trigger_type"), config.get<bool>("hardware.switches.brew.enabled"),
@@ -1128,6 +1136,7 @@ void setup() {
 
     ParameterRegistry::getInstance().initialize(config);
     ROUND_TIMING_DO(round_timing::heapMark("registry"));
+    ORIONE_HEAP_MARK("registry");
 
     if (!ParameterRegistry::getInstance().isReady()) {
         LOG(ERROR, "Failed to initialize ParameterRegistry!");
@@ -1274,12 +1283,15 @@ void setup() {
 #endif
 
     ROUND_TIMING_DO(round_timing::heapMark("before wifi"));
+    ORIONE_HEAP_MARK("before wifi");
     if (!config.get<bool>("system.offline_mode")) { // WiFi Mode
         wiFiSetup();
         ROUND_TIMING_DO(round_timing::heapMark("wifi connected"));
+    ORIONE_HEAP_MARK("wifi connected");
         serverSetup();
 
         ROUND_TIMING_DO(round_timing::heapMark("web server"));
+    ORIONE_HEAP_MARK("web server");
         // OTA Updates
         if (WiFi.status() == WL_CONNECTED) {
 #ifdef CC_ORIONE
@@ -1291,6 +1303,7 @@ void setup() {
             ArduinoOTA.begin();
 #endif
             ROUND_TIMING_DO(round_timing::heapMark("ota"));
+    ORIONE_HEAP_MARK("ota");
         }
 
 #ifdef ORIONE_PORTAL_PREVIEW
@@ -1313,6 +1326,7 @@ void setup() {
 
         setupMqtt();
         ROUND_TIMING_DO(round_timing::heapMark("mqtt"));
+    ORIONE_HEAP_MARK("mqtt");
 
         if (mqtt_enabled) {
             // Editable values reported to MQTT
@@ -1398,6 +1412,7 @@ void setup() {
     }
 
     ROUND_TIMING_DO(round_timing::heapMark("after wifi"));
+    ORIONE_HEAP_MARK("after wifi");
     // Start the logger
     Logger::begin();
     int level = ParameterRegistry::getInstance().getParameterById("system.log_level")->getValueAs<int>();
@@ -1441,9 +1456,11 @@ void setup() {
     previousMillisTimer = currentTime;
 
     ROUND_TIMING_DO(round_timing::heapMark("before scale"));
+    ORIONE_HEAP_MARK("before scale");
     // Init Scale
     if (config.get<bool>("hardware.sensors.scale.enabled")) {
         initScale();
+        ORIONE_HEAP_MARK("scale");
     }
 
     if (config.get<bool>("hardware.sensors.pressure.enabled")) {
@@ -1458,6 +1475,7 @@ void setup() {
 
     setupDone = true;
     ROUND_TIMING_DO(round_timing::heapMark("end of setup"));
+    ORIONE_HEAP_MARK("end of setup");
 
     enableTimer1();
 
@@ -1593,6 +1611,14 @@ void standbyRequestLoop() {
 void loop() {
 #ifdef ROUND_DISPLAY
     loopGuardBeat();
+#endif
+#ifdef CC_ORIONE
+    static bool idleMarked = false;
+
+    if (!idleMarked && millis() > 60000) { // after the start, BLE search and the first web requests
+        idleMarked = true;
+        ORIONE_HEAP_MARK("after 60 s");
+    }
 #endif
 #ifdef ORIONE_PORTAL_PREVIEW
     wm.process();

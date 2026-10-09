@@ -71,7 +71,6 @@ void ParameterRegistry::initialize(Config& config) {
     _config = &config;
 
     _parameters.clear();
-    _parameterMap.clear();
     _pendingChanges = false;
     _lastChangeTime = 0;
 
@@ -1357,13 +1356,20 @@ void ParameterRegistry::initialize(Config& config) {
     addParam(std::make_shared<Parameter>("VERSION", "Version", kCString, sOtherSection, 7, [] { return sysVersion; }, nullptr, 64, false, "", [] { return false; }, nullptr));
 
     std::sort(_parameters.begin(), _parameters.end(), [](const std::shared_ptr<Parameter>& a, const std::shared_ptr<Parameter>& b) { return a->getPosition() < b->getPosition(); });
+    _parameters.shrink_to_fit(); // the vector grew by doubling
 
     _ready = true;
 }
 
 std::shared_ptr<Parameter> ParameterRegistry::getParameterById(const char* id) {
-    if (const auto it = _parameterMap.find(id); it != _parameterMap.end()) {
-        return it->second;
+    if (id == nullptr) {
+        return nullptr;
+    }
+
+    for (const auto& param : _parameters) {
+        if (strcmp(param->getId(), id) == 0) {
+            return param;
+        }
     }
 
     return nullptr;
